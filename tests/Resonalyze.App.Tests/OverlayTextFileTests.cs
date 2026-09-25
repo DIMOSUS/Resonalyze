@@ -120,6 +120,39 @@ public sealed class OverlayTextFileTests
     }
 
     [Fact]
+    public void Import_ReadsADecimalCommaBesideWhitespaceOrSemicolonColumns()
+    {
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            $"overlay-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(
+            path,
+            "63\t4,5\n125,5 -3,25 10,0\n250;-1,5\n500, 2.5\n1000, 75,45\n2000.5, 1.25,45.1\n4000,-6\n");
+
+        try
+        {
+            OverlayPoint[] loaded = OverlayTextFile.Import(path);
+
+            Assert.Equal(
+                [
+                    new OverlayPoint(63, 4.5),
+                    new OverlayPoint(125.5, -3.25),
+                    new OverlayPoint(250, -1.5),
+                    new OverlayPoint(500, 2.5),
+                    // A comma beside a space separates columns, so the third column (phase) is not read as decimals.
+                    new OverlayPoint(1000, 75),
+                    new OverlayPoint(2000.5, 1.25),
+                    new OverlayPoint(4000, -6)
+                ],
+                loaded);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void Import_RejectsFileWithFewerThanTwoPoints()
     {
         string path = Path.Combine(

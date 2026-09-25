@@ -70,6 +70,9 @@ internal sealed class EqBandHandlesAnnotation : Annotation, IPlotDragHandles
 
     public int? Selected => selected;
 
+    /// <summary>A handle is held: the bank's numbering must not move under it until it is let go.</summary>
+    public bool Dragging => dragged != null;
+
     /// <summary>An empty list hides every handle.</summary>
     public void Show(IReadOnlyList<PeqBand> shown, int? selectedIndex)
     {

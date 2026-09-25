@@ -1,10 +1,13 @@
 using System.Globalization;
+using System.Numerics;
 using System.Reflection;
 using System.Windows.Forms;
 using OxyPlot;
 using OxyPlot.Annotations;
 using OxyPlot.WindowsForms;
+using Resonalyze.Audio;
 using Resonalyze.Dsp;
+using Resonalyze.History;
 using Resonalyze.Options;
 using Resonalyze.Ui;
 
@@ -131,6 +134,77 @@ public sealed class LiveSpectrumWiringTests : IDisposable
         });
     }
 
+    // The entry's live options reach the analyzer, which refused them while it ran: the entry was installed and its
+    // settings applied, and the history still pointed at the entry left, so its Save wrote over the wrong one.
+    [Fact]
+    public void AHistoryEntryOpensWhileTheAnalyzerRuns()
+    {
+        string first = WriteMeasurement("first.json", peak: 240);
+        string second = WriteMeasurement("second.json", peak: 480);
+        StaTest.Run(() =>
+        {
+            using var window = new LiveWindow();
+            window.Open(first);
+            window.Open(second);
+            window.Select(ModeTab.LiveSpectrum);
+            window.Record();
+            Assert.True(window.Session.InProgress);
+            MeasurementHistoryEntry entry = Assert.Single(
+                window.Field<MeasurementHistoryService>("measurementHistoryService").Entries,
+                candidate => candidate.SourceFilePath == first);
+            AnalyzerDocument document = window.Field<AnalyzerDocument>("analyzerDocument");
+
+            window.Await("ActivateHistoryEntryAsync", entry.Id, document.TryBegin()!);
+
+            Assert.False(window.Session.InProgress);
+            Assert.Equal(first, document.SourceName);
+            Assert.Equal(entry.Id, window.Field<MeasurementSessionTracker>("sessionTracker").CurrentEntryId);
+        });
+    }
+
+    // Restoring waits for Live to stop; a load or a run that lands meanwhile owns the window, so nothing of the entry
+    // (its measurement, its view) may land before or after that await.
+    [Fact]
+    public void AHistoryEntrySupersededWhileLiveStops_LeavesTheViewAndTheMeasurementAsTheNewerRequestFound()
+    {
+        string first = WriteMeasurement("first.json", peak: 240);
+        string second = WriteMeasurement("second.json", peak: 480);
+        StaTest.Run(() =>
+        {
+            using var window = new LiveWindow();
+            AnalyzerViewSettings view = window.Field<AnalyzerViewSettings>("viewSettings");
+            window.Open(first);
+            view.FrequencyResponse.SmoothingInverseOctaves = 3;
+            // Leaving the entry for another file writes its working state back.
+            window.Open(second);
+            view.FrequencyResponse.SmoothingInverseOctaves = 24;
+            window.Select(ModeTab.LiveSpectrum);
+            window.Record();
+            MeasurementHistoryEntry entry = Assert.Single(
+                window.Field<MeasurementHistoryService>("measurementHistoryService").Entries,
+                candidate => candidate.SourceFilePath == first);
+            Assert.Equal(3, entry.Session!.FrequencyResponse.SmoothingInverseOctaves);
+            AnalyzerDocument document = window.Field<AnalyzerDocument>("analyzerDocument");
+            // A newer request, taken the moment the analyzer has stopped: inside the restore's await.
+            bool superseded = false;
+            window.Session.Changed += () =>
+            {
+                if (!superseded && !window.Session.InProgress)
+                {
+                    superseded = true;
+                    _ = document.TryBegin();
+                }
+            };
+
+            window.Await("ActivateHistoryEntryAsync", entry.Id, document.TryBegin()!);
+
+            Assert.True(superseded);
+            Assert.Equal(second, document.SourceName);
+            Assert.Equal(24, view.FrequencyResponse.SmoothingInverseOctaves);
+            Assert.NotEqual(entry.Id, window.Field<MeasurementSessionTracker>("sessionTracker").CurrentEntryId);
+        });
+    }
+
     // The accumulation outlives a stop, so a new session must discard it or the next visit reads the old run again.
     [Fact]
     public void ANewSessionDoesNotBringBackTheLastRun()
@@ -253,6 +327,27 @@ public sealed class LiveSpectrumWiringTests : IDisposable
 
     private static TextualAnnotation Single(PlotModel model, string tag) =>
         Assert.Single(model.Annotations.OfType<TextualAnnotation>(), annotation => Equals(annotation.Tag, tag));
+
+    private string WriteMeasurement(string name, int peak)
+    {
+        var impulse = new Complex[8_192];
+        impulse[peak] = Complex.One;
+        string path = Path.Combine(directory, name);
+        ImpulseResponseFile.From(TestMeasurementResults.Restored(
+                lowFrequencyHz: 20,
+                highFrequencyHz: 20_000,
+                sampleRate: 48_000,
+                bits: 24,
+                sweepDurationSeconds: 1.0,
+                playChannel: PlaybackChannel.Mono,
+                sweepDeconvolutionImpulseResponse: impulse,
+                sweepDeconvolutionPeakIndex: peak,
+                measurementMode: SweepMeasurementMode.LoopbackTransfer,
+                transferImpulseResponse: impulse,
+                transferPeakIndex: peak))
+            .SaveAsync(path).GetAwaiter().GetResult();
+        return path;
+    }
 
     private sealed class LiveWindow : IDisposable
     {

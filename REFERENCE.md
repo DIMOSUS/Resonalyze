@@ -162,7 +162,9 @@ measurements have to be framed identically, for a screenshot or a before/after.
 A zoom survives a redraw: changing a setting, running a new measurement or
 toggling an overlay keeps the range you are looking at. The analysis plot
 remembers one range per mode, so Frequency Response and Impulse Response do not
-fight over a scale; the Time Alignment previews keep theirs across a
+fight over a scale, and refits when the magnitude axis changes its unit — the
+Scale set between dB and dB SPL, or a view-only dB SPL scale falling back to dB
+when a run without an SPL calibration starts; the Time Alignment previews keep theirs across a
 reconfiguration, and the EQ Wizard and Virtual DSP graphs hold theirs until
 something changes what the axis means (loading a new wizard source, switching
 the Virtual DSP view between magnitude, phase, group delay, impulse and step —
@@ -261,8 +263,9 @@ reject the late reflection tail. **FDW cycles** selects 4 (strongest
 suppression), 6 (the recommended balance), or 8 (more late detail). The cycles
 are counted after the gate's left fade, and the gate stays the window's outer
 limit: where `cycles / frequency` would run past it, the window is the gate.
-Both tabs start on FDW with 6 cycles; a settings file written before the Group
-Delay tab had the choice opens on Fixed, the curve its owner has been looking at.
+Both tabs start on FDW with 6 cycles; a settings file or a history entry written
+before a tab had the choice opens that tab on Fixed, the curve its owner has been
+looking at.
 
 The Phase view shows four independently toggled curves: **measured phase**,
 **minimum phase** (the part tied to the magnitude and correctable with EQ),
@@ -617,7 +620,13 @@ is reported before the measurement starts.
 **ASIO Control Panel** opens the driver's own panel for buffer size or clock
 source; **Test ASIO Inputs** captures a short diagnostic snapshot that verifies
 the microphone and loopback channels are truly separate and not mono-summed by
-the driver or the interface's control software.
+the driver or the interface's control software. The test gives up with an error
+when the driver has not finished it within ten seconds of the one-second capture.
+
+A run, a live capture or the test ends with an error, rather than waiting, when
+the driver asks to be reset (its settings changed in its own panel, or the
+device was removed) or when it delivers no audio for five seconds. Check the
+device and measure again.
 
 ### WASAPI Shared and Exclusive
 
@@ -933,9 +942,9 @@ overlays are cleared, while audio device and routing settings, the history list
 and saved files are left intact.
 
 Each entry also remembers the working state it was last used with: the active
-mode, every per-mode setting, and which overlay slots were shown — so switching
-to another entry and back restores the whole working context, not just the
-impulse response. Only a small rolling set of unsaved in-memory snapshots is
+mode, every per-mode setting, and which overlay slots were shown — so leaving it
+for another entry, a new run or a loaded file and coming back restores the whole
+working context, not just the impulse response. Only a small rolling set of unsaved in-memory snapshots is
 retained.
 
 The list itself holds at most **30** entries. Past that the oldest `FILE` row is
@@ -1249,6 +1258,10 @@ arrival against another refuses it by name: [Time Alignment](#time-alignment)
 declines it as a source and as a Compare partner, and
 [Virtual DSP](#virtual-dsp) will not sum it with another measurement.
 
+The protective high-pass in Record Settings is taken to have been in the chain,
+as for a run: it is divided out, and the measurement (and the `.json` it is saved
+to) records that filter as a run does, rather than as unknown.
+
 ### Dropping a file on the window
 
 A file dragged onto the Resonalyze window from Explorer opens exactly as it would
@@ -1434,7 +1447,8 @@ switch the slot to a **Calculated overlay** or **Target**; the checkbox shows or
 hides it, the numeric control applies a vertical offset, and **⚙ Settings…**
 opens its dialog. A dialog opens with what the slot holds; switching a slot that
 holds something else to a calculated overlay or a target starts from that kind's
-defaults, not from what the slot held before. A live-curve operand re-reads the plot on every rebuild, so a
+defaults, not from what the slot held before, and never offers the slot's own capture
+as a source, since the switch replaces it. A live-curve operand re-reads the plot on every rebuild, so a
 calculation over it — for example the difference between the source and a Compare
 curve — updates live as the analysis settings change.
 
@@ -1509,7 +1523,9 @@ ones; the separate target the [EQ Wizard](#the-target-curve) and
 
 **Import from text** loads a captured overlay from a plain-text file of `X Y`
 pairs (for example, `123.4 -5.5`), one per line, parsed leniently: any separator,
-extra columns ignored, non-numeric lines skipped. **Export to text** writes the
+extra columns ignored, non-numeric lines skipped. A decimal comma is read as one
+(`63<Tab>4,5` is 4.5 dB) wherever spaces, tabs or semicolons separate the columns; a comma beside a space
+(`1000, 75,45`) or alone on the line (`1000,75`) separates columns instead. **Export to text** writes the
 slot's current curve in the same format; for a Target slot, **Export deviation**
 writes the deviation or EQ-correction curve. Exported files open with a commented
 `# resonalyze-curve` header recording what the curve is — the analysis it came
@@ -1707,7 +1723,8 @@ A band is one of five shapes, picked on the **"+" tile** — each zone adds its
 shape directly — or switched later from the menu a right-click on the band's
 number opens; the same menu **locks** the band against Auto Tune (below) and
 **deletes** it, as does **Del** on the selected band once its number or its
-handle was clicked (in a field, Del edits the text). The shapes are: a
+handle was clicked (in a field, Del edits the text, and while a handle is held
+down it does nothing). The shapes are: a
 **peaking bell (PK)**; a **high or low shelf (HS / LS)**, whose frequency is
 the middle of the transition and whose Q is the knee (0.7 the steepest that
 stays monotonic); and a **first- or second-order all-pass (AP1 / AP2)**, which
@@ -2056,8 +2073,9 @@ by that difference.
 A **From /
 To** window limits where bands are placed and bounds the error metrics in the
 colour-coded **Tuning results** panel, which reports **RMS error** and **Max
-error** between Source + EQ and Target, **Filters used**, **Peak boost** and
-**Peak cut**, and **Headroom** (red when the EQ nets a boost that could clip).
+error** between Source + EQ and Target (a dash when no point of the source lies
+in the window), **Filters used**, **Peak boost** and **Peak cut**, and
+**Headroom** (red when the EQ nets a boost that could clip).
 
 **Shelves** (off by default) lets the fit propose a low and a high shelf as well
 as bells. A car target is a bass shelf plus a downward tilt, and a bell is the
@@ -2109,15 +2127,23 @@ shelves, the AP1 / AP2 all-pass slots and REW's `Modal` rows, always 30 slots �
 bank has no place for the
 preamp, so it is not written and the wizard tells you which channel gain to enter
 in the PC-Tool instead), and export-only for miniDSP biquads (RBJ coefficients at
-44.1 / 48 / 96 kHz) and GraphicEQ (Wavelet / JamesDSP). All-pass bands travel
+44.1 / 48 / 96 / 192 kHz) and GraphicEQ (Wavelet / JamesDSP). The text formats
+write Q to up to three decimals, so a fitted Q 0.55 is not sent as 0.5. All-pass bands travel
 wherever the target can state one — Equalizer APO and REW as the second-order
 `AP` (APO has no first-order type), CamillaDSP as `Allpass` / `AllpassFO`, the
 Audiotec bank as its own AP1 / AP2 slots, miniDSP as raw coefficients — and a
 format that cannot (EasyEffects' mode/slope parameterisation, GraphicEQ's sampled
 magnitude curve) warns and leaves them out rather than writing a 0 dB bell.
+An EasyEffects export is an EasyEffects 7 preset (the `equalizer#0` instance
+named in the pipeline's `plugins_order`), and import reads both 7 and the older
+unnumbered `equalizer`, skipping muted bands and folding input and output gain
+into the preamp. A CamillaDSP export is a v3 pipeline step (`channels: [0, 1]`).
+Equalizer APO's `Modal` and `PEQ` read as `PK`, as APO itself reads them, and a
+`Filter:` line may leave its number out.
 Import is deliberately
 lenient: comments, blank lines, disabled (`OFF`) filters, unsupported filter
-types, and malformed entries are skipped rather than rejected. The one exception is a
+types, and malformed entries are skipped rather than rejected. A decimal comma
+(`Q 0,707`) reads the same as a point on any Windows language setting. The one exception is a
 fixed-layout device bank: the Audiotec-Fischer file is the channel's 30-slot
 table, so a truncated or renumbered one is refused outright rather than imported
 as an empty bank over the EQ you have — and so is one whose enabled slot claims a
@@ -2127,6 +2153,8 @@ ordinary empty slots).
 **Export as tuning sheet** produces a phone-friendly PDF for reading next to the
 car: the banner, a title, the date and fit range, an EQ preview graph with the
 fit window shaded, the tuning statistics, the preamp, and one card per filter.
+The statistics are the bank's, the one the cards print, even while **Bypass**
+draws the source without it.
 
 ### DSP Q convention
 
@@ -2936,7 +2964,8 @@ frequency starts being resolved at all, not where it becomes trustworthy. FDW th
 keeps the mid and high junctions reading their direct arrival rather than the whole
 reflection tail the long window would otherwise admit; its cycle count shortens the
 window with frequency and never lengthens it, so the gate stays the outer limit and
-8 cycles are not suddenly available at 24 Hz.
+8 cycles are not suddenly available at 24 Hz. A gate saved with all three lengths
+at 0 ms reads nothing, so it keeps **1 / 30 / 10 ms** instead.
 
 The gate's durations shape the **phase, group-delay, impulse and step views only**. The magnitude
 view — channels, Sum, Sum loss and the read-out built from them — deliberately
@@ -3308,6 +3337,12 @@ What that sum does NOT know is how far apart the drivers are or what the car doe
 to them. The response it predicts is therefore an ideal, not a forecast of what
 the panel will measure — that is what Auto delay and the summation read-outs are
 for.
+
+The wizard writes IIR crossovers. A channel whose crossover is a designed FIR
+kernel (the [FIR Constructor](#fir-constructor)'s) is refused with its name
+rather than given a second crossover on top of the first; clear the kernel, or
+tune that channel by hand. An imported correction FIR is not a crossover and stays
+under what the wizard writes.
 
 #### Narrowing a junction
 
@@ -3905,11 +3940,16 @@ tune is actually built in:
 
 - **Tools... → Capture to overlay** saves the predicted sum as a Captured overlay in
   Frequency Response — compare it against real measurements and target curves, or
-  feed it onward to the EQ Wizard.
+  feed it onward to the EQ Wizard. It is the **Sum** the plot draws for the shown
+  side and group view: the same channels enter it (a centre never does), through
+  the same window.
 - **Tools... → Audition track…** renders a music file (wav/mp3/flac/m4a and friends) through
   the tune into a stereo WAV: each program channel is convolved with the summed
   processed response of its side, with the microphone calibration optionally
-  baked in and one shared normalization gain so the L/R balance survives. The
+  baked in and one shared normalization gain so the L/R balance survives. A side
+  with no measured stereo block of its own renders from the other side and the
+  report says so; a mono block feeds both sides and does not count as either
+  side's own, so a mono sub cannot pass off a missing side as measured. The
   calibration selector opens on **whatever the panel is set to**, every time — the
   render is meant to sound the way the panel's curves look, and the panel already
   keeps that choice in the project. Under **Own (as measured)** it uses the curve
@@ -3977,7 +4017,9 @@ tune is actually built in:
   junction inverted to fix the cabin's phase shows an electrical dip here
   that the car does not have, because that junction knits through timing this
   graph does not model — the panel's plot is where it is judged. A
-  single-zone project keeps the flat sheet it always had. It
+  single-zone project keeps the flat sheet it always had. The sum-loss line it
+  prints is the plot's read-out for the shown side and group view (Full window),
+  and the Auto delay log ends on the same read-out. It
   states the PEQ columns in the [Q convention](#dsp-q-convention) of the project's
   [DSP processor](#dsp-processor): a named model answers for itself and the export
   asks nothing. A **Custom** processor has only what was typed into that dialog, so

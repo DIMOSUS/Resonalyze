@@ -403,8 +403,8 @@ take the captures of the set again.
 
 One capture per driver — left and right separately, one for a mono subwoofer — in one
 sitting of the analyzer, without touching the microphone gain or playback level between
-them. Restarting Resonalyze, pressing **Apply settings** or changing a Live Spectrum
-setting such as **Sequence Length** starts a new analyzer session, and captures from
+them. Restarting Resonalyze, changing the audio route, format or playback channel in
+Record Settings, or changing **Sequence Length** starts a new analyzer session, and captures from
 different sessions form a set only if each carries an SPL calibration; changing **HPF**
 alone is safe. Virtual DSP checks the set and tells you when the captures disagree.
 

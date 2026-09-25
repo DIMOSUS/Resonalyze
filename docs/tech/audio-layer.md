@@ -42,11 +42,34 @@ so a waiter on a sample count that will never arrive would hang until a manual A
 - `SweepRunAudioOrchestrator` also observes the stop while playback is still running,
   before any sample waiter exists, so a dead device fails the run instead of hanging.
 - Live consumers must await `AsioFullDuplexSession.StoppedAsync` alongside their own
-  cancellation; otherwise an unplugged device leaves them frozen with no error.
+  cancellation; otherwise an unplugged device leaves them frozen with no error. For ASIO
+  the stop is itself synthesized (see [Driver reset and silent drivers](#driver-reset-and-silent-drivers)).
 - A driver that fails validation or playback startup must be detached immediately, or
   its callbacks keep running until owner teardown disposes the session.
 - Stopping an already stopped device throws `InvalidOperationException`, which
   `AudioCaptureStop` treats as stopped.
+- A device whose open failed never reports a stop, so waiting for one only times out
+  and the timeout would replace the open error. `MmeCaptureDevice` forgets its stop
+  signal when `StartRecording` throws, and `PcmCaptureSession.StartAsync` rethrows the
+  start's failure even if the cleanup stop times out.
+
+## Driver reset and silent drivers
+
+NAudio's `AsioOut` raises `PlaybackStopped` only from its own `Stop`, so an ASIO device
+that goes away never reports a stop. Two things end the session instead, through the same
+terminal failure as a capture overflow (first-buffer, stopped signal, every waiter):
+
+- `DriverResetRequest` (the driver's `kAsioResetRequest`: settings changed in its panel,
+  device removed). The driver must be reopened before it delivers again, so the session
+  fails rather than trying to carry on. `AsioPlaybackSession` fails its completion likewise.
+- A driver that just stops calling back. `AsioCallbackWatchdog` counts callbacks from
+  `Play` on and fails the session after 5 s without one; the longest ASIO buffer is a
+  few hundred milliseconds, and the watchdog also bounds the wait for the first buffer.
+  It stops before `Stop`, so a normal stop never reads as a stall.
+
+`AsioInputProbe` also bounds itself (the capture plus 10 s) and says so with a
+`TimeoutException`, since its caller has no way to cancel it. This behaviour needs a check
+on hardware: which drivers send the reset request on removal is not documented.
 
 ## Callback discipline
 

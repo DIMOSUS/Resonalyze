@@ -45,7 +45,7 @@ public static class OverlayTextFile
     private const string FormatMarker = "resonalyze-curve";
     private const int FormatVersion = 1;
 
-    private static readonly char[] Separators = [' ', '\t', ',', ';'];
+    private static readonly char[] ColumnSeparators = [' ', '\t', ';'];
 
     /// <summary>Role comes from the slot's current <paramref name="kind"/>, never a stale tag; curve kind only for captured responses.</summary>
     public static OverlayTextMetadata BuildCurveMetadata(
@@ -104,20 +104,10 @@ public static class OverlayTextFile
                 continue;
             }
 
-            string[] tokens = rawLine.Split(
-                Separators,
-                StringSplitOptions.RemoveEmptyEntries);
+            string[] tokens = SplitColumns(rawLine);
             if (tokens.Length < 2 ||
-                !double.TryParse(
-                    tokens[0],
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
-                    out double x) ||
-                !double.TryParse(
-                    tokens[1],
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
-                    out double y) ||
+                !TryParseNumber(tokens[0], out double x) ||
+                !TryParseNumber(tokens[1], out double y) ||
                 !double.IsFinite(x) ||
                 double.IsInfinity(y))
             {
@@ -134,6 +124,43 @@ public static class OverlayTextFile
         }
 
         return new OverlayTextCurve(points.ToArray(), metadata.Build());
+    }
+
+    // A comma is a column separator when it touches whitespace ("20, 75,45") or nothing else separates the line
+    // ("20,75"); inside a whitespace or semicolon column it is a decimal comma ("63\t4,5").
+    private static string[] SplitColumns(string line)
+    {
+        string trimmed = line.Trim();
+        string[] tokens = trimmed.Split(ColumnSeparators, StringSplitOptions.RemoveEmptyEntries);
+        bool commaSeparates = !trimmed.Contains(';') && (tokens.Length < 2 || CommaTouchesWhitespace(trimmed));
+        return commaSeparates
+            ? trimmed.Split([',', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries)
+            : tokens;
+    }
+
+    private static bool CommaTouchesWhitespace(string line)
+    {
+        for (int i = line.IndexOf(','); i >= 0; i = line.IndexOf(',', i + 1))
+        {
+            if ((i > 0 && char.IsWhiteSpace(line[i - 1])) ||
+                (i + 1 < line.Length && char.IsWhiteSpace(line[i + 1])))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryParseNumber(string token, out double value)
+    {
+        string number = token.Trim(',');
+        if (!number.Contains('.'))
+        {
+            number = number.Replace(',', '.');
+        }
+
+        return double.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
     }
 
     private static IEnumerable<string> BuildHeaderLines(OverlayTextMetadata? metadata)

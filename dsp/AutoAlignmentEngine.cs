@@ -506,22 +506,24 @@ public static class AutoAlignmentEngine
 
     /// <summary>Upper-half probe allowance for one side: generic dispersion plus the predicted full-vs-probe skew.
     /// See docs/tech/auto-alignment.md#arrival-honesty-probe.</summary>
+    /// <param name="appliedDelayMs">Override delay the reads were taken through; the prediction excludes bulk delay.</param>
     internal static double ArrivalProbeToleranceMs(
         AlignmentSnapshot side,
         double measuredMs,
         double probeMeasuredMs,
         double bandLowHz,
         double probeLowHz,
-        double bandHighHz)
+        double bandHighHz,
+        double appliedDelayMs = 0)
     {
         ArgumentNullException.ThrowIfNull(side);
         double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
         // Credit is a difference of two predictions, so both must verify; Inconsistent or Latched sides earn nothing.
         if (GradeAgainstPrediction(
-                side, measuredMs, bandLowHz, bandHighHz, out double full) !=
-            PredictionState.Verified ||
+                side, measuredMs - appliedDelayMs, bandLowHz, bandHighHz,
+                out double full) != PredictionState.Verified ||
             GradeAgainstPrediction(
-                side, probeMeasuredMs, probeLowHz, bandHighHz,
+                side, probeMeasuredMs - appliedDelayMs, probeLowHz, bandHighHz,
                 out double probe) != PredictionState.Verified)
         {
             return toleranceMs;
@@ -2259,7 +2261,9 @@ public static class AutoAlignmentEngine
                     variableSnapshot.ValidRange) is { } crests &&
                 crests.IsDecisive(pair.CrossoverHz))
             {
-                bool expected = crests.ExpectsRelativeInversion;
+                // The neighbour is read as rendered, its own inversion applied, so the crests name the searched
+                // channel's absolute polarity; relative to the neighbour it is that XOR the neighbour's flag.
+                bool expected = crests.ExpectsRelativeInversion ^ neighborInverted;
                 string phase = expected ? "inverted" : "in phase";
                 // The filters do not decide down here (see #expected-polarity), but they do withhold the crests'
                 // authority: a matched split that says the opposite makes this a coin flip, not a reading.
@@ -2705,7 +2709,9 @@ public static class AutoAlignmentEngine
                     snapshot, full.FirstArrivalDelayMilliseconds,
                     probe.FirstArrivalDelayMilliseconds,
                     plan.BridgeBandLowHz, bridgeProbeLowHz,
-                    plan.BridgeBandHighHz)))
+                    plan.BridgeBandHighHz,
+                    // The settled side is read through its delay.
+                    alignment.GetValueOrDefault(channel).DelayMs)))
                 {
                     case ArrivalCertificate.Latched:
                         throw new InvalidOperationException(
@@ -2879,13 +2885,14 @@ public static class AutoAlignmentEngine
                     left, leftProbe,
                     LinkProbeToleranceMs(
                         leftSnapshot, left, leftProbe, energyOnset,
-                        lowHz, probeLowHz, highHz),
+                        lowHz, probeLowHz, highHz,
+                        searchAlignment.GetValueOrDefault(link.Left).DelayMs),
                     energyOnset);
                 ArrivalCertificate rightCertificate = ClassifyLinkArrival(
                     right, rightProbe,
                     LinkProbeToleranceMs(
                         rightSnapshot, right, rightProbe, energyOnset,
-                        lowHz, probeLowHz, highHz),
+                        lowHz, probeLowHz, highHz, 0),
                     energyOnset);
                 if (energyOnset)
                 {
@@ -3046,11 +3053,12 @@ public static class AutoAlignmentEngine
                                 probe = AsEnergyOnset(probe);
                             }
 
+                            double appliedMs =
+                                searchAlignment.GetValueOrDefault(side.Channel).DelayMs;
                             double tolerance2 = LinkProbeToleranceMs(
                                 side, full, probe, energyOnset2,
-                                lowHz2, probeLow2, highHz2);
-                            rawMs = full.FirstArrivalDelayMilliseconds
-                                - alignment.GetValueOrDefault(side.Channel).DelayMs;
+                                lowHz2, probeLow2, highHz2, appliedMs);
+                            rawMs = full.FirstArrivalDelayMilliseconds - appliedMs;
                             return full.IsValid &&
                                 full.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
                                 ClassifyLinkArrival(full, probe, tolerance2, energyOnset2) ==
@@ -3369,13 +3377,14 @@ public static class AutoAlignmentEngine
         bool energyOnset,
         double bandLowHz,
         double probeLowHz,
-        double bandHighHz) =>
+        double bandHighHz,
+        double appliedDelayMs) =>
         energyOnset
             ? Math.Max(1.0, 500.0 / probeLowHz)
             : ArrivalProbeToleranceMs(
                 side, full.FirstArrivalDelayMilliseconds,
                 probe.FirstArrivalDelayMilliseconds,
-                bandLowHz, probeLowHz, bandHighHz);
+                bandLowHz, probeLowHz, bandHighHz, appliedDelayMs);
 
     // Clean bridges run 40-70 dB; within ~6 dB of the refusal floor is Low.
     private const double BridgeHighSnrDb = 30;

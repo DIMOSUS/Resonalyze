@@ -101,6 +101,33 @@ public sealed class LiveSpectrumSessionTests
         Assert.Equal(1, changed);
     }
 
+    // History restores and Record Settings reconfigure a stopped analyzer; its bins must not be re-read at another rate.
+    [Fact]
+    public async Task ANewRateOrFrameLengthDropsTheStoppedReading_TheSameOneKeepsIt()
+    {
+        var options = new LiveSpectrumOptions { AnalysisMode = LiveAnalysisMode.Rta, SequenceLength = 1024 };
+        using LiveSpectrumSession session = Create(options);
+        session.Start();
+        await FirstFrameAsync(session);
+        await session.StopAsync();
+        var settings = new MeasurementSettingsFile.SweepMeasurementSettings
+        {
+            SampleRate = 44_100,
+            WaveInputChannelOffset = 0,
+            WaveLoopbackInputChannelOffset = 1
+        };
+
+        session.Configure(settings);
+        Assert.NotNull(session.HeldSnapshot);
+        Assert.NotNull(session.Reread(session.Display));
+
+        settings.SampleRate = 48_000;
+        session.Configure(settings);
+        Assert.Null(session.HeldSnapshot);
+        Assert.Null(session.Reread(session.Display));
+        Assert.False(session.HasCaptureToSave);
+    }
+
     // Runs in every mode: the envelope is invalid wherever the analyzer sits when the calibration moves.
     [Fact]
     public void ACalibrationChangeDropsThePeakHold()
@@ -284,6 +311,27 @@ public sealed class LiveSpectrumSessionTests
 
         analyzer.Init(48_000, 24, 0.5, PlaybackChannel.Mono, waveInputChannelOffset: 0);
         Assert.True(analyzer.Setup.IsMicOnly);
+    }
+
+    [Fact]
+    public void AReconfigureRepeatingTheRouteKeepsTheCaptureSession_AndANewRouteStartsOne()
+    {
+        using var analyzer = new NoiseMeasurement(new FakeAudioSessionFactory());
+        analyzer.Init(
+            48_000, 24, 0.5, PlaybackChannel.Mono, sequenceLength: 4096,
+            waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1, liveSpectrumOptions: new LiveSpectrumOptions());
+        Guid first = analyzer.CaptureSessionId;
+
+        analyzer.Init(
+            48_000, 24, 60, PlaybackChannel.Mono, sequenceLength: 4096,
+            waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1,
+            liveSpectrumOptions: new LiveSpectrumOptions { WindowType = WindowType.Rectangular });
+        Assert.Equal(first, analyzer.CaptureSessionId);
+
+        analyzer.Init(
+            96_000, 24, 60, PlaybackChannel.Mono, sequenceLength: 4096,
+            waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1, liveSpectrumOptions: new LiveSpectrumOptions());
+        Assert.NotEqual(first, analyzer.CaptureSessionId);
     }
 
     private static LiveSpectrumSession Create(

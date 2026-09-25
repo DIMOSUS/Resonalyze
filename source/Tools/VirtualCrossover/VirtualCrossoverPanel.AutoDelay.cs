@@ -119,16 +119,15 @@ public partial class VirtualCrossoverPanel
 
     private async Task AppendOutcomeMetricAsync(AutoDelayRunResult result)
     {
-        // RedrawAll pushes the read-out asynchronously, so recompute here; capture the side before the await.
+        // RedrawAll pushes the read-out asynchronously, so recompute here; capture the side and view before the await.
         bool metricSideRight = session.ActiveSideRight;
+        VirtualCrossoverGroupView groupView = SelectedGroupView;
         VirtualCrossoverProcessedRender? render = await ProcessChannelsAsync();
-        List<ProcessedChannel> outcomeChannels = render?.Channels ?? [];
-        (_, _, List<SignalPoint>? outcomeLoss) =
-            metrics.BuildCurves(outcomeChannels, session.MagnitudeGate.SmoothingInverseOctaves);
+        List<VirtualCrossoverMetric.Entry> entries = VirtualCrossoverFrame.Of(render?.Channels ?? [], groupView)
+            .ReadSum(metrics, session.MagnitudeGate.SmoothingInverseOctaves).Entries;
         result.Log.AppendLine(
-            $"Metric ({(metricSideRight ? "R" : "L")} side):");
-        result.Log.AppendLine(VirtualCrossoverMetric.FormatDetail(
-            metrics.BuildEntries(outcomeChannels, outcomeLoss)));
+            $"Metric ({(metricSideRight ? "R" : "L")} side, {VirtualCrossoverGroupViews.DisplayName(groupView)}):");
+        result.Log.AppendLine(VirtualCrossoverMetric.FormatDetail(entries));
         VirtualCrossoverAutoDelay.WriteLog(result.Log.ToString());
     }
 
@@ -207,9 +206,7 @@ public partial class VirtualCrossoverPanel
                 VirtualCrossoverGatePreview saved = dialog.Gate;
                 gate.OffsetMs = saved.AutoOffset ? null : saved.OffsetMs;
                 gate.DetrendMs = saved.DetrendMs;
-                session.Project.PhaseGateLeftMs = saved.LeftMs;
-                session.Project.PhaseGatePlateauMs = saved.PlateauMs;
-                session.Project.PhaseGateRightMs = saved.RightMs;
+                session.Project.SetPhaseGateLengths(saved.LeftMs, saved.PlateauMs, saved.RightMs);
                 session.Project.PhaseWindowMode = saved.WindowMode;
                 session.Project.PhaseFdwCycles = saved.FdwCycles;
                 session.Project.PhaseDetrendMode = saved.DetrendMode;

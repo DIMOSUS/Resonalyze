@@ -72,16 +72,35 @@ internal sealed class AnalyzerViewSettings
         };
 
     /// <param name="sampleRate">The rate Time Alignment's ASIO channels are checked against.</param>
-    public void ApplySession(MeasurementSessionSnapshot session, int sampleRate)
+    /// <returns>The modes whose magnitude axis now means something else (dB against dB SPL): a zoom kept there would
+    /// frame the other axis's numbers.</returns>
+    public IReadOnlyList<Mode> ApplySession(MeasurementSessionSnapshot session, int sampleRate)
     {
         ArgumentNullException.ThrowIfNull(session);
+        MagnitudeScale frequencyScale = FrequencyResponse.MagnitudeScale;
+        MagnitudeScale liveScale = LiveSpectrum.MagnitudeScale;
         session.FrequencyResponse.ApplyTo(FrequencyResponse, FrequencyResponseVisibility);
         session.PhaseResponse.ApplyTo(PhaseResponse, PhaseResponseVisibility);
         session.GroupDelay.ApplyTo(GroupDelay, GroupDelayVisibility);
         session.ImpulseResponse.ApplyTo(ImpulseResponse);
         session.Waterfall.ApplyTo(Waterfall, WaterfallMode.Fourier);
         session.BurstDecay.ApplyTo(BurstDecay, WaterfallMode.BurstDecay);
+        // A live capture is corrected by the rig's microphone calibration, which no entry carries.
+        string? rigCalibrationId = LiveSpectrum.CalibrationId;
         session.LiveSpectrum.ApplyTo(LiveSpectrum);
+        LiveSpectrum.CalibrationId = rigCalibrationId;
         session.TimeAlignment.ApplyTo(TimeAlignment, sampleRate);
+
+        var rescaled = new List<Mode>();
+        if (FrequencyResponse.MagnitudeScale != frequencyScale)
+        {
+            rescaled.Add(Mode.FrequencyResponse);
+        }
+        if (LiveSpectrum.MagnitudeScale != liveScale)
+        {
+            rescaled.Add(Mode.LiveSpectrum);
+        }
+
+        return rescaled;
     }
 }

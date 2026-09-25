@@ -53,12 +53,15 @@ internal sealed class AsioPlaybackSession : IAudioPlaybackSession
             stream = AudioPlaybackStreamFactory.CreateFloat(signal);
             createdDriver.PlaybackStopped += HandlePlaybackStopped;
             createdDriver.Init(stream);
+            // After the rate is set: many drivers answer the host's own rate change with a reset request.
+            createdDriver.DriverResetRequest += HandleDriverResetRequest;
             driver = createdDriver;
             createdDriver.Play();
         }
         catch
         {
             createdDriver.PlaybackStopped -= HandlePlaybackStopped;
+            createdDriver.DriverResetRequest -= HandleDriverResetRequest;
             createdDriver.Dispose();
             stream?.Dispose();
             stream = null;
@@ -96,6 +99,10 @@ internal sealed class AsioPlaybackSession : IAudioPlaybackSession
         }
     }
 
+    private void HandleDriverResetRequest(object? sender, EventArgs args) =>
+        completion?.TrySetException(new InvalidOperationException(
+            $"The ASIO driver '{driverName}' asked to be reset (its settings changed or the device was removed)."));
+
     public ValueTask DisposeAsync()
     {
         if (disposed)
@@ -106,6 +113,7 @@ internal sealed class AsioPlaybackSession : IAudioPlaybackSession
         if (driver != null)
         {
             driver.PlaybackStopped -= HandlePlaybackStopped;
+            driver.DriverResetRequest -= HandleDriverResetRequest;
             driver.Stop();
             driver.Dispose();
             driver = null;

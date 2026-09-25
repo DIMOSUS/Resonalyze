@@ -115,7 +115,9 @@ internal static class EqWizardRender
             valid++;
         }
 
-        double rms = valid > 0 ? Math.Sqrt(sumSquares / valid) : 0;
+        // No point in the window is no error to grade, not a perfect fit.
+        double? rms = valid > 0 ? Math.Sqrt(sumSquares / valid) : null;
+        double? maxInWindow = valid > 0 ? maxError : null;
         // Counts the bank, not the bypassed curve. All-pass is always "used": its work is phase, which the gain threshold cannot see.
         int filtersUsed = session.Bank.Bands.Count(
             band => band.Type.IsAllPass() || Math.Abs(band.GainDb) >= 0.05);
@@ -131,14 +133,32 @@ internal static class EqWizardRender
         }
 
         double headroom = -peakBoost;
-        return new EqTuneStats(rms, maxError, filtersUsed, peakBoost, peakCut, headroom);
+        return new EqTuneStats(rms, maxInWindow, filtersUsed, peakBoost, peakCut, headroom);
     }
 
-    /// <summary>The statistics the plot shows now, for a tuning sheet.</summary>
+    /// <summary>The statistics of the bank a tuning sheet prints: under Bypass the plot draws no bank, the sheet still does.</summary>
     public static EqTuneStats? CurrentStats(EqWizardSession session)
     {
-        EqualizationCurve eq = DisplayedEq(session);
-        return Stats(session, RenderSet(session, eq), eq);
+        EqualizationCurve eq = session.Bank.Curve;
+        EqWizardRenderSet render = RenderSet(session, eq);
+        // A gated source's landed preview is the bypassed (empty) bank's, so the bank's own is rendered here.
+        if (session.Bypass && session.Source is { IsGated: true } gated && render.Source != null)
+        {
+            List<DataPoint> corrected = EqWizardSourceCurve.ToPlotPoints(
+                EqWizardGatedPreview.Render(EqWizardSourceCurve.GatedPreviewRequest(session, gated, eq)),
+                EqWizardSourceCurve.KeepsGaps(gated));
+            render = render with
+            {
+                SourcePlusEq = new EqWizardCurve(
+                    EqWizardSourceCurve.CorrectedTitle,
+                    EqWizardSourceCurve.CorrectedColor,
+                    2,
+                    LineStyle.Solid,
+                    corrected)
+            };
+        }
+
+        return Stats(session, render, eq);
     }
 
     /// <summary>The bank's own gain (no preamp) on the baseline's frequencies.</summary>

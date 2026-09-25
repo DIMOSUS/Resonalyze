@@ -192,6 +192,21 @@ public sealed class RecordSettingsSessionTests
     }
 
     [Fact]
+    public void TheHighEdgeAtTheBottomOfTheRange_PushesItselfAboveTheLowEdge()
+    {
+        RecordSettingsSession session = Load(WaveSettings());
+        session.LowFrequency.Value = 100;
+        int changes = 0;
+        session.SweepSettingsChanged += () => changes++;
+
+        session.HighFrequency.Value = 20;
+
+        Assert.Equal(20m, session.LowFrequency.Value);
+        Assert.Equal(21m, session.HighFrequency.Value);
+        Assert.Equal(1, changes);
+    }
+
+    [Fact]
     public void TheHighPassKindChoosesItsSlopes_KeepingTheSlopeWhereItCan()
     {
         RecordSettingsSession session = Load(WaveSettings());

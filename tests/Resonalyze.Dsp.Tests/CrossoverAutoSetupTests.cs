@@ -647,6 +647,38 @@ public sealed class CrossoverAutoSetupTests
     /// at 24 dB/oct and 6 dB at 48. The ranked pool crosses junction options and never re-runs the descent, so this
     /// covers both paths.</summary>
     [Theory]
+    [InlineData(false, null)]
+    [InlineData(true, null)]
+    [InlineData(false, 24)]
+    [InlineData(true, 24)]
+    public void ABandLimitUnderTheFloor_SteepensTheTweeterHighPass_PastTheSlopeWindowAndTheBaseline(
+        bool ranked, int? maxSlope)
+    {
+        // The band limit holds the corner under the 24 dB/oct floor, so only a steeper slope protects Fs; neither
+        // the junction's slope window nor the conventional all-24 candidate may keep 24 there.
+        AutoSetupSource[] channels =
+        [
+            new(BandCurve(200, 8_000, 0), DriverType.Midrange),
+            new(BandCurve(1_500, 20_000, 0), DriverType.Tweeter)
+        ];
+        CrossoverAutoSetupOptions options = Options(maxHz: 2_000) with
+        {
+            JunctionWindows = [new JunctionSearchWindow(MaxSlopeDbPerOctave: maxSlope)]
+        };
+
+        CrossoverEdge highPass = (ranked
+            ? CrossoverAutoSetup.ProposeRanked(channels, options)[0].Proposals
+            : CrossoverAutoSetup.Propose(channels, options))[1].HighPassEdge!.Value;
+
+        double resonance = CrossoverAutoSetup.TweeterResonanceHz(
+            CrossoverAutoSetup.EstimateBand(channels[1].MagnitudeDb).LowHz);
+        Assert.True(
+            highPass.FrequencyHz >= CrossoverAutoSetup.TweeterMinCrossoverHz(resonance, highPass.SlopeDbPerOctave) - 1,
+            $"The tweeter crosses at {highPass.FrequencyHz:0} Hz / {highPass.SlopeDbPerOctave} dB-oct, under the floor " +
+            $"its {resonance:0} Hz resonance needs.");
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public void ASplitCorner_NeverPutsATweeterHighPassUnderItsResonanceFloor(bool ranked)

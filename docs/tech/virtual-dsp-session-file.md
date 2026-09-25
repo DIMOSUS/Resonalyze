@@ -312,6 +312,10 @@ on by default so the long window's reflection tail does not reach mid and high j
 timed on the direct arrival; 8 cycles is the gentlest of the three counts, keeping the most late detail — the
 suppression is there to make junctions readable, not to reduce every channel to its first cycle.
 
+A window with no length at all (all three at 0 ms, which the Gate dialog's fields allow) reads nothing, so
+`SetPhaseGateLengths` and `Validate` put the defaults back instead of refusing: a refusal made every autosave
+throw, and a file holding such a gate would have been set aside as unusable at the next start.
+
 ## Autosave, reset backup and load fallback
 
 - `LoadOrDefault` loads the autosave and falls back to a fresh default when the file is missing, unreadable or
@@ -421,7 +425,8 @@ was fitted to or the level it was fitted against; only a polarity flip changes n
   file the IR names, or Own to Off for an array without its own, leaves the calibration guard satisfied. Checked
   only where a capture exists.
 - `GateTemplate`, reduced to what the magnitude reads (it forces Fixed and ignores FDW cycles, detrend and unwrap,
-  which belong to the phase and impulse views), and `PinnedGateOffsetMs` for chain handoffs only. Where an
+  which belong to the phase and impulse views), and `PinnedGateOffsetMs` for chain handoffs only, against the pin
+  of the side the curve was gated through (`GateRightSide`), not the side shown when the bank comes back. Where an
   *auto-placed* window ended up is deliberately not guarded: it follows the earliest arrival across all channels,
   and measured, a 50 ms move changes the reading by 0.000 dB at 48 kHz and 0.078 dB at 192 kHz (the window opens
   ahead of the response and runs far past it) — two orders below anything else refused, while the guard would fire

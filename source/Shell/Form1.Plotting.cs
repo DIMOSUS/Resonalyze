@@ -11,19 +11,19 @@ public partial class Form1
     private Dictionary<ModeTab, Action> CreateModeTabActions() =>
         new()
         {
-            [ModeTab.Impulse] = () => _ = SelectModeAsync(ModeTab.Impulse),
-            [ModeTab.Frequency] = () => _ = SelectModeAsync(ModeTab.Frequency),
-            [ModeTab.Phase] = () => _ = SelectModeAsync(ModeTab.Phase),
-            [ModeTab.GroupDelay] = () => _ = SelectModeAsync(ModeTab.GroupDelay),
-            [ModeTab.Waterfall] = () => _ = SelectModeAsync(ModeTab.Waterfall),
-            [ModeTab.Burst] = () => _ = SelectModeAsync(ModeTab.Burst),
-            [ModeTab.LiveSpectrum] = () => _ = SelectModeAsync(ModeTab.LiveSpectrum),
-            [ModeTab.Autocorrelation] = () => _ = SelectModeAsync(ModeTab.Autocorrelation),
-            [ModeTab.TimeAlignment] = () => _ = SelectModeAsync(ModeTab.TimeAlignment),
-            [ModeTab.ToolsEqWizard] = () => _ = SelectModeAsync(ModeTab.ToolsEqWizard),
-            [ModeTab.ToolsSignalGenerator] = () => _ = SelectModeAsync(ModeTab.ToolsSignalGenerator),
-            [ModeTab.ToolsVirtualCrossover] = () => _ = SelectModeAsync(ModeTab.ToolsVirtualCrossover),
-            [ModeTab.ToolsFirConstructor] = () => _ = SelectModeAsync(ModeTab.ToolsFirConstructor)
+            [ModeTab.Impulse] = () => _ = modeController.ChooseAsync(ModeTab.Impulse),
+            [ModeTab.Frequency] = () => _ = modeController.ChooseAsync(ModeTab.Frequency),
+            [ModeTab.Phase] = () => _ = modeController.ChooseAsync(ModeTab.Phase),
+            [ModeTab.GroupDelay] = () => _ = modeController.ChooseAsync(ModeTab.GroupDelay),
+            [ModeTab.Waterfall] = () => _ = modeController.ChooseAsync(ModeTab.Waterfall),
+            [ModeTab.Burst] = () => _ = modeController.ChooseAsync(ModeTab.Burst),
+            [ModeTab.LiveSpectrum] = () => _ = modeController.ChooseAsync(ModeTab.LiveSpectrum),
+            [ModeTab.Autocorrelation] = () => _ = modeController.ChooseAsync(ModeTab.Autocorrelation),
+            [ModeTab.TimeAlignment] = () => _ = modeController.ChooseAsync(ModeTab.TimeAlignment),
+            [ModeTab.ToolsEqWizard] = () => _ = modeController.ChooseAsync(ModeTab.ToolsEqWizard),
+            [ModeTab.ToolsSignalGenerator] = () => _ = modeController.ChooseAsync(ModeTab.ToolsSignalGenerator),
+            [ModeTab.ToolsVirtualCrossover] = () => _ = modeController.ChooseAsync(ModeTab.ToolsVirtualCrossover),
+            [ModeTab.ToolsFirConstructor] = () => _ = modeController.ChooseAsync(ModeTab.ToolsFirConstructor)
         };
 
     // A switch shows the new tab's panels and buttons before the views draw.

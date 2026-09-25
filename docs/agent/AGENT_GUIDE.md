@@ -396,7 +396,8 @@ Three rules: never send an engine beside a hand-written value that engine
 writes (the review rejects the hand-written row); never send the wizard and a
 junction tune together; and request each engine that CHANGES something once per
 scope — `runAutoDelay` and `runAutoCrossover` per import, `autoTunePeq` per
-channel, `tuneJunction` per junction. Probes are not in that rule: they write
+channel, `tuneJunction` per junction (both sides at once: `left:B-C` and
+`right:B-C` are one junction, since the tune writes both sides). Probes are not in that rule: they write
 nothing, so ask as many as the question needs, on the same junction or not,
 within `limits.probeVariantsPerImport` variants in the reply altogether. Ask
 for a new package after anything that changed something, to read the result.

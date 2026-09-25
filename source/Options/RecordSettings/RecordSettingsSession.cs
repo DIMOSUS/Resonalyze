@@ -367,6 +367,10 @@ internal sealed partial class RecordSettingsSession
                 if (highMoved)
                 {
                     LowFrequency.Value = Math.Max(BandRange.Minimum, HighFrequency.Value - 1);
+                    if (LowFrequency.Value >= HighFrequency.Value)
+                    {
+                        HighFrequency.Value = LowFrequency.Value + 1;
+                    }
                 }
                 else
                 {

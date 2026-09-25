@@ -63,6 +63,24 @@ public sealed class VirtualCrossoverAuditionOwnCalibrationTests
         bool hasLeft, bool hasRight, bool[] expected) =>
         Assert.Equal(expected, VirtualCrossoverAudition.MeasuredSides(hasLeft, hasRight));
 
+    [Fact]
+    public void AMonoSub_DoesNotStandInForASideWhoseOwnDriversAreMissing()
+    {
+        var sub = new VirtualCrossoverChannel("A") { Pair = new VirtualCrossoverChannelPairSettings { Mono = true } };
+        var mid = new VirtualCrossoverChannel("B") { Pair = new VirtualCrossoverChannelPairSettings() };
+        sub.SideState(false).TransferImpulseResponse = [Complex.One];
+        mid.SideState(false).TransferImpulseResponse = [Complex.One];
+
+        Assert.True(VirtualCrossoverAudition.HasOwnSource([sub, mid], rightSide: false));
+        Assert.False(VirtualCrossoverAudition.HasOwnSource([sub, mid], rightSide: true));
+
+        mid.SideState(true).TransferImpulseResponse = [Complex.One];
+        Assert.True(VirtualCrossoverAudition.HasOwnSource([sub, mid], rightSide: true));
+
+        mid.Pair.Enabled = false;
+        Assert.False(VirtualCrossoverAudition.HasOwnSource([sub, mid], rightSide: false));
+    }
+
     private static VirtualCrossoverAuditionOwnCalibration Resolve(
         IReadOnlyList<(string Name, CalibrationFile? Curve, string? CalibrationName)> channels)
     {

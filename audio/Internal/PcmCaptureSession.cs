@@ -58,7 +58,8 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
 
     public int Sequence { get; set; }
     public int ReadSamples => accumulator?.ReadSamples ?? 0;
-    public int AcceptedSamples => capturePump.AcceptedFrames;
+    // A sweep position: its run starts with a Reset, and Live never reads it.
+    public int AcceptedSamples => checked((int)capturePump.AcceptedFrames);
     public long DiscontinuityCount => Interlocked.Read(ref discontinuityCount);
     public long SilentPacketCount => Interlocked.Read(ref silentPacketCount);
     public long TimestampErrorCount => Interlocked.Read(ref timestampErrorCount);
@@ -83,7 +84,14 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         }
         catch
         {
-            await device.StopAsync().ConfigureAwait(false);
+            try
+            {
+                await device.StopAsync().ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                // The start's own failure is the one to report; a device that never started cannot confirm a stop.
+            }
             throw;
         }
     }

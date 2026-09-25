@@ -109,6 +109,21 @@ public sealed class EssHarmonicAnalysisTests
     }
 
     [Fact]
+    public void MaxExcitationHz_StopsEachHarmonicWhereItsProductEntersTheFadeOut()
+    {
+        // The app's 20 kHz sweep fades out to Nyquist, and the deconvolution's band gate tapers with it: an HD2 read
+        // at 12 kHz sits at 24 kHz, deep in that taper.
+        EssSweepMetadata sweep = Sweep() with { FullAmplitudeEndFrequencyHz = 20_000 };
+
+        Assert.Equal(24_000.0, sweep.MaxExcitationHz(1), 6); // the fundamental is not a product
+        Assert.Equal(10_000.0, sweep.MaxExcitationHz(2), 6);
+        Assert.Equal(20_000.0 / 3, sweep.MaxExcitationHz(3), 6);
+        // Unknown or nonsense edges read as flat to the end, as before.
+        Assert.Equal(12_000.0, (Sweep() with { FullAmplitudeEndFrequencyHz = 0 }).MaxExcitationHz(2), 6);
+        Assert.Equal(12_000.0, (Sweep() with { FullAmplitudeEndFrequencyHz = 30_000 }).MaxExcitationHz(2), 6);
+    }
+
+    [Fact]
     public void AnalyzeEssHarmonics_SeparatesLinearAndHarmonicPackets()
     {
         double[] impulse = new double[SweepSamples];

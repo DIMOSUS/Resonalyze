@@ -212,6 +212,7 @@ public partial class Form1
     private void ApplyImpulseResponseFile(AnalyzerDocument.Request request, ImpulseResponseFile file, string path)
     {
         MeasurementResult result = file.ToResult();
+        sessionTracker.PersistCurrentSessionState();
         if (!InstallMeasurement(request, result, path, fromFile: true))
         {
             return;
@@ -363,6 +364,7 @@ public partial class Form1
     private bool FinishRewImport(
         AnalyzerDocument.Request request, MeasurementResult result, string sourceName, bool fromFile)
     {
+        sessionTracker.PersistCurrentSessionState();
         if (!InstallMeasurement(request, result, sourceName, fromFile))
         {
             return false;
@@ -464,6 +466,7 @@ public partial class Form1
                 recording.Channels,
                 recording.SampleRate,
                 channel));
+            sessionTracker.PersistCurrentSessionState();
             // New session during the decode supersedes it.
             landed = InstallMeasurement(hold, import.Result, path, fromFile: true);
         }

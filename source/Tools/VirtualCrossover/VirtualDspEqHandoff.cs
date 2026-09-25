@@ -21,6 +21,8 @@ internal sealed record VirtualDspEqReturnToken(
     double TargetLevelDb,
     PhaseAnalysisSettings GateTemplate,
     double? PinnedGateOffsetMs,
+    // The side whose gate the curve was read through: a mono token addresses LEFT but was gated by the side shown.
+    bool GateRightSide,
     CalibrationFile? Calibration,
     LiveCaptureDocument? SpatialAverage,
     // How the capture was read (Off/Own/Specific): two of those switches leave the calibration guard satisfied.
@@ -217,6 +219,7 @@ internal static class VirtualDspEqHandoff
                 targetLevelDb,
                 gateTemplate,
                 pinnedGateOffsetMs,
+                rightSide,
                 calibration,
                 spatialAverage,
                 spatialAverageCalibration,

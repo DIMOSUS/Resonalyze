@@ -41,7 +41,17 @@ internal sealed class MmeCaptureDevice : IAudioCaptureDevice
         ObjectDisposedException.ThrowIf(disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
         stopped = SampleWaiterRegistry.NewSignal();
-        source.StartRecording();
+        try
+        {
+            source.StartRecording();
+        }
+        catch
+        {
+            // An open that failed never raises RecordingStopped, so a stop would wait out its timeout for nothing.
+            stopped = null;
+            throw;
+        }
+
         return Task.CompletedTask;
     }
 

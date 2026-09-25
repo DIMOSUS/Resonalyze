@@ -424,7 +424,10 @@ statics and nested types off it, and `TimeAlignmentPanelWiringTests` drives the 
   19 dB apart on screen. Each curve's floor rides 80 dB under its own maximum so a genuinely quieter Compare record
   is drawn whole, and decimation pools min/max per bucket so narrow reflection peaks are not skipped.
 - **Delay table.** Each column holds the widest cell with a Compare delta (16 characters, e.g. "163.000 (+2.604)") plus
-  one space, so a full row is 66 characters, what the status box shows at the table font without wrapping. The recommended
-  marker goes at the end of the row, because a glyph of uncertain width ahead of the cells shifts the columns.
+  one space, so a full row is 66 characters, what the status box shows at the table font without wrapping. A wider cell (a
+  delay or delta of tens of milliseconds, thousands of samples at a high rate) moves the later columns for the whole
+  table, header included (`DelayTableText.Columns.Fit`), and click-to-copy finds a cell by its content rather than by a
+  fixed column, so both follow. The recommended marker goes at the end of the row, because a glyph of uncertain width
+  ahead of the cells shifts the columns.
 - **Imported recordings** have no absolute time (nothing ties the recorder start to playback), so the panel refuses
   them rather than show meaningless delays.

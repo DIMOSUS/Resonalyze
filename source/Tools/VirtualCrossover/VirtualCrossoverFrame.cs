@@ -30,6 +30,16 @@ internal sealed record VirtualCrossoverFrame(
                 ProcessedChannels.HasJunction(summed));
     }
 
+    /// <summary>The Sum the screen draws and the Full-window loss read-out it quotes: what leaves the tool (an overlay
+    /// capture, a tuning sheet, the Auto delay log) states the screen's structure, not every channel as one chain.</summary>
+    public (AnalysisCurve? Sum, List<VirtualCrossoverMetric.Entry> Entries) ReadSum(
+        VirtualCrossoverMetrics metrics, int smoothingInverseOctaves)
+    {
+        (_, AnalysisCurve? sum, List<SignalPoint>? loss) =
+            metrics.BuildCurves([.. Shown], smoothingInverseOctaves, Summed);
+        return (sum, metrics.BuildEntries(Summed, QuotesJunctions ? loss : null));
+    }
+
     /// <summary>The junction phase read-out over the SUMMING channels, and the direct-sound loss built from the same gated
     /// spectra; empty unless junctions are quoted. Off the UI thread: the FDW gate is 50–100 ms per new response set.
     /// See docs/tech/virtual-dsp-panel.md#junction-phase-read-out.</summary>

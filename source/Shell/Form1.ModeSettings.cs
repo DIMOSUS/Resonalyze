@@ -101,8 +101,13 @@ public partial class Form1
     private async Task ApplyLiveSpectrumOptionsAsync(LiveSpectrumOpt dialog)
     {
         LiveSpectrumRestartSnapshot before = LiveSpectrumRestartSnapshot.Capture(viewSettings.LiveSpectrum);
+        MagnitudeScale scaleBefore = viewSettings.LiveSpectrum.MagnitudeScale;
         dialog.SetOptions(viewSettings.LiveSpectrum);
         LiveSpectrumRestartSnapshot after = LiveSpectrumRestartSnapshot.Capture(viewSettings.LiveSpectrum);
+        if (viewSettings.LiveSpectrum.MagnitudeScale != scaleBefore)
+        {
+            analyzerPlot.Viewports.Forget(Mode.LiveSpectrum);
+        }
         SaveMeasurementSettings();
         RefreshSaveAvailability();
 

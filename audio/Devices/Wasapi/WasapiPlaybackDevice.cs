@@ -264,6 +264,7 @@ internal sealed class WasapiPlaybackDevice : IAudioPlaybackDevice, IRenderDiagno
     {
         TimeSpan bufferDuration = GetBufferDuration();
         int eventTimeoutMilliseconds = GetEventTimeoutMilliseconds();
+        bool silenceQueued = false;
         while (!stopRequested)
         {
             bool signaled = bufferReady.WaitOne(eventTimeoutMilliseconds);
@@ -276,9 +277,18 @@ internal sealed class WasapiPlaybackDevice : IAudioPlaybackDevice, IRenderDiagno
                 RenderUnderruns++;
                 continue;
             }
-            if (finalBufferQueued)
+
+            WasapiExclusiveRenderStep step =
+                WasapiRenderTiming.NextExclusiveStep(finalBufferQueued, silenceQueued);
+            if (step == WasapiExclusiveRenderStep.Finish)
             {
                 break;
+            }
+            if (step == WasapiExclusiveRenderStep.Silence)
+            {
+                QueueSilence(render, ActualBufferFrames);
+                silenceQueued = true;
+                continue;
             }
             if (Stopwatch.GetElapsedTime(lastBufferFillTimestamp) > bufferDuration * 1.5)
             {
@@ -340,6 +350,12 @@ internal sealed class WasapiPlaybackDevice : IAudioPlaybackDevice, IRenderDiagno
         WasapiStreamConfiguration.GetEventTimeoutMilliseconds(
             ActualBufferFrames,
             streamFormat?.SampleRate ?? 1);
+
+    private static void QueueSilence(AudioRenderClient render, int frames)
+    {
+        _ = render.GetBuffer(frames);
+        render.ReleaseBuffer(frames, AudioClientBufferFlags.Silent);
+    }
 
     private bool FillBuffer(AudioRenderClient render, int frames)
     {

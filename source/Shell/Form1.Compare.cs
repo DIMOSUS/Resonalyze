@@ -108,13 +108,16 @@ public partial class Form1
 
     private async Task LoadCompareFileAsync(string path)
     {
+        long load = compareSelection.BeginLoad();
         try
         {
             ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
-            compareSelection.Set(Path.GetFileName(path), path, file.ToResult());
-            UpdateLastImpulseResponseDirectory(path);
+            if (compareSelection.TrySet(load, Path.GetFileName(path), path, file.ToResult()))
+            {
+                UpdateLastImpulseResponseDirectory(path);
+            }
         }
-        catch (Exception exception)
+        catch (Exception exception) when (compareSelection.IsCurrent(load))
         {
             MessageBox.Show(
                 this,
@@ -127,6 +130,7 @@ public partial class Form1
 
     private async Task SelectCompareHistoryEntryAsync(Guid entryId)
     {
+        long load = compareSelection.BeginLoad();
         try
         {
             MeasurementHistoryEntry? entry = measurementHistoryService.FindById(entryId);
@@ -136,12 +140,13 @@ public partial class Form1
                 return;
             }
 
-            compareSelection.Set(
+            compareSelection.TrySet(
+                load,
                 entry.FileNameOrDisplayName,
                 entry.SourceFilePath,
                 result);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (compareSelection.IsCurrent(load))
         {
             MessageBox.Show(
                 this,

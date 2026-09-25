@@ -31,7 +31,7 @@ public sealed class GenericCsvFormat : IEqProfileFormat
                 .Append(EqTextNumbers.Format(
                     band.Type.IsAllPass() ? 0 : band.GainDb, "0.0"))
                 .Append(',')
-                .Append(EqTextNumbers.Format(band.Q, "0.0"))
+                .Append(EqTextNumbers.Format(band.Q, EqTextNumbers.QFormat))
                 .Append(',')
                 .AppendLine(TypeToken(band.Type));
         }

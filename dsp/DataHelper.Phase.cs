@@ -622,7 +622,7 @@ namespace Resonalyze.Dsp
 
             for (int i = 1; i < n / 2; i++)
             {
-                double f = i * sampleRate / (double)n;
+                double f = (double)i * sampleRate / n;
 
                 double referenced = spectrum[i].Phase + Math.Tau * i * referenceShift / n;
                 double wrapped = Math.Atan2(Math.Sin(referenced), Math.Cos(referenced));
@@ -981,7 +981,7 @@ namespace Resonalyze.Dsp
 
             return new AnalysisCurve(
                 "Phase",
-                SmoothPhaseCurve(data, smoothingInverseOctaves));
+                SmoothPhaseCurve(data, smoothingInverseOctaves, wrapped: !unwrap));
         }
 
         public static AnalysisCurve GetPhase(
@@ -995,7 +995,8 @@ namespace Resonalyze.Dsp
                 .ToList();
             return new AnalysisCurve(
                 "Phase",
-                SmoothPhaseCurve(data, settings.SmoothingInverseOctaves));
+                SmoothPhaseCurve(
+                    data, settings.SmoothingInverseOctaves, wrapped: !settings.Unwrap));
         }
 
 
@@ -1029,7 +1030,7 @@ namespace Resonalyze.Dsp
             List<SignalPoint> data = new(n / 2);
             for (int i = 1; i < n / 2; i++)
             {
-                double f = i * measurement.SampleRate / (double)n;
+                double f = (double)i * measurement.SampleRate / n;
                 data.Add(new SignalPoint(f, minimumPhase[i] / Math.PI * 180.0));
             }
 
@@ -1059,7 +1060,7 @@ namespace Resonalyze.Dsp
             for (int i = 1; i < spectrum.Length / 2; i++)
             {
                 data.Add(new SignalPoint(
-                    i * sampleRate / (double)spectrum.Length,
+                    (double)i * sampleRate / spectrum.Length,
                     minimumPhase[i] / Math.PI * 180.0));
             }
             return new AnalysisCurve(
@@ -1503,11 +1504,34 @@ namespace Resonalyze.Dsp
         private const int SmoothingMinimumSpan = 2;
 
         // Psychoacoustic mode falls back to its base width: cubic averaging is meaningless for signed phase.
+        // Wrapped phase (degrees) is smoothed as unit phasors, so a ±180° wrap is not averaged into a ramp.
         private static List<SignalPoint> SmoothPhaseCurve(
-            List<SignalPoint> data, double smoothingInverseOctaves)
+            List<SignalPoint> data, double smoothingInverseOctaves, bool wrapped = false)
         {
             double octaves = SpectrumSmoothing.SmoothingOctaves(smoothingInverseOctaves);
-            return octaves > 0 ? SmoothLinear(data, octaves) : data;
+            if (octaves <= 0)
+            {
+                return data;
+            }
+            if (!wrapped)
+            {
+                return SmoothLinear(data, octaves);
+            }
+
+            const double toRadians = Math.PI / 180.0;
+            List<SignalPoint> cosine = SmoothLinear(
+                data.Select(point => new SignalPoint(point.X, Math.Cos(point.Y * toRadians))).ToList(),
+                octaves);
+            List<SignalPoint> sine = SmoothLinear(
+                data.Select(point => new SignalPoint(point.X, Math.Sin(point.Y * toRadians))).ToList(),
+                octaves);
+            var result = new List<SignalPoint>(data.Count);
+            for (int i = 0; i < data.Count; i++)
+            {
+                result.Add(new SignalPoint(
+                    data[i].X, Math.Atan2(sine[i].Y, cosine[i].Y) / toRadians));
+            }
+            return result;
         }
 
         // Non-negative Hann kernel on log anchors with midpoint-checked chords. See docs/tech/phase-and-group-delay.md#anchored-hann-smoothing.

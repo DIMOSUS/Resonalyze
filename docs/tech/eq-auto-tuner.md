@@ -681,8 +681,10 @@ affects only the tuning sheet; profile formats are read by RBJ software, and res
 ## Equalizer APO text format
 
 `PeqTextFile` reads and writes `Preamp: -6.0 dB` / `Filter N: ON PK Fc 600 Hz Gain 6.0 dB Q 4.0`; the building blocks are
-shared with the REW format. Parsing is defensive and never throws: blank lines, comments, OFF filters, unsupported types and
-malformed lines are skipped; '.' and ',' decimals are accepted; the band count is capped. `TryParse` reports whether a
+shared with the REW format. Q is written to up to three decimals (`EqTextNumbers.QFormat`, as in the CSV and CamillaDSP
+formats): a tenth is 20 % of a wide Q 0.5, and a fitted Q exported through it came back a different filter. Parsing is defensive and never throws: blank lines, comments, OFF filters, unsupported types and
+malformed lines are skipped; a point or a lone comma is the decimal separator under any culture (`EqTextNumbers`, which
+every PEQ format reads through; a number with both is refused, since PEQ writers group no thousands); the band count is capped. `TryParse` reports whether a
 Preamp or Filter line was recognised. Band count cannot stand in for that, since a preamp-only file is a valid neutral
 profile; treating it as a failure once applied an empty curve over the user's tune.
 

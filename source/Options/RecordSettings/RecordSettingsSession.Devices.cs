@@ -675,6 +675,11 @@ internal sealed partial class RecordSettingsSession
             IsAsioSampleRateProbeFailure());
         SampleRateProbeFailed = resolution.ProbeFailed;
         SampleRateFellBackFrom = resolution.FellBackFrom;
+        if (IsAsio && resolution.FellBackFrom.HasValue)
+        {
+            // The probe answered for the old rate; the new one comes from the same open's list, so it is supported.
+            AsioDriverInfo = AsioDriverInfo with { SupportsSampleRate = true };
+        }
         if (resolution.Rates is null)
         {
             // No answer: keep the list and selection; rebuilding would replace a working rate with the fallback.

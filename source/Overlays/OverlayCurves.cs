@@ -101,10 +101,15 @@ internal sealed class OverlayCurves
 
         double offset = (double)slot.State.Offset;
 
-        // Time-domain capture re-drawn under the current framing; octave smoothing does not apply.
-        if (captured.Impulse is { Samples.Count: > 1 } capture &&
-            Sources.TryGetImpulseFrame() is { } frame)
+        // Time-domain capture re-drawn under the current framing; octave smoothing does not apply. Without a framing
+        // yet (the slots load before the mode's first build) there is nothing to draw, which is not a damaged file.
+        if (captured.Impulse is { Samples.Count: > 1 } capture)
         {
+            if (Sources.TryGetImpulseFrame() is not { } frame)
+            {
+                return null;
+            }
+
             DataPoint[] framed = ImpulseOverlayRenderer.Render(capture, frame);
             if (offset != 0.0)
             {

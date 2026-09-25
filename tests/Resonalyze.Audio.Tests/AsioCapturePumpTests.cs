@@ -320,6 +320,42 @@ public sealed class AsioCapturePumpTests
     }
 
     [Fact]
+    public void AcceptedFrames_CountsPastIntMaxValueWithoutFailingTheCapture()
+    {
+        // 2^31 frames is 3.1 hours of Live at 192 kHz.
+        const int blockFrames = 1 << 22;
+        const int blocks = 513;
+        using var processed = new SemaphoreSlim(0);
+        Exception? failure = null;
+        using var pump = new AsioCapturePump(
+            1,
+            _ => processed.Release(),
+            (_, exception) => failure = exception);
+        pump.Prepare(blockFrames * sizeof(short));
+        pump.Reset(1);
+        var buffer = new short[blockFrames];
+        GCHandle handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+        try
+        {
+            IntPtr[] inputBuffers = [handle.AddrOfPinnedObject()];
+            for (int block = 0; block < blocks; block++)
+            {
+                Assert.True(
+                    pump.TryEnqueue(inputBuffers, 0, AsioSampleType.Int16LSB, blockFrames),
+                    $"block {block} was refused");
+                Assert.True(processed.Wait(TimeSpan.FromSeconds(5)));
+            }
+        }
+        finally
+        {
+            handle.Free();
+        }
+
+        Assert.Null(failure);
+        Assert.Equal((long)blocks * blockFrames, pump.AcceptedFrames);
+    }
+
+    [Fact]
     public void TryEnqueue_AfterWarmup_DoesNotAllocateOnCallingThread()
     {
         using var processed = new ManualResetEventSlim();

@@ -69,6 +69,51 @@ public sealed class ButtonLongPressBehaviorTests
     }
 
     [Fact]
+    public async Task ALongPressReleasedOffTheButton_DoesNotEatTheNextClick()
+    {
+        using var button = new Button();
+        bool canTrigger = true;
+        using var behavior = new ButtonLongPressBehavior(
+            button,
+            650,
+            canTrigger: () => canTrigger,
+            onLongPress: () =>
+            {
+                canTrigger = false;
+                return Task.CompletedTask;
+            });
+
+        behavior.HandleMouseDown(MouseButtons.Left);
+        await behavior.HandleLongPressElapsedAsync();
+        behavior.HandleMouseUp(overButton: false);
+        Assert.False(behavior.ConsumeClickSuppression());
+
+        behavior.HandleMouseDown(MouseButtons.Left);
+        await behavior.HandleLongPressElapsedAsync();
+        Assert.False(behavior.ConsumeClickSuppression());
+    }
+
+    [Fact]
+    public async Task ANewPressWhileTheLongPressCannotFire_ClearsASuppressionLeftOver()
+    {
+        using var button = new Button();
+        bool canTrigger = true;
+        using var behavior = new ButtonLongPressBehavior(
+            button,
+            650,
+            canTrigger: () => canTrigger,
+            onLongPress: () => Task.CompletedTask);
+
+        behavior.HandleMouseDown(MouseButtons.Left);
+        await behavior.HandleLongPressElapsedAsync();
+        canTrigger = false;
+
+        behavior.HandleMouseDown(MouseButtons.Left);
+
+        Assert.False(behavior.ConsumeClickSuppression());
+    }
+
+    [Fact]
     public async Task NewPress_AfterALongPress_ArmsAFreshCycle()
     {
         using var button = new Button();

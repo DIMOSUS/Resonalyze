@@ -342,7 +342,10 @@ reference.
 Phase-domain display smoothing (`SmoothPhaseCurve`) decodes the stored smoothing
 code through `SpectrumSmoothing`; the psychoacoustic magnitude mode falls back to
 its base width, because cubic magnitude averaging is meaningless for a signed phase
-trace.
+trace. Wrapped phase is smoothed as unit phasors (cosine and sine separately, then
+`atan2`): averaged as numbers, +170° and −170° meet at 0°, and every wrap grew a
+false ramp across the kernel's width. Unwrapped and excess phase are continuous and
+are averaged directly.
 
 ## Magnitude spectra
 

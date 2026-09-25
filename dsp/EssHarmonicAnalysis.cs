@@ -7,15 +7,23 @@ using MathNet.Numerics.IntegralTransforms;
 namespace Resonalyze.Dsp;
 
 /// <summary>ESS geometry used to place harmonic packets. See docs/tech/dsp-ess-harmonics.md.</summary>
+/// <param name="FullAmplitudeEndFrequencyHz">Where the sweep's fade-out begins: above it the deconvolution's band gate
+/// tapers to <paramref name="EndFrequencyHz"/>, so a harmonic product up there reads low. Null or non-positive when
+/// unknown, read as flat to the end.</param>
 public sealed record EssSweepMetadata(
     double StartFrequencyHz,
     double EndFrequencyHz,
     double DurationSeconds,
     double SampleRateHz,
     int SweepSampleCount,
-    int DeconvolutionPeakIndex)
+    int DeconvolutionPeakIndex,
+    double? FullAmplitudeEndFrequencyHz = null)
 {
     public double NyquistHz => SampleRateHz / 2.0;
+
+    /// <summary>Top of the band the deconvolution passes at full gain.</summary>
+    public double FlatEndFrequencyHz =>
+        FullAmplitudeEndFrequencyHz is > 0 and var flat ? Math.Min(flat, EndFrequencyHz) : EndFrequencyHz;
 
     public double FrequencyRatio => EndFrequencyHz / StartFrequencyHz;
 
@@ -54,9 +62,12 @@ public sealed record EssSweepMetadata(
             deconvolutionPeakIndex);
     }
 
-    /// <summary>Above min(sweep end, Nyquist/order) harmonic n·f leaves the sweep band or passes Nyquist.</summary>
+    /// <summary>Above min(sweep end, Nyquist/order) harmonic n·f leaves the sweep band or passes Nyquist; a harmonic
+    /// also stops where its product n·f enters the fade-out, whose taper the deconvolution applies to it.</summary>
     public double MaxExcitationHz(int order) =>
-        Math.Min(EndFrequencyHz, NyquistHz / order);
+        order <= 1
+            ? Math.Min(EndFrequencyHz, NyquistHz)
+            : Math.Min(EndFrequencyHz, Math.Min(FlatEndFrequencyHz, NyquistHz) / order);
 }
 
 /// <summary>Absolute sample indices; higher harmonics sit earlier, so Start &lt;= Peak &lt;= End.</summary>

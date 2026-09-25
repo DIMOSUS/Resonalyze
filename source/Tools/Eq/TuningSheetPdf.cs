@@ -75,12 +75,24 @@ internal static class TuningSheetPdf
         Column valueColumn = table.AddColumn(Unit.FromCentimeter(3.5));
         valueColumn.RightPadding = Unit.FromMillimeter(2);
 
-        AddStatRow(table, "RMS error", $"{Number(stats.RmsErrorDb, "0.0")} dB", QualityColor(stats.RmsErrorDb, 3, 6));
-        AddStatRow(table, "Max error", $"{Number(stats.MaxErrorDb, "0.0")} dB", QualityColor(stats.MaxErrorDb, 6, 12));
+        AddErrorRow(table, "RMS error", stats.RmsErrorDb, 3, 6);
+        AddErrorRow(table, "Max error", stats.MaxErrorDb, 6, 12);
         AddStatRow(table, "Filters used", stats.FiltersUsed.ToString(CultureInfo.InvariantCulture), Colors.Black);
         AddStatRow(table, "Peak boost", $"{Signed(stats.PeakBoostDb)} dB", stats.PeakBoostDb > 0.05 ? BadColor : GoodColor);
         AddStatRow(table, "Peak cut", $"{Signed(stats.PeakCutDb)} dB", InfoColor);
         AddStatRow(table, "Headroom", $"{Signed(stats.HeadroomDb)} dB", stats.HeadroomDb < -0.05 ? BadColor : GoodColor);
+    }
+
+    private static void AddErrorRow(Table table, string label, double? errorDb, double goodBelow, double badAbove)
+    {
+        if (errorDb is { } db)
+        {
+            AddStatRow(table, label, $"{Number(db, "0.0")} dB", QualityColor(db, goodBelow, badAbove));
+        }
+        else
+        {
+            AddStatRow(table, label, "-", Colors.Black);
+        }
     }
 
     private static void AddStatRow(Table table, string label, string value, Color valueColor)

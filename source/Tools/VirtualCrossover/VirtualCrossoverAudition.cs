@@ -31,6 +31,16 @@ internal sealed class VirtualCrossoverAudition(
                 "Nothing was rendered; press Audition track again."));
         }
 
+        // A mono block sums into both sides, so a side holding only mono blocks is missing its own drivers.
+        if (!HasOwnSource(session.Channels, rightSide: false) && HasOwnSource(session.Channels, rightSide: true))
+        {
+            leftSide = null;
+        }
+        else if (!HasOwnSource(session.Channels, rightSide: true) && HasOwnSource(session.Channels, rightSide: false))
+        {
+            rightSide = null;
+        }
+
         if (leftSide == null && rightSide == null)
         {
             return (null, new AuditionRefusal(
@@ -158,6 +168,13 @@ internal sealed class VirtualCrossoverAudition(
                         $"{group.Label}: {string.Join(", ", group.Channels)}")) +
                 "), and a render carries a single correction for both sides");
     }
+
+    /// <summary>Whether an enabled stereo block has a source on this side; mono blocks feed both and prove neither.</summary>
+    internal static bool HasOwnSource(IReadOnlyList<VirtualCrossoverChannel> channels, bool rightSide) =>
+        channels.Any(channel =>
+            channel.Pair.Enabled &&
+            !channel.Pair.Mono &&
+            channel.SideState(rightSide).ProcessingSource != null);
 
     /// <summary>Side flags (<c>false</c> = left) the ears render from; half a tune names only its measured side.</summary>
     internal static List<bool> MeasuredSides(bool hasLeft, bool hasRight) =>

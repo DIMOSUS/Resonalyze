@@ -25,6 +25,26 @@ internal static class VirtualCrossoverAutoSetup
                 channel.SideState(session.ActiveSideRight).TransferImpulseResponse != null)
             .ToList();
 
+    /// <summary>Why the proposal may not be written: it is an IIR crossover on both sides, and one over a designed FIR
+    /// crossover would filter every edge twice. A correction FIR is not a crossover and stays under it.</summary>
+    public static string? FirCrossoverRefusal(IReadOnlyList<VirtualCrossoverChannel> participating)
+    {
+        foreach (VirtualCrossoverChannel channel in participating)
+        {
+            foreach (bool rightSide in new[] { false, true })
+            {
+                if (channel.SideSettings(rightSide).HasFirCrossover)
+                {
+                    string side = channel.Pair.Mono ? string.Empty : rightSide ? " on its right side" : " on its left side";
+                    return $"channel {channel.Name} runs a designed FIR crossover{side}, and Auto crossover writes " +
+                        "IIR crossovers only — clear the kernel first";
+                }
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Each participant's driver curve, band and corners as the wizard reads them, off the shown side.</summary>
     /// <exception cref="ArgumentException">A response has no usable band.</exception>
     public static List<AutoSetupWizardChannel> ReadChannels(

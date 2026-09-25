@@ -54,6 +54,36 @@ public sealed class AnalyzerViewSettingsTests
     }
 
     [Fact]
+    public void AHistoryEntryOrANewSessionKeepsTheRigsLiveCalibration()
+    {
+        var left = new AnalyzerViewSettings();
+        left.LiveSpectrum.CalibrationId = "old-rig";
+        MeasurementSessionSnapshot session = left.CaptureSession(ModeTab.LiveSpectrum, []);
+        var view = new AnalyzerViewSettings();
+        view.LiveSpectrum.CalibrationId = "current-rig";
+
+        view.ApplySession(session, sampleRate: 48_000);
+        Assert.Equal("current-rig", view.LiveSpectrum.CalibrationId);
+
+        view.ApplySession(new MeasurementSessionSnapshot(), sampleRate: 48_000);
+        Assert.Equal("current-rig", view.LiveSpectrum.CalibrationId);
+    }
+
+    // The shell forgets these modes' zoom, as it does for the panels' own scale change.
+    [Fact]
+    public void ASessionNamesTheModesWhoseMagnitudeAxisItChanged()
+    {
+        var left = new AnalyzerViewSettings();
+        left.FrequencyResponse.MagnitudeScale = MagnitudeScale.SoundPressureLevel;
+        MeasurementSessionSnapshot spl = left.CaptureSession(ModeTab.Frequency, []);
+        var view = new AnalyzerViewSettings();
+
+        Assert.Equal([Mode.FrequencyResponse], view.ApplySession(spl, sampleRate: 48_000));
+        Assert.Empty(view.ApplySession(spl, sampleRate: 48_000));
+        Assert.Equal([Mode.FrequencyResponse], view.ApplySession(new MeasurementSessionSnapshot(), sampleRate: 48_000));
+    }
+
+    [Fact]
     public void TheSettingsFileKeepsTheViewAcrossARestart()
     {
         using var engine = new ExpSweepMeasurement(new FakeAudioSessionFactory());

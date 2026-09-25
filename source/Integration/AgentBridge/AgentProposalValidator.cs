@@ -453,10 +453,16 @@ internal static class AgentProposalValidator
     private static string? ScopeOf(AgentOperation operation) => operation switch
     {
         AgentChannelOperation channel => channel.ChannelId,
-        TuneJunctionOperation junction => junction.JunctionId,
+        TuneJunctionOperation junction => JunctionScope(junction.JunctionId),
         ProbeOperation probe => $"{probe.Probe}:{probe.JunctionId}",
         _ => null
     };
+
+    // A tune writes one crossover to both sides of both blocks, so left:A-B and right:A-B are one junction to it.
+    private static string JunctionScope(string junctionId) =>
+        AgentJunctionIds.TryParse(junctionId, out _, out string lower, out string upper)
+            ? $"{lower}-{upper}"
+            : junctionId;
 
     private static void AddFinalStateNotes(List<AgentOperationVerdict> verdicts)
     {

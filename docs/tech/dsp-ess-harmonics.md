@@ -19,7 +19,10 @@ position is derived from it, never from constants scattered elsewhere.
   complex-wise, which makes it depend on their relative phase.
 - The app's sweep always ends at Nyquist and spans `octaves` downward, so `f1 = Nyquist / 2^octaves`
   (`EssSweepMetadata.FromExponentialSweep`). Harmonic *n* is observable only up to
-  `min(sweep end, Nyquist / n)` (`MaxExcitationHz`).
+  `min(sweep end, Nyquist / n)` (`MaxExcitationHz`). A recorded sweep is flat only to its requested top
+  and fades out from there to Nyquist, and the deconvolution's band gate tapers with it, so the product
+  `n·f` must also stay under that full-amplitude edge (`FullAmplitudeEndFrequencyHz`): at 48 kHz with
+  the default 20 kHz top, HD2 stops at 10 kHz rather than reading its last two kilohertz low.
 
 ## Sweep rate from harmonic positions
 

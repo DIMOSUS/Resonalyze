@@ -445,6 +445,24 @@ public partial class EqWizardPanel
             EditBandFromPlot(index, EqBandHandles.StepQ(session.Bank.Bands[index], notches));
         // A drag lands as one undo step when let go; wheel notches wait for the idle timer like typing.
         handles.Released += CommitBankChange;
+        // Alt-Tab or a dialog taking the mouse mid-drag raises no release; let go there too, or Del stays refused. Only
+        // a capture the plot took counts as lost: a drag that never held one (the controller driven directly) is not.
+        bool plotCaptured = false;
+        plotWizard.MouseCaptureChanged += (_, _) =>
+        {
+            if (plotWizard.Capture)
+            {
+                plotCaptured = true;
+                return;
+            }
+
+            if (plotCaptured && handles.Dragging)
+            {
+                handles.Release();
+            }
+
+            plotCaptured = false;
+        };
     }
 
     // As a strip edit: the bank rounds the band to what its strip can show, and the strip is told without echoing back.
@@ -565,7 +583,8 @@ public partial class EqWizardPanel
             case Keys.Control | Keys.Shift | Keys.Z:
                 RedoBankChange();
                 return true;
-            case Keys.Delete when selectedSlot != null && !KeyboardFocus.IsTyping(this):
+            // Not while a handle is held: the drag would carry on with the next band under the pointer.
+            case Keys.Delete when selectedSlot != null && !plot.Handles.Dragging && !KeyboardFocus.IsTyping(this):
                 DeleteBand(selectedSlot);
                 return true;
             default:

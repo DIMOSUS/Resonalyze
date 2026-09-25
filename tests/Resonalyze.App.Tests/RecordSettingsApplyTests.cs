@@ -130,6 +130,23 @@ public sealed class RecordSettingsApplyTests
     }
 
     [Fact]
+    public void AnotherAsioDriver_AcceptsTheRateTheListFellBackTo()
+    {
+        (RecordSettingsSession session, FakeRecordDevices devices) = Load(Settings(AudioBackend.Asio));
+        devices.AsioDrivers["Other"] = FakeRecordDevices.Asio("Other", 2, 2, 96_000);
+        session.AsioDriver.Add(new AsioDeviceInfo("Other"));
+        session.AsioDriver.Select(new AsioDeviceInfo("Other"));
+        Assert.Equal(96_000, session.SelectedSampleRate);
+        Assert.Equal(48_000, session.SampleRateFellBackFrom);
+        using ExpSweepMeasurement engine = Engine();
+
+        RecordSettingsApply.Apply(session, engine, new MeasurementSettingsFile.SweepMeasurementSettings());
+
+        Assert.Equal(96_000, engine.SampleRate);
+        Assert.Equal("Other", engine.AsioDriverName);
+    }
+
+    [Fact]
     public void AWasapiEndpointGoneSinceTheListWasReadIsRefused()
     {
         (RecordSettingsSession session, FakeRecordDevices devices) = Load(Settings(AudioBackend.WasapiShared));

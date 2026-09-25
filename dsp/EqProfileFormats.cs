@@ -10,10 +10,11 @@ public static class EqProfileFormats
         new EasyEffectsFormat(),
         new CamillaDspYamlFormat(),
         new AudiotecFischerFormat(),
-        // Coefficients are rate-specific, so one labelled entry per device rate (car DSPs 44.1k, miniDSP 2x4 48k, HD 96k).
+        // Coefficients are rate-specific, so one labelled entry per device rate (car DSPs 44.1k, miniDSP 2x4 48k, HD 96k, C-DSP 8x12 192k).
         new MiniDspFormat(44_100),
         new MiniDspFormat(48_000),
         new MiniDspFormat(96_000),
+        new MiniDspFormat(192_000),
         new GraphicEqFormat()
     };
 

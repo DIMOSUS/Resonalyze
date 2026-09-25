@@ -203,7 +203,8 @@ Set rules, applied after per-row checks:
 
 - Two applicable edits of the same parameter on one channel are both refused; neither wins.
 - Each engine runs once per scope per import (per channel for Auto-tune, per junction for the
-  junction tune, once for the project-wide engines); the first request is kept. Probes are exempt (a
+  junction tune, once for the project-wide engines); the first request is kept. A junction is its two
+  blocks whichever side its id names: the tune writes both sides, so `left:B-C` and `right:B-C` are one. Probes are exempt (a
   second probe is another question) and bounded by budgets instead.
 - The target level is one project datum: only the first stated level stands.
 - The Auto crossover wizard rewrites every junction and runs first, so a junction tune beside it is

@@ -40,6 +40,21 @@ public sealed class EqProfileFormatsTests
     }
 
     [Fact]
+    public void BidirectionalFormats_KeepAFittedQToAThousandth()
+    {
+        var curve = new EqualizationCurve([new PeqBand(63.2, 0.547, -5.5), new PeqBand(2_400, 3.26, 2.5)]);
+        foreach (IEqProfileFormat format in EqProfileFormats.All.Where(f => f.CanImport && f.CanExport))
+        {
+            EqualizationCurve parsed = format.Import(format.Export(curve));
+            for (int i = 0; i < curve.Bands.Count; i++)
+            {
+                Assert.True(Math.Abs(curve.Bands[i].Q - parsed.Bands[i].Q) < 0.0006,
+                    $"{format.Name}: Q {curve.Bands[i].Q} came back as {parsed.Bands[i].Q}");
+            }
+        }
+    }
+
+    [Fact]
     public void ExportOnlyFormats_AreNotImportable()
     {
         foreach (IEqProfileFormat format in EqProfileFormats.All.Where(f => !f.CanImport))
@@ -54,9 +69,37 @@ public sealed class EqProfileFormatsTests
     {
         string json = new EasyEffectsFormat().Export(SampleCurve());
 
-        Assert.Contains("\"equalizer\"", json);
         Assert.Contains("\"type\": \"Bell\"", json);
         Assert.Contains("\"output-gain\": -6", json);
+    }
+
+    [Fact]
+    public void EasyEffects_ExportNamesTheInstanceAndListsItInThePluginOrder()
+    {
+        // EasyEffects 7 refuses a preset whose pipeline has no "plugins_order", and loads only the instances it lists.
+        using var document = System.Text.Json.JsonDocument.Parse(new EasyEffectsFormat().Export(SampleCurve()));
+        System.Text.Json.JsonElement output = document.RootElement.GetProperty("output");
+
+        Assert.Equal("equalizer#0", Assert.Single(output.GetProperty("plugins_order").EnumerateArray()).GetString());
+        Assert.Equal(3, output.GetProperty("equalizer#0").GetProperty("num-bands").GetInt32());
+    }
+
+    [Fact]
+    public void EasyEffects_ReadsAnEasyEffects7PresetWithANumberedInstance()
+    {
+        string json =
+            "{ \"output\": { \"blocklist\": [], \"plugins_order\": [ \"limiter#0\", \"equalizer#1\" ]," +
+            " \"limiter#0\": { \"bypass\": false }," +
+            " \"equalizer#1\": { \"input-gain\": -1.5, \"output-gain\": -2, \"left\": {" +
+            " \"band0\": { \"type\": \"Bell\", \"mute\": false, \"frequency\": 1000, \"gain\": 6, \"q\": 1 }," +
+            " \"band1\": { \"type\": \"Bell\", \"mute\": true, \"frequency\": 2000, \"gain\": 6, \"q\": 1 }," +
+            " \"band2\": { \"type\": \"Bell\", \"frequency\": 4000, \"gain\": -3, \"q\": 2 } } } } }";
+
+        EqualizationCurve curve = Import(new EasyEffectsFormat(), json);
+
+        // Input and output gain are both flat stages around the bands; a muted band does not sound.
+        Assert.Equal(-3.5, curve.PreampDb, 4);
+        Assert.Equal(new[] { 1000.0, 4000.0 }, curve.Bands.Select(b => b.FrequencyHz));
     }
 
     [Fact]
@@ -132,6 +175,19 @@ public sealed class EqProfileFormatsTests
     }
 
     [Fact]
+    public void CamillaDsp_PipelineStepListsItsChannelsAsCamillaDsp3Requires()
+    {
+        // CamillaDSP 3 rejects a step's v2 "channel" field as unknown; it takes "channels: [..]".
+        var root = (IDictionary<object, object>)new YamlDotNet.Serialization.DeserializerBuilder().Build()
+            .Deserialize<object>(new CamillaDspYamlFormat().Export(SampleCurve()))!;
+
+        var step = (IDictionary<object, object>)Assert.Single((IList<object>)root["pipeline"]);
+        Assert.False(step.ContainsKey("channel"));
+        Assert.Equal(new object[] { "0", "1" }, (IList<object>)step["channels"]);
+        Assert.Equal(4, ((IList<object>)step["names"]).Count);
+    }
+
+    [Fact]
     public void CamillaDsp_ImportsPeakingAndGainSkippingOthers()
     {
         string yaml =
@@ -188,6 +244,17 @@ public sealed class EqProfileFormatsTests
         BiquadCoefficients firstBand = PeakingBiquad.Compute(curve.Bands[0], 48_000);
         Assert.Equal(firstBand.B0, b0[1], 6);
         Assert.Equal(firstBand.A2, a2[1], 6);
+    }
+
+    [Fact]
+    public void MiniDsp_IsExportableAtEveryMiniDspProcessorsRate()
+    {
+        foreach (DspProcessorPreset preset in DspProcessorCatalog.Presets
+            .Where(preset => preset.Manufacturer == "miniDSP"))
+        {
+            string name = new MiniDspFormat(preset.SampleRateHz).Name;
+            Assert.Contains(EqProfileFormats.Exportable, format => format.Name == name);
+        }
     }
 
     private static double[] Coefficients(string text, string prefix) => text

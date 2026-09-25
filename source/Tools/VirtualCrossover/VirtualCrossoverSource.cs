@@ -95,7 +95,8 @@ internal sealed class ResolvedVirtualDspSource
                 result.SweepDurationSeconds,
                 result.SampleRate,
                 result.SweepSampleCount,
-                result.SweepDeconvolution.PeakIndex);
+                result.SweepDeconvolution.PeakIndex,
+                result.MeasuredHighFrequencyHz);
 
             double[] real = new double[ir.Length];
             for (int i = 0; i < ir.Length; i++)

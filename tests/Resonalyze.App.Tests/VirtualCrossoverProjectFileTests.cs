@@ -1053,13 +1053,49 @@ public sealed class VirtualCrossoverProjectFileTests
         badDetrend.PhaseGateRight.DetrendMs = double.NaN;
         Assert.Throws<InvalidDataException>(() => badDetrend.Validate());
 
-        var emptyGate = new VirtualCrossoverProjectFile
+        var negativeGate = new VirtualCrossoverProjectFile { PhaseGatePlateauMs = -1 };
+        Assert.Throws<InvalidDataException>(() => negativeGate.Validate());
+    }
+
+    [Fact]
+    public void AGateWithNoLength_KeepsTheDefaults_SoTheProjectStillSavesAndAFileHoldingOneStillLoads()
+    {
+        var project = new VirtualCrossoverProjectFile();
+        project.SetPhaseGateLengths(0, 0, 0);
+        AssertDefaultGate(project);
+
+        project.SetPhaseGateLengths(0, 12, 0);
+        Assert.Equal((0.0, 12.0, 0.0), (project.PhaseGateLeftMs, project.PhaseGatePlateauMs, project.PhaseGateRightMs));
+
+        string root = CreateTemporaryDirectory();
+        try
         {
-            PhaseGateLeftMs = 0,
-            PhaseGatePlateauMs = 0,
-            PhaseGateRightMs = 0
-        };
-        Assert.Throws<InvalidDataException>(() => emptyGate.Validate());
+            new VirtualCrossoverProjectFile { StereoLevelDifferenceDb = -1.5 }.Save(root);
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            file["phaseGateLeftMs"] = 0;
+            file["phaseGatePlateauMs"] = 0;
+            file["phaseGateRightMs"] = 0;
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Null(loaded.BackupNoticePath);
+            Assert.Equal(-1.5, loaded.StereoLevelDifferenceDb);
+            AssertDefaultGate(loaded);
+            loaded.Save(root);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+
+        static void AssertDefaultGate(VirtualCrossoverProjectFile project)
+        {
+            Assert.Equal(VirtualCrossoverProjectFile.DefaultPhaseGateLeftMs, project.PhaseGateLeftMs);
+            Assert.Equal(VirtualCrossoverProjectFile.DefaultPhaseGatePlateauMs, project.PhaseGatePlateauMs);
+            Assert.Equal(VirtualCrossoverProjectFile.DefaultPhaseGateRightMs, project.PhaseGateRightMs);
+        }
     }
 
     [Fact]

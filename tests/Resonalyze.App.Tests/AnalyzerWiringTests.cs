@@ -108,6 +108,26 @@ public sealed class AnalyzerWiringTests : IDisposable
         });
     }
 
+    [Fact]
+    public void AnEntryLeftForAnotherFileKeepsTheModeItWasLeftIn()
+    {
+        string first = WriteMeasurement("first.json", peak: 240);
+        string second = WriteMeasurement("second.json", peak: 480);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Open(first);
+            analyzer.Select(ModeTab.Phase);
+
+            analyzer.Open(second);
+
+            MeasurementHistoryEntry entry = Assert.Single(
+                analyzer.History.Entries,
+                candidate => candidate.SourceFilePath == first);
+            Assert.Equal(ModeTab.Phase, entry.Session!.ActiveMode);
+        });
+    }
+
     // A newer request supersedes an older one still reading, whichever finishes first.
     [Fact]
     public void AStaleActivationDoesNotLandOverANewerOne()

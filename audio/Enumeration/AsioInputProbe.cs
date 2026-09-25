@@ -9,6 +9,9 @@ public sealed record AsioInputProbeChannelResult(
 
 public static class AsioInputProbe
 {
+    /// <summary>Beyond the capture itself: the driver's start and stop.</summary>
+    private static readonly TimeSpan StartAndStopAllowance = TimeSpan.FromSeconds(10);
+
     public static async Task<IReadOnlyList<AsioInputProbeChannelResult>> CaptureAsync(
         string driverName,
         int sampleRate,
@@ -44,20 +47,31 @@ public static class AsioInputProbe
             inputChannelOffset: 0,
             outputChannelOffset,
             inputChannelCount: driverInfo.InputChannels.Count);
-        await session.StartAsync(
-            new LoopingWaveProvider(silence),
-            sampleRate,
-            autoStop: false,
-            cancellationToken,
-            expectedTotalSamples: (int)((long)sampleRate * milliseconds / 1000) + sampleRate)
-            .ConfigureAwait(false);
+        TimeSpan timeout = TimeSpan.FromMilliseconds(milliseconds) + StartAndStopAllowance;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(timeout);
         try
         {
-            await Task.Delay(milliseconds, cancellationToken).ConfigureAwait(false);
+            await session.StartAsync(
+                new LoopingWaveProvider(silence),
+                sampleRate,
+                autoStop: false,
+                deadline.Token,
+                expectedTotalSamples: (int)((long)sampleRate * milliseconds / 1000) + sampleRate)
+                .ConfigureAwait(false);
+            try
+            {
+                await Task.Delay(milliseconds, deadline.Token).ConfigureAwait(false);
+            }
+            finally
+            {
+                await session.StopAsync().ConfigureAwait(false);
+            }
         }
-        finally
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            await session.StopAsync().ConfigureAwait(false);
+            throw new TimeoutException(
+                $"The ASIO driver '{driverName}' did not finish the input test within {timeout.TotalSeconds:0} seconds.");
         }
 
         // Drain accepted blocks before the snapshot resets the generation and queue.

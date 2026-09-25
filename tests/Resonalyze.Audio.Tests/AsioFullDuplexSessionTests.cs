@@ -80,6 +80,25 @@ public sealed class AsioFullDuplexSessionTests
         Assert.Equal([1f], snapshot[0]);
     }
 
+    [Fact]
+    public async Task ADriverResetRequest_FaultsTheWaiters_AndEveryLaterOne()
+    {
+        using var session = new AsioFullDuplexSession(
+            "test-driver",
+            inputChannelOffset: 0,
+            outputChannelOffset: 0);
+        session.ResetCapture(expectedTotalSamples: 8);
+        Task pending = session.WaitForSamplesAsync(4, CancellationToken.None);
+
+        session.ReportDriverReset();
+
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => pending.WaitAsync(TimeSpan.FromSeconds(2)));
+        Assert.Contains("'test-driver' asked to be reset", failure.Message, StringComparison.Ordinal);
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => session.WaitForSamplesAsync(4, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2)));
+    }
+
     private static AsioCaptureBlock CreateBlock(float value, int generation)
     {
         byte[] bytes = BitConverter.GetBytes(value);

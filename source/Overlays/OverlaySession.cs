@@ -88,6 +88,21 @@ internal sealed class OverlaySession
         plotChanged();
     }
 
+    /// <summary>The Show all button: ticks every slot of the mode that can show, as if the user ticked each.</summary>
+    public void ShowAll(Mode mode)
+    {
+        Mode overlayMode = OverlayModes.SlotModeFor(mode);
+        foreach (OverlaySlot slot in slots)
+        {
+            if (slot.SeriesMode == overlayMode && slot.CheckEnabled && slot.Title.Length > 0)
+            {
+                SetShown(slot, true);
+            }
+        }
+
+        plotChanged();
+    }
+
     public void HideAll()
     {
         foreach (OverlaySlot slot in slots)
@@ -148,11 +163,13 @@ internal sealed class OverlaySession
         plotChanged();
     }
 
-    public IReadOnlyList<OverlaySlotOption> CaptureSourceOptions()
+    /// <summary>The captures a calculated overlay or target in <paramref name="forSlot"/> may read: never its own, which it replaces.</summary>
+    public IReadOnlyList<OverlaySlotOption> CaptureSourceOptions(OverlaySlot forSlot)
     {
         Mode overlayMode = Sources.CurrentOverlayMode;
         return slots
             .Where(slot =>
+                slot != forSlot &&
                 slot.Kind == OverlayKind.Captured &&
                 slot.SeriesMode == overlayMode &&
                 slot.State.HasCaptureData)
@@ -196,6 +213,12 @@ internal sealed class OverlaySession
 
         OverlaySeries.Remove(model, slot.SeriesMode, slot.Index);
         OverlaySlotState state = slot.State;
+        // An impulse capture is stored framing-free and every build may move the origin, unit or level scale.
+        if (state.Kind == OverlayKind.Captured && state.Captured?.Impulse is { Samples.Count: > 1 })
+        {
+            UpdateDrawPoints(slot);
+        }
+
         bool drawn = state.Kind switch
         {
             OverlayKind.Target => AddTarget(model, slot, state.Target!, state.SmoothingInverseOctaves, state.Appearance, state.Title),

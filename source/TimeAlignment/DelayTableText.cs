@@ -15,13 +15,32 @@ internal static class DelayTableText
     /// <summary>At the END of the row: a glyph of uncertain width ahead of the cells would shift the columns.</summary>
     public const string RecommendedMarker = " ◀";
 
+    private const char MarkerGlyph = '◀';
+
     private static readonly string[] RowLabels =
         [FirstArrivalLabel, StrongestPeakLabel, EnergyOnsetLabel];
 
-    public static string FormatHeader() =>
+    /// <summary>Where one table's cells start: the default columns, pushed right where a cell would run into the next.</summary>
+    public readonly record struct Columns(int Samples, int Meters)
+    {
+        public static Columns Default { get; } = new(SamplesColumn, MetersColumn);
+
+        public static Columns Fit(IReadOnlyCollection<(string Milliseconds, string Samples)> rows)
+        {
+            int samples = rows.Aggregate(
+                SamplesColumn, (column, row) => Math.Max(column, MillisecondsColumn + row.Milliseconds.Length + 1));
+            int meters = rows.Aggregate(
+                MetersColumn, (column, row) => Math.Max(column, samples + row.Samples.Length + 1));
+            return new Columns(samples, meters);
+        }
+    }
+
+    public static string FormatHeader() => FormatHeader(Columns.Default);
+
+    public static string FormatHeader(Columns columns) =>
         "Measured delay:".PadRight(MillisecondsColumn) +
-        "ms".PadRight(SamplesColumn - MillisecondsColumn) +
-        "samples".PadRight(MetersColumn - SamplesColumn) +
+        "ms".PadRight(columns.Samples - MillisecondsColumn) +
+        "samples".PadRight(columns.Meters - columns.Samples) +
         "meters (20°C)";
 
     public static string FormatLine(
@@ -29,21 +48,15 @@ internal static class DelayTableText
         string milliseconds,
         string samples,
         string meters) =>
-        label.PadRight(MillisecondsColumn) + FormatCells(milliseconds, samples, meters);
+        label.PadRight(MillisecondsColumn) + FormatCells(milliseconds, samples, meters, Columns.Default);
 
-    public static string FormatCells(string milliseconds, string samples, string meters) =>
-        milliseconds.PadRight(SamplesColumn - MillisecondsColumn) +
-        samples.PadRight(MetersColumn - SamplesColumn) +
+    public static string FormatCells(string milliseconds, string samples, string meters, Columns columns) =>
+        milliseconds.PadRight(columns.Samples - MillisecondsColumn) +
+        samples.PadRight(columns.Meters - columns.Samples) +
         meters;
 
     public static bool IsDelayRow(string line) =>
         RowLabels.Any(label => line.StartsWith(label, StringComparison.Ordinal));
-
-    public static int? CellAt(int column) =>
-        column >= MetersColumn ? MetersColumn
-        : column >= SamplesColumn ? SamplesColumn
-        : column >= MillisecondsColumn ? MillisecondsColumn
-        : null;
 
     public static string FormatValueWithDelta(
         double value,
@@ -70,31 +83,33 @@ internal static class DelayTableText
 
     /// <summary>What a click at <paramref name="column"/> of a report line copies: a delay cell's number, or empty.</summary>
     public static string CopyableValue(string line, int column) =>
-        IsDelayRow(line) && CellAt(column) is { } cellStart
-            ? GetValue(line, cellStart)
-            : string.Empty;
+        IsDelayRow(line) ? GetValue(line, column) : string.Empty;
 
-    public static string GetValue(string line, int startColumn)
+    /// <summary>The number of the cell <paramref name="column"/> falls in (its delta and padding included); empty in the label.</summary>
+    /// <remarks>Cells are found by their content, not by fixed columns: <see cref="Columns.Fit"/> may widen a table.</remarks>
+    public static string GetValue(string line, int column)
     {
-        if (line.Length <= startColumn)
+        string value = string.Empty;
+        int index = MillisecondsColumn;
+        while (index < line.Length && index <= column)
         {
-            return string.Empty;
+            if (line[index] == ' ')
+            {
+                index++;
+                continue;
+            }
+
+            int end = line.IndexOf(' ', index);
+            end = end < 0 ? line.Length : end;
+            string token = line[index..end];
+            if (!token.StartsWith('(') && token[0] != MarkerGlyph)
+            {
+                value = token;
+            }
+
+            index = end;
         }
 
-        int endColumn = startColumn < SamplesColumn
-            ? Math.Min(SamplesColumn, line.Length)
-            : startColumn < MetersColumn
-                ? Math.Min(MetersColumn, line.Length)
-                : line.Length;
-        string cell = line[startColumn..endColumn];
-        int markerStart = cell.IndexOf('◀');
-        if (markerStart >= 0)
-        {
-            cell = cell[..markerStart];
-        }
-
-        cell = cell.Trim();
-        int deltaStart = cell.IndexOf(" (", StringComparison.Ordinal);
-        return deltaStart >= 0 ? cell[..deltaStart] : cell;
+        return value;
     }
 }

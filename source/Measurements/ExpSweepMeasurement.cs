@@ -531,7 +531,9 @@ namespace Resonalyze
                 LoopbackDistortion: null,
                 LoopbackWorstRun: null,
                 ArrayMicrophones: []);
-            // A recording made elsewhere freezes nothing: no anchor, mic curve or filter is known for it.
+            // A recording made elsewhere has no anchor or mic curve; its filter is the one the settings state, divided out below.
+            ProtectiveHighPassConfiguration filter =
+                ProtectiveHighPassConfiguration.Normalize(configuration.ProtectiveHighPass);
             var origin = new ResultOrigin(
                 signal.SampleRate,
                 signal.Bits,
@@ -539,11 +541,11 @@ namespace Resonalyze
                 signal.LowFrequencyHz,
                 signal.HighFrequencyHz,
                 Math.Clamp(configuration.Averaging.RunCount, 1, 64),
-                ProtectiveHighPassConfiguration.Normalize(configuration.ProtectiveHighPass),
+                filter,
                 sweep,
                 TimingReference.RecordedSweep,
                 DateTimeOffset.UtcNow,
-                Frozen: null,
+                new FrozenRun(SplCalibration: null, filter, MicrophoneCalibration: null, ArrayMetadata: []),
                 Diagnostics: null);
             return new RecordedSweepImport(
                 BuildResult(average, origin),
@@ -1112,7 +1114,8 @@ namespace Resonalyze
                         sweep.SweepSamples / (double)SampleRate,
                         SampleRate,
                         sweep.SweepSamples,
-                        deconvolved.PeakIndex));
+                        deconvolved.PeakIndex,
+                        sweep.Spec.FullAmplitudeHighFrequencyHz));
             }
             catch (Exception)
             {

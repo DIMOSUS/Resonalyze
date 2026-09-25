@@ -2005,6 +2005,39 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Fact]
+    public void ArrivalProbeTolerance_ReadThroughAnOverrideDelay_KeepsTheChainCredit()
+    {
+        DspChannelChain chain = NamedChain("BW36 BP 70-200");
+        AlignmentSnapshot undelayed = PredictableSnapshot(
+            "midbass", UnitImpulse(BasePosition), chain);
+        // As the reprocessor renders it: the override delay is in the response, not in the snapshot's chain.
+        const double delayMs = 20;
+        Complex[] delayed = VirtualCrossoverAnalysis.ApplyChain(
+            undelayed.BypassedImpulseResponse!, chain with { DelayMs = delayMs },
+            SampleRate, SampleRate, out ValidSampleRange delayedRange);
+        AlignmentSnapshot settled = undelayed with
+        {
+            ImpulseResponse = delayed,
+            PeakIndex = VirtualCrossoverAnalysis.FindPeakIndex(delayed),
+            ValidRange = delayedRange
+        };
+
+        double Tolerance(AlignmentSnapshot side, double appliedDelayMs)
+        {
+            double Read(double lowHz) =>
+                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                    side.ImpulseResponse, SampleRate, lowHz, 400, side.ValidRange)
+                    .FirstArrivalDelayMilliseconds;
+            return AutoAlignmentEngine.ArrivalProbeToleranceMs(
+                side, Read(100), Read(200), 100, 200, 400, appliedDelayMs);
+        }
+
+        double expected = Tolerance(undelayed, 0);
+        Assert.True(expected > 2.5, $"the chain must earn credit; got {expected:0.000}");
+        Assert.Equal(expected, Tolerance(settled, delayMs), 2);
+    }
+
+    [Fact]
     public void ArrivalProbeTolerance_NeverTightensBelowTheGenericFloor()
     {
         AlignmentSnapshot highPassed = PredictableSnapshot(
@@ -2074,5 +2107,38 @@ public sealed class AutoAlignmentEngineTests
                 maxDelayMs: 10.0));
         Assert.Contains("does not fit", error.Message);
         Assert.Contains("10 ms", error.Message);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Compute_LowJunctionCrests_ReadTheSubAgainstAnInvertedWooferOnce(bool invertSub)
+    {
+        // The woofer is inverted at the upper junction and rendered so for the sub's search: the crests already see
+        // its flip, and counting it again made them contradict a summation that agrees with them.
+        var low = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24);
+        var high = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24);
+        Complex[] Driver(CrossoverSpec spec, double delayMs, bool invert) =>
+            VirtualCrossoverAnalysis.ApplyChain(
+                UnitImpulse(BasePosition),
+                new DspChannelChain(DelayMs: delayMs, InvertPolarity: invert, Crossover: spec),
+                SampleRate,
+                SampleRate);
+        var sub = new TestChannel("S", Driver(new CrossoverSpec(CrossoverKind.LowPass, LowPassEdge: low), 4.0, invertSub));
+        var woofer = new TestChannel(
+            "W", Driver(new CrossoverSpec(CrossoverKind.BandPass, LowPassEdge: high, HighPassEdge: low), 1.0, invert: true));
+        var tweeter = new TestChannel("T", Driver(new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: high), 0.0, false));
+        var log = new StringBuilder();
+
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
+            Run([sub, woofer, tweeter], [80, 2_000], log);
+
+        string text = log.ToString();
+        Assert.Contains("Channel S: vs W", text);
+        Assert.DoesNotContain("low-junction polarity unsettled", text);
+        // Each driver's flag undoes its own wiring, whichever way the proposal is presented.
+        Assert.Equal(
+            invertSub ^ true,
+            alignment.GetValueOrDefault(sub).InvertPolarity ^ alignment.GetValueOrDefault(woofer).InvertPolarity);
     }
 }

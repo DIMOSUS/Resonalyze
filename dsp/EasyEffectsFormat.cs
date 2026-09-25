@@ -3,9 +3,12 @@
 namespace Resonalyze.Dsp;
 
 /// <summary>EasyEffects preset (JSON), Bell bands only; level maps to output gain. Its shelf and all-pass bands are LSP filters
-/// shaped by mode/slope, not our Q, so they are unsupported.</summary>
+/// shaped by mode/slope, not our Q, so they are unsupported. EasyEffects 7 names each plugin instance ("equalizer#0") and
+/// loads only the plugins its "plugins_order" lists, so an export carries both.</summary>
 public sealed class EasyEffectsFormat : IEqProfileFormat
 {
+    private const string EqualizerInstance = "equalizer#0";
+
     public string Name => "EasyEffects";
     public string Extension => "json";
     public bool CanImport => true;
@@ -50,7 +53,12 @@ public sealed class EasyEffectsFormat : IEqProfileFormat
 
         var root = new Dictionary<string, object?>
         {
-            ["output"] = new Dictionary<string, object?> { ["equalizer"] = equalizer }
+            ["output"] = new Dictionary<string, object?>
+            {
+                ["blocklist"] = Array.Empty<string>(),
+                [EqualizerInstance] = equalizer,
+                ["plugins_order"] = new[] { EqualizerInstance }
+            }
         };
 
         return JsonSerializer.Serialize(root, new JsonSerializerOptions { WriteIndented = true });
@@ -70,7 +78,8 @@ public sealed class EasyEffectsFormat : IEqProfileFormat
                 return false;
             }
 
-            double preampDb = ReadDouble(equalizer, "output-gain", 0);
+            // Both gains are flat level stages around the bands, so together they are the preamp.
+            double preampDb = ReadDouble(equalizer, "input-gain", 0) + ReadDouble(equalizer, "output-gain", 0);
 
             // Current versions nest bands under "left"/"right"; older ones under the equalizer.
             JsonElement bandsHost = equalizer;
@@ -113,16 +122,19 @@ public sealed class EasyEffectsFormat : IEqProfileFormat
     {
         if (root.ValueKind == JsonValueKind.Object)
         {
-            if (root.TryGetProperty("equalizer", out equalizer))
+            if (TryFindEqualizerIn(root, out equalizer))
             {
                 return true;
             }
 
-            if (root.TryGetProperty("output", out JsonElement output) &&
-                output.ValueKind == JsonValueKind.Object &&
-                output.TryGetProperty("equalizer", out equalizer))
+            foreach (string pipeline in new[] { "output", "input" })
             {
-                return true;
+                if (root.TryGetProperty(pipeline, out JsonElement host) &&
+                    host.ValueKind == JsonValueKind.Object &&
+                    TryFindEqualizerIn(host, out equalizer))
+                {
+                    return true;
+                }
             }
 
             if (root.TryGetProperty("num-bands", out _) || root.TryGetProperty("left", out _))
@@ -136,6 +148,41 @@ public sealed class EasyEffectsFormat : IEqProfileFormat
         return false;
     }
 
+    // EasyEffects 7 keys an instance "equalizer#N"; older presets key it "equalizer". The first equalizer the
+    // pipeline order runs wins, then the first in the file.
+    private static bool TryFindEqualizerIn(JsonElement host, out JsonElement equalizer)
+    {
+        if (host.TryGetProperty("plugins_order", out JsonElement order) && order.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement name in order.EnumerateArray())
+            {
+                if (name.ValueKind == JsonValueKind.String &&
+                    IsEqualizerKey(name.GetString()!) &&
+                    host.TryGetProperty(name.GetString()!, out equalizer) &&
+                    equalizer.ValueKind == JsonValueKind.Object)
+                {
+                    return true;
+                }
+            }
+        }
+
+        foreach (JsonProperty property in host.EnumerateObject())
+        {
+            if (IsEqualizerKey(property.Name) && property.Value.ValueKind == JsonValueKind.Object)
+            {
+                equalizer = property.Value;
+                return true;
+            }
+        }
+
+        equalizer = default;
+        return false;
+    }
+
+    private static bool IsEqualizerKey(string name) =>
+        name.Equals("equalizer", StringComparison.OrdinalIgnoreCase) ||
+        name.StartsWith("equalizer#", StringComparison.OrdinalIgnoreCase);
+
     private static bool TryReadBand(JsonElement band, out PeqBand result)
     {
         result = default;
@@ -143,6 +190,12 @@ public sealed class EasyEffectsFormat : IEqProfileFormat
         if (band.TryGetProperty("type", out JsonElement type) &&
             type.ValueKind == JsonValueKind.String &&
             !type.GetString()!.Equals("Bell", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // A muted band does not reach the output.
+        if (band.TryGetProperty("mute", out JsonElement mute) && mute.ValueKind == JsonValueKind.True)
         {
             return false;
         }

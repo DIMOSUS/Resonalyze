@@ -208,6 +208,15 @@ public partial class Form1
         MeasurementSessionSnapshot? session,
         string? sourceFilePath)
     {
+        // The live analyzer is configured with the entry's live options, which it refuses while it runs; opening another
+        // measurement stops it, as a sweep does. First, so nothing of the entry lands before this await: a load or a run
+        // that lands during the stop owns the window.
+        await StopLiveCaptureAsync();
+        if (!request.IsCurrent)
+        {
+            return false;
+        }
+
         // Both halves of K travel with the entry, as when opening the file.
         if (!InstallMeasurement(request, result, sourceFilePath))
         {
@@ -216,16 +225,21 @@ public partial class Form1
 
         if (session != null)
         {
-            viewSettings.ApplySession(session, result.SampleRate);
+            ApplySessionView(session, result.SampleRate);
         }
 
-        // The live analyzer is configured with the entry's live options.
         ApplyMeasurementConfigurationToControllers();
 
         if (session != null)
         {
             // Mode switch re-prepares overlays hidden, so only the active slots are re-shown. Audio settings untouched.
             await SelectModeAsync(NormalizeSessionMode(session.ActiveMode));
+            // A newer load or run that landed during the switch keeps its own slots and settings.
+            if (!request.IsCurrent)
+            {
+                return false;
+            }
+
             analyzerPlot.RestoreOverlaySlots(session.ActiveOverlaySlots);
             SaveMeasurementSettings();
         }
@@ -273,7 +287,7 @@ public partial class Form1
 
         RefreshMeasurementCommands();
 
-        viewSettings.ApplySession(new MeasurementSessionSnapshot(), expSweepMeasurement.SampleRate);
+        ApplySessionView(new MeasurementSessionSnapshot(), expSweepMeasurement.SampleRate);
         ApplyMeasurementConfigurationToControllers();
         SaveMeasurementSettings();
 
@@ -281,6 +295,14 @@ public partial class Form1
 
         dockedHistoryHost.InvokeIfOpen<MeasurementHistoryWindow>(dialog =>
             dialog.SetEntries(measurementHistoryService.Entries, null, null));
+    }
+
+    private void ApplySessionView(MeasurementSessionSnapshot session, int sampleRate)
+    {
+        foreach (Mode rescaled in viewSettings.ApplySession(session, sampleRate))
+        {
+            analyzerPlot.Viewports.Forget(rescaled);
+        }
     }
 
     private MeasurementSessionSnapshot CaptureCurrentSessionSnapshot() =>

@@ -132,7 +132,8 @@ internal sealed class MeasurementPlotContext
             result.SweepSampleDurationSeconds,
             result.SampleRate,
             result.SweepSampleCount,
-            deconvolution.PeakIndex);
+            deconvolution.PeakIndex,
+            result.MeasuredHighFrequencyHz);
 
         Complex[] impulse = deconvolution.ImpulseResponse;
         double[] real = new double[impulse.Length];

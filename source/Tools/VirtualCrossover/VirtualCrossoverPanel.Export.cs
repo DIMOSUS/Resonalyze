@@ -10,30 +10,24 @@ public partial class VirtualCrossoverPanel
 
     private async Task CaptureSumToOverlayAsync()
     {
+        VirtualCrossoverGroupView groupView = SelectedGroupView;
         VirtualCrossoverProcessedRender? render = await ProcessChannelsAsync();
         if (render == null)
         {
             return;
         }
-        List<ProcessedChannel> processed = render.Channels;
-        if (processed.Count < 2 || OverlayCaptureRequested == null)
+        // The Sum as drawn: the group view decides which channels enter it, and a centre never does.
+        var frame = VirtualCrossoverFrame.Of(render.Channels, groupView);
+        if (OverlayCaptureRequested == null ||
+            frame.ReadSum(metrics, session.MagnitudeGate.SmoothingInverseOctaves).Sum is not { } sumCurve)
         {
             System.Media.SystemSounds.Beep.Play();
             return;
         }
 
-        int overlayAnchor = processed.Min(item => item.PeakIndex);
-        MagnitudeGateSnapshot overlayGate = session.MagnitudeGate;
-        AnalysisCurve sumCurve = overlayGate.MeasuredSum(
-            processed,
-            overlayAnchor,
-            overlayGate.ResolveGateOffsetMs(
-                oppositeSide: false, overlayAnchor, processed[0].SampleRate),
-            session.Calibration.For).Display;
-
         string title = "vDSP Sum " + string.Join(
             "+",
-            processed.Select(item => item.Channel.Name));
+            frame.Summed.Select(item => item.Channel.Name));
         OverlayPoint[] points = sumCurve.Points
             .Select(point => new OverlayPoint(point.X, point.Y))
             .ToArray();
@@ -79,16 +73,15 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
+        VirtualCrossoverGroupView groupView = SelectedGroupView;
         VirtualCrossoverProcessedRender? render = await ProcessChannelsAsync();
         if (render == null)
         {
             return;
         }
-        List<ProcessedChannel> metricChannels = render.Channels;
-        (_, _, List<SignalPoint>? metricLoss) =
-            metrics.BuildCurves(metricChannels, session.MagnitudeGate.SmoothingInverseOctaves);
         string metricLine = VirtualCrossoverMetric.FormatLabel(
-            metrics.BuildEntries(metricChannels, metricLoss));
+            VirtualCrossoverFrame.Of(render.Channels, groupView)
+                .ReadSum(metrics, session.MagnitudeGate.SmoothingInverseOctaves).Entries);
         // The chain graph shows the filters, so it uses the processor's rate, not the measurement rate.
         int sampleRate = session.ProcessorSampleRateHz;
         try

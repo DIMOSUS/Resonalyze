@@ -34,6 +34,27 @@ public sealed class CompareSelectionTests
     }
 
     [Fact]
+    public void AnOlderLoadFinishingLate_DoesNotLandOverANewerOneOrAClear()
+    {
+        var selection = new CompareSelection();
+        long older = selection.BeginLoad();
+        long newer = selection.BeginLoad();
+
+        Assert.True(selection.TrySet(newer, "new.json", null, CreateSnapshot()));
+        Assert.False(selection.TrySet(older, "old.json", null, CreateSnapshot()));
+        Assert.Equal("new.json", selection.Current!.DisplayName);
+
+        long cleared = selection.BeginLoad();
+        selection.Clear();
+        Assert.False(selection.TrySet(cleared, "late.json", null, CreateSnapshot()));
+        Assert.Null(selection.Current);
+        // A replaced load's failure is not reported: the user has already chosen something else.
+        Assert.False(selection.IsCurrent(older));
+        Assert.False(selection.IsCurrent(cleared));
+        Assert.True(selection.IsCurrent(selection.BeginLoad()));
+    }
+
+    [Fact]
     public void GetAnalysisSource_MapsTheSnapshotResponses()
     {
         var selection = new CompareSelection();

@@ -15,6 +15,12 @@ public partial class VirtualCrossoverPanel
             return "fewer than two enabled channels have a measurement";
         }
 
+        if (VirtualCrossoverAutoSetup.FirCrossoverRefusal(participating) is { } fir)
+        {
+            ShowError("Auto crossover cannot write over a FIR crossover.", char.ToUpperInvariant(fir[0]) + fir[1..] + ".");
+            return fir;
+        }
+
         // The band read is gate-independent, but the result is checked on gated views, so refuse a misplaced gate.
         if (RefuseOnMisplacedGate("Auto crossover"))
         {

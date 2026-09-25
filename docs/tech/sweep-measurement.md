@@ -1055,9 +1055,11 @@ print an artificial bass roll-off onto a correct measurement. Silent has no mode
   built across the gap reads the step as a broadband burst and poisons H1, coherence and the
   EMA for seconds. A WASAPI packet flagged as a discontinuity is the same kind of gap inside
   the device's own stream: the accumulator drops the partial sequence before it
-  (`CaptureAccumulator.BreakSequence`), so the next sequence starts after the gap. The
-  reframer resets on the discontinuity event before that sequence arrives; without the break
-  the sequence straddling the gap still became a frame of its own.
+  (`CaptureAccumulator.BreakSequence`), so the next sequence starts after the gap, and every
+  queued sequence carries the discontinuity count it was written under: the reframer resets
+  at the first one past the gap, however many sequences from before it are still queued. A
+  drop is the other way round — it removes the oldest queued block, so its gap sits before
+  whatever is read next, and the drop count is read at dequeue.
 - **Coherence** is hidden (null) until four frames have accumulated: single-frame gamma^2 is
   1 in every energized bin.
 - **Accumulators are seeded** with the first frame: H1 and coherence divide the scale out,

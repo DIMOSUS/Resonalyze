@@ -1515,7 +1515,8 @@ ones; the separate target the [EQ Wizard](#the-target-curve) and
 
 **Import from text** loads a captured overlay from a plain-text file of `X Y`
 pairs (for example, `123.4 -5.5`), one per line, parsed leniently: any separator,
-extra columns ignored, non-numeric lines skipped. **Export to text** writes the
+extra columns ignored, non-numeric lines skipped. A decimal comma is read as one
+(`63<Tab>4,5` is 4.5 dB) wherever spaces, tabs or semicolons separate the columns. **Export to text** writes the
 slot's current curve in the same format; for a Target slot, **Export deviation**
 writes the deviation or EQ-correction curve. Exported files open with a commented
 `# resonalyze-curve` header recording what the curve is — the analysis it came

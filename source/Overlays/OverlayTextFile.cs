@@ -45,7 +45,7 @@ public static class OverlayTextFile
     private const string FormatMarker = "resonalyze-curve";
     private const int FormatVersion = 1;
 
-    private static readonly char[] Separators = [' ', '\t', ',', ';'];
+    private static readonly char[] ColumnSeparators = [' ', '\t', ';'];
 
     /// <summary>Role comes from the slot's current <paramref name="kind"/>, never a stale tag; curve kind only for captured responses.</summary>
     public static OverlayTextMetadata BuildCurveMetadata(
@@ -104,20 +104,10 @@ public static class OverlayTextFile
                 continue;
             }
 
-            string[] tokens = rawLine.Split(
-                Separators,
-                StringSplitOptions.RemoveEmptyEntries);
+            string[] tokens = SplitColumns(rawLine);
             if (tokens.Length < 2 ||
-                !double.TryParse(
-                    tokens[0],
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
-                    out double x) ||
-                !double.TryParse(
-                    tokens[1],
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
-                    out double y) ||
+                !TryParseNumber(tokens[0], out double x) ||
+                !TryParseNumber(tokens[1], out double y) ||
                 !double.IsFinite(x) ||
                 double.IsInfinity(y))
             {
@@ -134,6 +124,28 @@ public static class OverlayTextFile
         }
 
         return new OverlayTextCurve(points.ToArray(), metadata.Build());
+    }
+
+    // Whitespace or semicolons separate columns when a line has them, so "63\t4,5" is a decimal comma, not a third column.
+    private static string[] SplitColumns(string line)
+    {
+        string[] tokens = line.Split(
+            ColumnSeparators,
+            StringSplitOptions.RemoveEmptyEntries);
+        return tokens.Length >= 2
+            ? tokens
+            : line.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    private static bool TryParseNumber(string token, out double value)
+    {
+        string number = token.Trim(',');
+        if (!number.Contains('.'))
+        {
+            number = number.Replace(',', '.');
+        }
+
+        return double.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
     }
 
     private static IEnumerable<string> BuildHeaderLines(OverlayTextMetadata? metadata)

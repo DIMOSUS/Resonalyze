@@ -120,6 +120,33 @@ public sealed class OverlayTextFileTests
     }
 
     [Fact]
+    public void Import_ReadsADecimalCommaBesideWhitespaceOrSemicolonColumns()
+    {
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            $"overlay-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(path, "63\t4,5\n125,5 -3,25 10,0\n250;-1,5\n500, 2.5\n");
+
+        try
+        {
+            OverlayPoint[] loaded = OverlayTextFile.Import(path);
+
+            Assert.Equal(
+                [
+                    new OverlayPoint(63, 4.5),
+                    new OverlayPoint(125.5, -3.25),
+                    new OverlayPoint(250, -1.5),
+                    new OverlayPoint(500, 2.5)
+                ],
+                loaded);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void Import_RejectsFileWithFewerThanTwoPoints()
     {
         string path = Path.Combine(

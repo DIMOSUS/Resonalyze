@@ -162,6 +162,49 @@ public sealed class LiveSpectrumWiringTests : IDisposable
         });
     }
 
+    // Restoring waits for Live to stop; a load or a run that lands meanwhile owns the window, so nothing of the entry
+    // (its measurement, its view) may land before or after that await.
+    [Fact]
+    public void AHistoryEntrySupersededWhileLiveStops_LeavesTheViewAndTheMeasurementAsTheNewerRequestFound()
+    {
+        string first = WriteMeasurement("first.json", peak: 240);
+        string second = WriteMeasurement("second.json", peak: 480);
+        StaTest.Run(() =>
+        {
+            using var window = new LiveWindow();
+            AnalyzerViewSettings view = window.Field<AnalyzerViewSettings>("viewSettings");
+            window.Open(first);
+            view.FrequencyResponse.SmoothingInverseOctaves = 3;
+            // Leaving the entry for another file writes its working state back.
+            window.Open(second);
+            view.FrequencyResponse.SmoothingInverseOctaves = 24;
+            window.Select(ModeTab.LiveSpectrum);
+            window.Record();
+            MeasurementHistoryEntry entry = Assert.Single(
+                window.Field<MeasurementHistoryService>("measurementHistoryService").Entries,
+                candidate => candidate.SourceFilePath == first);
+            Assert.Equal(3, entry.Session!.FrequencyResponse.SmoothingInverseOctaves);
+            AnalyzerDocument document = window.Field<AnalyzerDocument>("analyzerDocument");
+            // A newer request, taken the moment the analyzer has stopped: inside the restore's await.
+            bool superseded = false;
+            window.Session.Changed += () =>
+            {
+                if (!superseded && !window.Session.InProgress)
+                {
+                    superseded = true;
+                    _ = document.TryBegin();
+                }
+            };
+
+            window.Await("ActivateHistoryEntryAsync", entry.Id, document.TryBegin()!);
+
+            Assert.True(superseded);
+            Assert.Equal(second, document.SourceName);
+            Assert.Equal(24, view.FrequencyResponse.SmoothingInverseOctaves);
+            Assert.NotEqual(entry.Id, window.Field<MeasurementSessionTracker>("sessionTracker").CurrentEntryId);
+        });
+    }
+
     // The accumulation outlives a stop, so a new session must discard it or the next visit reads the old run again.
     [Fact]
     public void ANewSessionDoesNotBringBackTheLastRun()

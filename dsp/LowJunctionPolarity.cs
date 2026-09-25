@@ -4,18 +4,21 @@ namespace Resonalyze.Dsp;
 
 /// <param name="SameSignShiftMs">Delay to add to the variable channel to put its same-sign crest under the
 /// neighbour's, in the frame <see cref="AlignmentCandidate.DelayMs"/> lives in.</param>
+/// <param name="AnchorMs">Where the fronts put the variable channel in that frame; each meeting is judged by its
+/// distance from here, not from the channel's undelayed position.</param>
 internal sealed record LowJunctionPolarityVote(
     bool ExpectsRelativeInversion,
     double SameSignShiftMs,
-    double OppositeSignShiftMs)
+    double OppositeSignShiftMs,
+    double AnchorMs = 0)
 {
     /// <summary>Movement the winning branch asks for.</summary>
     public double ShiftMs =>
         ExpectsRelativeInversion ? OppositeSignShiftMs : SameSignShiftMs;
 
-    /// <summary>How much nearer the winning crest sits; two crests the same distance away name no polarity.</summary>
+    /// <summary>How much nearer the anchor the winning crest sits; two crests the same distance away name no polarity.</summary>
     public double SeparationMs =>
-        Math.Abs(Math.Abs(SameSignShiftMs) - Math.Abs(OppositeSignShiftMs));
+        Math.Abs(Math.Abs(SameSignShiftMs - AnchorMs) - Math.Abs(OppositeSignShiftMs - AnchorMs));
 
     /// <summary>The crests name a polarity only when the loser is at least a quarter period farther: a dispersive
     /// channel carries both signs at nearly the same distance, and then the nearer one is noise.</summary>
@@ -31,12 +34,15 @@ internal static class LowJunctionPolarity
     public const double TieMarginDb = 0.5;
 
     /// <summary>Null when either channel has no measured crest to read.</summary>
+    /// <param name="anchorMs">The delay the fronts predict for the variable channel. A channel that must move several
+    /// milliseconds otherwise hands the vote to whichever crest meets nearer its undelayed position, whatever its sign.</param>
     public static LowJunctionPolarityVote? Read(
         Complex[] neighborImpulseResponse,
         Complex[] variableImpulseResponse,
         int sampleRate,
         ValidSampleRange neighborRange = default,
-        ValidSampleRange variableRange = default)
+        ValidSampleRange variableRange = default,
+        double anchorMs = 0)
     {
         ArgumentNullException.ThrowIfNull(neighborImpulseResponse);
         ArgumentNullException.ThrowIfNull(variableImpulseResponse);
@@ -63,9 +69,10 @@ internal static class LowJunctionPolarity
         double sameShiftMs = (neighborIndex - sameIndex) * msPerSample;
         double oppositeShiftMs = (neighborIndex - oppositeIndex) * msPerSample;
         return new LowJunctionPolarityVote(
-            Math.Abs(oppositeShiftMs) < Math.Abs(sameShiftMs),
+            Math.Abs(oppositeShiftMs - anchorMs) < Math.Abs(sameShiftMs - anchorMs),
             sameShiftMs,
-            oppositeShiftMs);
+            oppositeShiftMs,
+            anchorMs);
     }
 
     /// <summary>The voted branch's best candidate, or <paramref name="chosen"/> where the score already separates

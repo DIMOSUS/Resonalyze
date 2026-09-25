@@ -2258,7 +2258,8 @@ public static class AutoAlignmentEngine
                 LowJunctionPolarity.Read(
                     neighborIrs[0], variableIr, channel.SampleRate,
                     primaryNeighborSnapshot.ValidRange,
-                    variableSnapshot.ValidRange) is { } crests &&
+                    variableSnapshot.ValidRange,
+                    anchorMs) is { } crests &&
                 crests.IsDecisive(pair.CrossoverHz))
             {
                 // The neighbour is read as rendered, its own inversion applied, so the crests name the searched

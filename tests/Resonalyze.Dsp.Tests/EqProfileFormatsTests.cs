@@ -54,9 +54,37 @@ public sealed class EqProfileFormatsTests
     {
         string json = new EasyEffectsFormat().Export(SampleCurve());
 
-        Assert.Contains("\"equalizer\"", json);
         Assert.Contains("\"type\": \"Bell\"", json);
         Assert.Contains("\"output-gain\": -6", json);
+    }
+
+    [Fact]
+    public void EasyEffects_ExportNamesTheInstanceAndListsItInThePluginOrder()
+    {
+        // EasyEffects 7 refuses a preset whose pipeline has no "plugins_order", and loads only the instances it lists.
+        using var document = System.Text.Json.JsonDocument.Parse(new EasyEffectsFormat().Export(SampleCurve()));
+        System.Text.Json.JsonElement output = document.RootElement.GetProperty("output");
+
+        Assert.Equal("equalizer#0", Assert.Single(output.GetProperty("plugins_order").EnumerateArray()).GetString());
+        Assert.Equal(3, output.GetProperty("equalizer#0").GetProperty("num-bands").GetInt32());
+    }
+
+    [Fact]
+    public void EasyEffects_ReadsAnEasyEffects7PresetWithANumberedInstance()
+    {
+        string json =
+            "{ \"output\": { \"blocklist\": [], \"plugins_order\": [ \"limiter#0\", \"equalizer#1\" ]," +
+            " \"limiter#0\": { \"bypass\": false }," +
+            " \"equalizer#1\": { \"input-gain\": -1.5, \"output-gain\": -2, \"left\": {" +
+            " \"band0\": { \"type\": \"Bell\", \"mute\": false, \"frequency\": 1000, \"gain\": 6, \"q\": 1 }," +
+            " \"band1\": { \"type\": \"Bell\", \"mute\": true, \"frequency\": 2000, \"gain\": 6, \"q\": 1 }," +
+            " \"band2\": { \"type\": \"Bell\", \"frequency\": 4000, \"gain\": -3, \"q\": 2 } } } } }";
+
+        EqualizationCurve curve = Import(new EasyEffectsFormat(), json);
+
+        // Input and output gain are both flat stages around the bands; a muted band does not sound.
+        Assert.Equal(-3.5, curve.PreampDb, 4);
+        Assert.Equal(new[] { 1000.0, 4000.0 }, curve.Bands.Select(b => b.FrequencyHz));
     }
 
     [Fact]
@@ -129,6 +157,19 @@ public sealed class EqProfileFormatsTests
         Assert.Contains("filters:", yaml);
         Assert.Contains("type: Peaking", yaml);
         Assert.Contains("pipeline:", yaml);
+    }
+
+    [Fact]
+    public void CamillaDsp_PipelineStepListsItsChannelsAsCamillaDsp3Requires()
+    {
+        // CamillaDSP 3 rejects a step's v2 "channel" field as unknown; it takes "channels: [..]".
+        var root = (IDictionary<object, object>)new YamlDotNet.Serialization.DeserializerBuilder().Build()
+            .Deserialize<object>(new CamillaDspYamlFormat().Export(SampleCurve()))!;
+
+        var step = (IDictionary<object, object>)Assert.Single((IList<object>)root["pipeline"]);
+        Assert.False(step.ContainsKey("channel"));
+        Assert.Equal(new object[] { "0", "1" }, (IList<object>)step["channels"]);
+        Assert.Equal(4, ((IList<object>)step["names"]).Count);
     }
 
     [Fact]

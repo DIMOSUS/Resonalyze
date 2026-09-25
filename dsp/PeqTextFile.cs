@@ -117,7 +117,7 @@ public static class PeqTextFile
                 continue;
             }
 
-            if (tokens[0].Equals("Filter", StringComparison.OrdinalIgnoreCase) &&
+            if (IsFilterKeyword(tokens[0]) &&
                 TryParseFilter(tokens, out PeqBand band))
             {
                 bands.Add(band);
@@ -127,6 +127,14 @@ public static class PeqTextFile
 
         curve = new EqualizationCurve(bands, preampDb);
         return recognized;
+    }
+
+    // APO does not interpret the filter number and lets it be omitted: "Filter 1:", "Filter1:" and "Filter:" all open a line.
+    private static bool IsFilterKeyword(string token)
+    {
+        string name = token.TrimEnd(':');
+        return name.StartsWith("Filter", StringComparison.OrdinalIgnoreCase) &&
+            name.AsSpan("Filter".Length).IndexOfAnyExceptInRange('0', '9') < 0;
     }
 
     // Gain may be absent only on an all-pass; Q only on a shelf (read at DefaultShelfQ).
@@ -186,7 +194,10 @@ public static class PeqTextFile
                 token.Equals("LSC", StringComparison.OrdinalIgnoreCase);
             bool high = token.Equals("HS", StringComparison.OrdinalIgnoreCase) ||
                 token.Equals("HSC", StringComparison.OrdinalIgnoreCase);
-            if (token.Equals("PK", StringComparison.OrdinalIgnoreCase))
+            // APO reads Modal (REW's room-mode filter) and PEQ as the same peaking filter as PK.
+            if (token.Equals("PK", StringComparison.OrdinalIgnoreCase) ||
+                token.Equals("Modal", StringComparison.OrdinalIgnoreCase) ||
+                token.Equals("PEQ", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }

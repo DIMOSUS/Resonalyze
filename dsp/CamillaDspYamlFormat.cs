@@ -57,16 +57,16 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
             names.Add(key);
         }
 
-        var pipeline = new List<object?>();
-        foreach (int channel in new[] { 0, 1 })
+        // CamillaDSP 3 takes a channel list; its step rejects the v2 "channel" field as unknown.
+        var pipeline = new List<object?>
         {
-            pipeline.Add(new Dictionary<string, object?>
+            new Dictionary<string, object?>
             {
                 ["type"] = "Filter",
-                ["channel"] = channel,
-                ["names"] = new List<object?>(names)
-            });
-        }
+                ["channels"] = new List<object?> { 0, 1 },
+                ["names"] = names
+            }
+        };
 
         var root = new Dictionary<string, object?>
         {

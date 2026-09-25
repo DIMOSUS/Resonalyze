@@ -39,6 +39,44 @@ public sealed class PeqTextFileTests
     }
 
     [Fact]
+    public void Parse_ReadsFilterLinesWithTheNumberOmitted()
+    {
+        // APO does not interpret the filter number and lets it be left out ("Filter: ON NO Fc 50 Hz" in its reference).
+        string text =
+            "Preamp: -6 dB\n" +
+            "Filter: ON PK Fc 600 Hz Gain 6.0 dB Q 4.0\n" +
+            "Filter2: ON PK Fc 1577 Hz Gain -4.1 dB Q 1.4\n";
+
+        EqualizationCurve curve = PeqTextFile.Parse(text);
+
+        Assert.Equal(-6.0, curve.PreampDb, 6);
+        Assert.Equal(new[] { 600.0, 1577.0 }, curve.Bands.Select(b => b.FrequencyHz));
+    }
+
+    [Fact]
+    public void Parse_ReadsModalAndPeqAsPeaking()
+    {
+        // APO lists PK, Modal and PEQ as one peaking filter; REW writes its room-mode filters as Modal.
+        string text =
+            "Filter 1: ON Modal Fc 45 Hz Gain -9.0 dB Q 6.0\n" +
+            "Filter 2: ON PEQ Fc 120 Hz Gain -3.0 dB Q 2.0\n" +
+            "Filter 3: ON PK Fc 600 Hz Gain 2.0 dB Q 1.0\n";
+
+        EqualizationCurve curve = PeqTextFile.Parse(text);
+
+        Assert.Equal(3, curve.Bands.Count);
+        Assert.All(curve.Bands, b => Assert.Equal(PeqBandType.Peaking, b.Type));
+        Assert.Equal(-9.0, curve.Bands[0].GainDb, 6);
+        Assert.Equal(6.0, curve.Bands[0].Q, 6);
+    }
+
+    [Fact]
+    public void Parse_DoesNotTakeAWordThatOnlyStartsWithFilterForAFilterLine()
+    {
+        Assert.False(PeqTextFile.TryParse("Filters: ON PK Fc 600 Hz Gain 6.0 dB Q 4.0", out _));
+    }
+
+    [Fact]
     public void Parse_ReadsEqualizerApoExample()
     {
         string text =

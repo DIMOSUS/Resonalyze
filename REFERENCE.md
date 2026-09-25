@@ -2115,6 +2115,12 @@ wherever the target can state one — Equalizer APO and REW as the second-order
 Audiotec bank as its own AP1 / AP2 slots, miniDSP as raw coefficients — and a
 format that cannot (EasyEffects' mode/slope parameterisation, GraphicEQ's sampled
 magnitude curve) warns and leaves them out rather than writing a 0 dB bell.
+An EasyEffects export is an EasyEffects 7 preset (the `equalizer#0` instance
+named in the pipeline's `plugins_order`), and import reads both 7 and the older
+unnumbered `equalizer`, skipping muted bands and folding input and output gain
+into the preamp. A CamillaDSP export is a v3 pipeline step (`channels: [0, 1]`).
+Equalizer APO's `Modal` and `PEQ` read as `PK`, as APO itself reads them, and a
+`Filter:` line may leave its number out.
 Import is deliberately
 lenient: comments, blank lines, disabled (`OFF`) filters, unsupported filter
 types, and malformed entries are skipped rather than rejected. The one exception is a

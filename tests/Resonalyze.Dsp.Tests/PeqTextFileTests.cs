@@ -43,8 +43,7 @@ public sealed class PeqTextFileTests
     [Fact]
     public void Parse_TakesTheFirstChannelsChainAndAddsItsPreampStages()
     {
-        // APO runs L through -3 dB, then its bell; R through -3 dB, -2 dB and its own bell. Stacking both bells and
-        // keeping only the last preamp cut 100 Hz by 14 dB, a chain neither channel runs.
+        // APO runs L through -3 dB, then its bell; R through -3 dB, -2 dB and its own bell.
         string text =
             "Preamp: -3 dB\n" +
             "Channel: L\n" +
@@ -59,6 +58,26 @@ public sealed class PeqTextFileTests
 
         Assert.Equal(-3.0, curve.PreampDb, 6);
         Assert.Equal(new[] { 100.0, 1000.0 }, curve.Bands.Select(b => b.FrequencyHz));
+    }
+
+    [Fact]
+    public void Parse_AFirstSectionNamingSeveralChannels_ImportsOnlyTheFirstChannelsLaterSections()
+    {
+        string text =
+            "Channel: L R\n" +
+            "Preamp: -3 dB\n" +
+            "Channel: L\n" +
+            "Filter 1: ON PK Fc 100 Hz Gain -4 dB Q 2\n" +
+            "Channel: R\n" +
+            "Filter 2: ON PK Fc 200 Hz Gain -6 dB Q 1\n" +
+            "Channel:\n" +
+            "Filter 3: ON PK Fc 300 Hz Gain -2 dB Q 1\n";
+
+        EqualizationCurve curve = PeqTextFile.Parse(text);
+
+        // L runs the shared preamp and its own bell; an empty Channel line changes nothing.
+        Assert.Equal(-3.0, curve.PreampDb, 6);
+        Assert.Equal(new[] { 100.0 }, curve.Bands.Select(b => b.FrequencyHz));
     }
 
     [Fact]

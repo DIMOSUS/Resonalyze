@@ -441,3 +441,9 @@ was fitted to or the level it was fitted against; only a polarity flip changes n
   to an absolute target level. A raw handoff's chain is the identity and is not compared.
 - `Peq`, the bank the session started from: the chain comparison excludes the PEQ, so a Load or Clear in the
   panel would otherwise be a lost update. All-pass edits are caught here, since all-passes live in the bank.
+
+**An unedited bank goes back as it came.** The wizard holds every band to its strips' limits and steps (whole Hz,
+0.1 Q and dB, Max Cut and Max Boost), and Load PEQ, the session file and AI replies all take banks past them. A
+bank returned without an edit is therefore the channel's own, not its held copy: Return otherwise turned an
+imported −20 dB notch into −15 dB. A returned bank equal to the channel's writes nothing and keeps the name the
+bank was loaded under.

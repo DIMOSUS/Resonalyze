@@ -486,6 +486,26 @@ public sealed class VirtualDspEqHandoffTests
         Assert.False(request.Token.RightSide);
     }
 
+    // Load PEQ, the session file and AI replies take banks past the wizard's own limits and steps.
+    [Fact]
+    public void ABankReturnedUnedited_LeavesTheChannelsPeqAsItWas()
+    {
+        VirtualCrossoverChannel channel = BuildChannel();
+        channel.Settings.PeqBands = new List<PeqBand> { new(63.4, 1.43, -20) };
+        channel.Settings.PeqSourceName = "imported.txt";
+        VirtualDspEqHandoffRequest request = Build(channel, withChain: true);
+        var session = new EqWizardSession();
+        session.BeginHandoff(request);
+        Assert.NotEqual(channel.Settings.PeqBands, session.Bank.Curve.Bands);
+
+        EqWizardReturn sent = session.CompleteHandoff()!;
+
+        Assert.True(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, sent.Token, sent.Bank, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
+        Assert.Equal([new PeqBand(63.4, 1.43, -20)], channel.Settings.PeqBands);
+        Assert.Equal("imported.txt", channel.Settings.PeqSourceName);
+    }
+
     [Fact]
     public void AMonoHandoffAddressesTheLeftSet_EvenFromTheRightView()
     {

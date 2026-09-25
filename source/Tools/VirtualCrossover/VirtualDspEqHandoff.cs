@@ -323,6 +323,12 @@ internal static class VirtualDspEqHandoff
         {
             return false;
         }
+        // The channel's own bank back: nothing to write, and it keeps the name it was loaded under.
+        if (token.Peq.Equals(new PeqBankState(curve.Bands, curve.PreampDb)))
+        {
+            return true;
+        }
+
         settings.PeqBands = curve.Bands.ToList();
         settings.PeqPreampDb = curve.PreampDb;
         settings.PeqSourceName = "EQ Wizard";

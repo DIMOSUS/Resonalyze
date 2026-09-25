@@ -622,7 +622,7 @@ namespace Resonalyze.Dsp
 
             for (int i = 1; i < n / 2; i++)
             {
-                double f = i * sampleRate / (double)n;
+                double f = (double)i * sampleRate / n;
 
                 double referenced = spectrum[i].Phase + Math.Tau * i * referenceShift / n;
                 double wrapped = Math.Atan2(Math.Sin(referenced), Math.Cos(referenced));
@@ -1029,7 +1029,7 @@ namespace Resonalyze.Dsp
             List<SignalPoint> data = new(n / 2);
             for (int i = 1; i < n / 2; i++)
             {
-                double f = i * measurement.SampleRate / (double)n;
+                double f = (double)i * measurement.SampleRate / n;
                 data.Add(new SignalPoint(f, minimumPhase[i] / Math.PI * 180.0));
             }
 
@@ -1059,7 +1059,7 @@ namespace Resonalyze.Dsp
             for (int i = 1; i < spectrum.Length / 2; i++)
             {
                 data.Add(new SignalPoint(
-                    i * sampleRate / (double)spectrum.Length,
+                    (double)i * sampleRate / spectrum.Length,
                     minimumPhase[i] / Math.PI * 180.0));
             }
             return new AnalysisCurve(

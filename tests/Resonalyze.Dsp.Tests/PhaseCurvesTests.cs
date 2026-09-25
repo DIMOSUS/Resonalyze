@@ -104,6 +104,42 @@ public sealed class PhaseCurvesTests
     }
 
     [Theory]
+    [InlineData(192_000)]
+    [InlineData(384_000)]
+    public void PhaseCurves_AtAHighSampleRate_KeepTheirFrequencyAxis(int sampleRate)
+    {
+        var ir = new Complex[65_536];
+        int peak = sampleRate / 50;
+        ir[peak] = Complex.One;
+        var measurement = new SyntheticMeasurement(ir, sampleRate, peak);
+        var settings = new PhaseAnalysisSettings(
+            PhaseWindowMode.Fixed, PhaseAnalysisSettings.DefaultFdwCycles, PhaseDetrendMode.Off,
+            ManualDetrendMilliseconds: 0.0, GateOffsetMs: 20.0, LeftMs: 1.0, PlateauMs: 40.0,
+            RightMs: 10.0, Unwrap: false, SmoothingInverseOctaves: 0.0);
+
+        AnalysisCurve[] curves =
+        [
+            DataHelper.GetPhase(measurement, settings),
+            DataHelper.GetPhase(measurement, settings with { Unwrap = true }),
+            DataHelper.GetMinimumPhase(measurement, settings),
+            DataHelper.GetMinimumPhase(
+                measurement, 20.0, 1.0, 40.0, 10.0, smoothingInverseOctaves: 0.0)
+        ];
+
+        foreach (AnalysisCurve curve in curves)
+        {
+            Assert.NotEmpty(curve.Points);
+            double previousX = 0.0;
+            foreach (SignalPoint point in curve.Points)
+            {
+                Assert.True(point.X > previousX && point.X < sampleRate / 2.0,
+                    $"{curve.Name}: {point.X:0.#} Hz after {previousX:0.#} Hz");
+                previousX = point.X;
+            }
+        }
+    }
+
+    [Theory]
     [InlineData(1_440, 30.0)]
     [InlineData(960, 20.0)]
     public void EstimatePhaseDetrend_ReturnsTheAbsoluteArrivalTime(int sampleIndex, double expectedMs)

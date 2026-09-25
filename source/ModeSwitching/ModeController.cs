@@ -21,6 +21,7 @@ internal sealed class ModeController
     private readonly Func<Task> stopRunningAsync;
     private readonly Action<ModeDescriptor> showSurfaces;
     private Task selectChain = Task.CompletedTask;
+    private ModeTab? requestedTab;
 
     /// <param name="stopRunningAsync">Stops what the mode being left runs (a sweep, a live capture).</param>
     /// <param name="showSurfaces">Shows the new tab's panels and buttons, before the view draws.</param>
@@ -39,10 +40,14 @@ internal sealed class ModeController
     // Switches queue: interleaving with a slow switch leaves ActiveTab and the view's mode disagreeing.
     public Task SelectAsync(ModeTab tab)
     {
+        requestedTab = tab;
         Task current = SelectAfterAsync(selectChain, tab);
         selectChain = current;
         return current;
     }
+
+    /// <summary>The user chose a tab: the one already shown (or on its way) is no switch, so nothing running stops.</summary>
+    public Task ChooseAsync(ModeTab tab) => tab == requestedTab && !selectChain.IsFaulted ? selectChain : SelectAsync(tab);
 
     private async Task SelectAfterAsync(Task previous, ModeTab tab)
     {

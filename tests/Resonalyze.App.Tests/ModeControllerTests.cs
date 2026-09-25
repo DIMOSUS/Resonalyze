@@ -108,6 +108,46 @@ public sealed class ModeControllerTests
         Assert.DoesNotContain("enter:ImpulseResponse", calls);
     }
 
+    [Fact]
+    public async Task ChooseAsync_OfTheTabAlreadyShown_StopsNothing()
+    {
+        var calls = new List<string>();
+        ModeController controller = CreateController(calls, stop: () => Task.CompletedTask);
+        await controller.SelectAsync(ModeTab.LiveSpectrum);
+        calls.Clear();
+
+        await controller.ChooseAsync(ModeTab.LiveSpectrum);
+        Assert.Empty(calls);
+
+        await controller.ChooseAsync(ModeTab.Frequency);
+        Assert.Contains("stop", calls);
+        Assert.Equal(ModeTab.Frequency, controller.ActiveTab);
+    }
+
+    [Fact]
+    public async Task ChooseAsync_RetriesATabWhoseSwitchFailed()
+    {
+        var calls = new List<string>();
+        bool fail = true;
+        ModeController controller = CreateController(
+            calls,
+            stop: () =>
+            {
+                if (fail)
+                {
+                    fail = false;
+                    throw new InvalidOperationException("boom");
+                }
+
+                return Task.CompletedTask;
+            });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.ChooseAsync(ModeTab.Impulse));
+        await controller.ChooseAsync(ModeTab.Impulse);
+
+        Assert.Equal(ModeTab.Impulse, controller.ActiveTab);
+    }
+
     private static ModeController CreateController(List<string> calls, Func<Task> stop) =>
         new(
             [new RecordingView(calls)],

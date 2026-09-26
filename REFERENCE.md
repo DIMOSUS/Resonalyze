@@ -122,7 +122,7 @@ the exception and takes all of it.)
 | Middle-button drag | Variable zoom: right and left work the horizontal axis, up and down the vertical one |
 | **Ctrl** + right-button drag | Draws a zoom box, labelled with the size of the area it frames in axis units; it stays on the graph until you click inside it to zoom there |
 | Right-button drag | Pans |
-| The **+** / **&minus;** buttons on the graph | Zoom the axis they sit against by about two, click after click; the bottom pair sits at the right end of its axis and the left pair at the top of its. They appear while the pointer is over the plot, and hovering one names the axis it moves |
+| The **+** / **&minus;** buttons on the graph | Zoom the axis they sit against by about two about the middle of the view, click after click, so what is centred stays centred; the bottom pair sits at the right end of its axis and the left pair at the top of its. They appear while the pointer is over the plot, and hovering one names the axis it moves |
 | Double click | Opens the graph limits dialog |
 | Left drag on an EQ Wizard band handle | Moves that band: frequency sideways, gain up and down (see [EQ Wizard](#eq-wizard)) |
 | Wheel over the selected EQ Wizard band handle | Steps that band's Q instead of zooming |

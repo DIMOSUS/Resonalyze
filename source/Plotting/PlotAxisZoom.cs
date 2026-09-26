@@ -93,7 +93,29 @@ internal static class PlotAxisZoom
         PlotModel model,
         ScreenPoint point,
         bool horizontal,
-        double scale)
+        double scale) =>
+        ZoomFoundAxis(model, point, horizontal, scale, _ => horizontal ? point.X : point.Y);
+
+    /// <summary>The on-graph buttons: about the middle of the visible range, since the button itself sits at an end of the axis.</summary>
+    public static bool ZoomAxisAboutCentre(
+        PlotModel model,
+        ScreenPoint point,
+        bool horizontal,
+        double scale) =>
+        // Screen middle, so a log axis keeps its visual middle.
+        ZoomFoundAxis(
+            model,
+            point,
+            horizontal,
+            scale,
+            axis => (axis.Transform(axis.ActualMinimum) + axis.Transform(axis.ActualMaximum)) / 2);
+
+    private static bool ZoomFoundAxis(
+        PlotModel model,
+        ScreenPoint point,
+        bool horizontal,
+        double scale,
+        Func<Axis, double> screenAnchor)
     {
         ArgumentNullException.ThrowIfNull(model);
 
@@ -103,7 +125,7 @@ internal static class PlotAxisZoom
             return false;
         }
 
-        axis.ZoomAt(scale, axis.InverseTransform(horizontal ? point.X : point.Y));
+        axis.ZoomAt(scale, axis.InverseTransform(screenAnchor(axis)));
         return true;
     }
 

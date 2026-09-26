@@ -45,6 +45,10 @@ Bindings that mirror REW:
 Two bindings have no REW counterpart: Ctrl + wheel zooms the vertical axis only, and Home / A (OxyPlot's
 default binding, not rebound here) resets all axes to the model's own scale. Neither shadows a REW gesture.
 
+The on-graph buttons zoom about the middle of the axis's visible range (`PlotAxisZoom.ZoomAxisAboutCentre`).
+REW centres its horizontal pair on its persistent cursor line, which this app does not have; zooming about the
+button itself, which sits at an end of the axis, slid the view towards that end on every click.
+
 Keyboard zoom centres on the pointer, but OxyPlot key events carry no position, so the controller
 tracks the last pointer position (`PlotAxisZoom.ClampToPlotArea` clamps it into the plot area).
 Pointer tracking invalidates the view only when the zoom buttons appear, disappear or change hover

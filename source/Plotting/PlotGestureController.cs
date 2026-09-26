@@ -176,7 +176,7 @@ internal sealed class PlotGestureController : PlotController
         }
 
         PushZoomUndo();
-        if (PlotAxisZoom.ZoomAxisAt(
+        if (PlotAxisZoom.ZoomAxisAboutCentre(
             model,
             button.Center,
             button.Horizontal,

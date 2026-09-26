@@ -27,6 +27,10 @@ public sealed class DataHelperImpulseTests
         return new SyntheticMeasurement(ir, SampleRate, peakIndex);
     }
 
+    // Sample-unit axis with the origin at record start: X is the signed sample itself.
+    private static SignalPoint At(IReadOnlyList<SignalPoint> points, double sample) =>
+        points.Single(point => point.X == sample);
+
     private static ImpulseResponseOptions Options(
         Action<ImpulseResponseOptions>? configure = null)
     {
@@ -41,9 +45,8 @@ public sealed class DataHelperImpulseTests
     }
 
     [Fact]
-    public void Impulse_UsesAbsoluteSamplesAndClampsToTheAvailableLength()
+    public void Impulse_DrawsOnePeriodWithTheSecondHalfBeforeZero()
     {
-        // 1000 + 4096 exceeds the 2000-sample response: clamp and keep the X axis absolute.
         SyntheticMeasurement measurement = WithPeakAt(peakIndex: 1_000, length: 2_000);
 
         ImpulseCurveSet set = DataHelper.GetImpulseCurves(
@@ -51,10 +54,38 @@ public sealed class DataHelperImpulseTests
 
         AnalysisCurve curve = Assert.IsType<AnalysisCurve>(set.Impulse);
         Assert.Equal(2_000, curve.Points.Count);
-        Assert.Equal(0.0, curve.Points[0].X, precision: 12);
-        SignalPoint peak = curve.Points.MaxBy(p => Math.Abs(p.Y));
-        Assert.Equal(1_000.0, peak.X, precision: 12);
+        Assert.Equal(-999.0, curve.Points[0].X, precision: 12);
+        Assert.Equal(1_000.0, curve.Points[^1].X, precision: 12);
+        Assert.Equal(1.0, At(curve.Points, 1_000).Y, precision: 12);
         Assert.Equal(1_000, set.PeakSample);
+    }
+
+    [Fact]
+    public void PreRinging_WrappedToTheRecordEnd_IsDrawnBeforeZero()
+    {
+        var ir = new Complex[2_000];
+        ir[100] = Complex.One;
+        ir[1_950] = new Complex(-0.3, 0.0);
+        var measurement = new SyntheticMeasurement(ir, SampleRate, 100);
+
+        ImpulseCurveSet set = DataHelper.GetImpulseCurves(
+            measurement, Options(o => o.ShowEnvelope = true), new ImpulseRenderFrame());
+
+        Assert.Equal(-0.3, At(set.Impulse!.Points, -50).Y, precision: 12);
+        Assert.Equal(-50.0, set.Envelope!.Points.Where(p => p.X < 0).MaxBy(p => p.Y).X, precision: 9);
+        Assert.Equal(100, set.PeakSample);
+    }
+
+    [Fact]
+    public void PeakSample_InTheRecordsSecondHalfIsNegative()
+    {
+        SyntheticMeasurement measurement = WithPeakAt(peakIndex: 1_900, length: 2_000);
+
+        ImpulseCurveSet set = DataHelper.GetImpulseCurves(
+            measurement, Options(), new ImpulseRenderFrame());
+
+        Assert.Equal(-100, set.PeakSample);
+        Assert.Equal(1.0, At(set.Impulse!.Points, -100).Y, precision: 12);
     }
 
     [Fact]
@@ -159,7 +190,7 @@ public sealed class DataHelperImpulseTests
             new ImpulseRenderFrame());
 
         // In dB the largest magnitude is the silence floor, not the arrival.
-        Assert.Equal(expectedPeakY, set.Impulse!.Points[100].Y, precision: 9);
+        Assert.Equal(expectedPeakY, At(set.Impulse!.Points, 100).Y, precision: 9);
         Assert.Equal(0.5, set.PeakReference, precision: 12);
     }
 
@@ -215,10 +246,10 @@ public sealed class DataHelperImpulseTests
         ImpulseCurveSet b =
             DataHelper.GetImpulseCurves(measurement, inverted, new ImpulseRenderFrame());
 
-        Assert.Equal(1.0, a.Impulse!.Points[100].Y, precision: 12);
-        Assert.Equal(-1.0, b.Impulse!.Points[100].Y, precision: 12);
-        Assert.Equal(-a.Step!.Points[200].Y, b.Step!.Points[200].Y, precision: 12);
-        Assert.Equal(a.Envelope!.Points[100].Y, b.Envelope!.Points[100].Y, precision: 12);
+        Assert.Equal(1.0, At(a.Impulse!.Points, 100).Y, precision: 12);
+        Assert.Equal(-1.0, At(b.Impulse!.Points, 100).Y, precision: 12);
+        Assert.Equal(-At(a.Step!.Points, 200).Y, At(b.Step!.Points, 200).Y, precision: 12);
+        Assert.Equal(At(a.Envelope!.Points, 100).Y, At(b.Envelope!.Points, 100).Y, precision: 12);
         Assert.Equal(a.PeakReference, b.PeakReference, precision: 12);
     }
 
@@ -248,7 +279,10 @@ public sealed class DataHelperImpulseTests
             precision: 9);
         for (int i = 0; i < expected.Length; i += 97)
         {
-            Assert.Equal(expected[i], set.Envelope!.Points[i].Y, precision: 12);
+            Assert.Equal(
+                expected[i],
+                At(set.Envelope!.Points, DspMath.ToSignedLag(i, expected.Length)).Y,
+                precision: 12);
         }
     }
 
@@ -342,11 +376,30 @@ public sealed class DataHelperImpulseTests
             new ImpulseRenderFrame());
 
         IReadOnlyList<SignalPoint> step = set.Step!.Points;
-        Assert.Equal(0.0, step[99].Y, precision: 12);
-        Assert.Equal(1.0, step[100].Y, precision: 12);
-        Assert.Equal(1.0, step[139].Y, precision: 12);
-        Assert.Equal(1.25, step[140].Y, precision: 12);
+        Assert.Equal(0.0, At(step, 99).Y, precision: 12);
+        Assert.Equal(1.0, At(step, 100).Y, precision: 12);
+        Assert.Equal(1.0, At(step, 139).Y, precision: 12);
+        Assert.Equal(1.25, At(step, 140).Y, precision: 12);
         Assert.Equal(1.25, step[^1].Y, precision: 12);
+    }
+
+    [Fact]
+    public void Step_IsZeroJustBeforeTimeZero_AndIntegratesThePreRingingBackwards()
+    {
+        var ir = new Complex[2_000];
+        ir[100] = Complex.One;
+        ir[1_950] = new Complex(-0.3, 0.0);
+        var measurement = new SyntheticMeasurement(ir, SampleRate, 100);
+
+        ImpulseCurveSet set = DataHelper.GetImpulseCurves(
+            measurement, Options(o => o.ShowStep = true), new ImpulseRenderFrame());
+
+        IReadOnlyList<SignalPoint> step = set.Step!.Points;
+        Assert.Equal(0.0, At(step, -1).Y, precision: 12);
+        Assert.Equal(0.0, At(step, -50).Y, precision: 12);
+        Assert.Equal(0.3, At(step, -51).Y, precision: 12);
+        Assert.Equal(0.3, step[0].Y, precision: 12);
+        Assert.Equal(1.0, At(step, 100).Y, precision: 12);
     }
 
     [Fact]
@@ -364,7 +417,7 @@ public sealed class DataHelperImpulseTests
             new ImpulseRenderFrame());
 
         Assert.Equal(1.0, set.Step!.Points[^1].Y, precision: 12);
-        Assert.Equal(0.8, set.Step.Points[100].Y, precision: 12);
+        Assert.Equal(0.8, At(set.Step.Points, 100).Y, precision: 12);
     }
 
     [Theory]
@@ -387,7 +440,7 @@ public sealed class DataHelperImpulseTests
             }),
             new ImpulseRenderFrame());
 
-        Assert.Equal(1.0, set.Step!.Points[100].Y, precision: 12);
+        Assert.Equal(1.0, At(set.Step!.Points, 100).Y, precision: 12);
     }
 
     private static SyntheticMeasurement WithTwoBandsAt(
@@ -462,7 +515,7 @@ public sealed class DataHelperImpulseTests
             DataHelper.GetImpulseCurves(measurement, opt, new ImpulseRenderFrame());
 
         double atHighBurst = set.Impulse!.Points
-            .Skip(1_150).Take(100).Max(p => Math.Abs(p.Y));
+            .Where(p => p.X >= 1_150 && p.X < 1_250).Max(p => Math.Abs(p.Y));
         Assert.True(
             atHighBurst < 0.05 * set.PeakReference,
             $"out-of-band burst survived at {atHighBurst} against a peak of {set.PeakReference}");
@@ -505,7 +558,7 @@ public sealed class DataHelperImpulseTests
             measurement, Options(), new ImpulseRenderFrame());
 
         Assert.Equal(plain.PeakReference, filtered.PeakReference, precision: 12);
-        Assert.Equal(plain.Impulse!.Points[100].Y, filtered.Impulse!.Points[100].Y, precision: 12);
+        Assert.Equal(At(plain.Impulse!.Points, 100).Y, At(filtered.Impulse!.Points, 100).Y, precision: 12);
     }
 
     [Theory]
@@ -527,7 +580,7 @@ public sealed class DataHelperImpulseTests
             }),
             new ImpulseRenderFrame());
 
-        Assert.Equal(1.0, set.Impulse!.Points[100].Y, precision: 12);
+        Assert.Equal(1.0, At(set.Impulse!.Points, 100).Y, precision: 12);
     }
 
     [Theory]

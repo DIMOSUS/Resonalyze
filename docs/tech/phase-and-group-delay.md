@@ -610,6 +610,28 @@ sample is a gesture, not a settings change. All framing is view-only
 (`ImpulseRenderFrame`): the record is never rewritten, because Time Alignment, the
 Virtual DSP gate pin and saved offsets all refer to its absolute timeline.
 
+- The record is one period of a circular deconvolution, so its second half is
+  negative time: a linear-phase crossover's pre-ringing, or an arrival that leads the
+  loopback reference, lands at the end of the buffer. The traces are drawn as that
+  period, the samples past the middle (`DspMath.ToSignedLag`, the rule Time Alignment's
+  wrapped peaks use) placed before zero. Only the drawing order changes: band mask,
+  envelope and its cache still run on the record as stored, and zero stays the
+  loopback reference. The peak, the arrival marker and a Peak or First-arrival origin
+  are signed lags too, so a record whose strongest sample wrapped to the end shows it
+  before zero rather than seconds late. The view opens from zero (or from an earlier
+  peak) to the peak plus `Length`; the negative half is a pan away. Any split point
+  is a guess where decay ends and pre-ringing begins; the middle keeps the longest
+  pre-ringing (a long linear-phase FIR on a subwoofer rings for hundreds of ms) at the
+  cost of drawing decay older than half a record, which in a record of seconds is
+  noise, as negative time. The REW export rolls a fixed 150 ms instead because REW
+  wants a short pre-roll.
+- The step is zero just before time zero and integrates both ways from there, so its
+  positive half is the running sum from record start, as it always was. Integrating
+  from the left edge instead sums half a record of noise into the level at the
+  arrival: across 80 archived records that offset stayed under 3 % of the step's
+  peak on most, but reached 5-10 % on several and 50-75 % on a few, where it would
+  misplace the whole step.
+
 - Every curve on a plot is normalised against one reference peak; normalising each
   to itself would make two records 4 dB apart read identical. A Compare set passes
   the main set's peak.

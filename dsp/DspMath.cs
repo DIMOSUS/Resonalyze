@@ -24,6 +24,13 @@ public static class DspMath
         return wrapped < 0 ? wrapped + length : wrapped;
     }
 
+    /// <summary>A circular record's position as a lag: past the middle it is negative time wrapped to the end.</summary>
+    public static double ToSignedLag(double position, int length) =>
+        position <= length * 0.5 ? position : position - length;
+
+    /// <summary>How many of a circular record's samples <see cref="ToSignedLag"/> puts before zero.</summary>
+    public static int NegativeLagCount(int length) => Math.Max(0, (length - 1) / 2);
+
     public static int NextPowerOfTwo(int value)
     {
         if (value <= 0)

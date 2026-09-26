@@ -940,7 +940,7 @@ internal sealed class PlotModelFactory
     private static bool ImpulseStepIsAlone(ImpulseResponseOptions opt) =>
         opt.ShowStep && !opt.ShowImpulse && !opt.ShowEnvelope;
 
-    /// <summary>Opening span: record start to peak plus Length. A deconvolved record runs for seconds of noise.</summary>
+    /// <summary>Opening span: record start (or an earlier peak) to peak plus Length. A deconvolved record runs for seconds of noise.</summary>
     private static (double Start, double End)? ResolveImpulseDefaultSpan(
         IImpulseMeasurement measurement,
         ImpulseResponseOptions opt,
@@ -952,12 +952,16 @@ internal sealed class PlotModelFactory
             return null;
         }
 
-        double end = Math.Min(available - 1, measurement.PeakIndex + (double)opt.Length);
+        double peak = SignedPeakSample(measurement);
+        double start = Math.Min(0.0, peak);
+        double end = Math.Min(
+            available - 1 - DspMath.NegativeLagCount(available),
+            peak + (double)opt.Length);
         double ToAxis(double sample) =>
             opt.TimeUnit == ImpulseTimeUnit.Milliseconds && measurement.SampleRate > 0
                 ? (sample - origin) * 1000.0 / measurement.SampleRate
                 : sample - origin;
-        return (ToAxis(0), ToAxis(end));
+        return (ToAxis(start), ToAxis(end));
     }
 
     private static void ApplyDefaultImpulseSpan(
@@ -1036,18 +1040,27 @@ internal sealed class PlotModelFactory
             _ => string.Empty
         };
 
-    /// <summary>View zero in samples from record start; first-arrival uses the same estimate as the Auto gate offsets.</summary>
+    /// <summary>View zero in signed samples from record start; first-arrival uses the same estimate as the Auto gate offsets.</summary>
     private double ResolveImpulseOriginSamples(IImpulseMeasurement measurement) =>
         impulseResponseOptions.TimeOrigin switch
         {
-            ImpulseTimeOrigin.Peak => measurement.PeakIndex,
+            ImpulseTimeOrigin.Peak => SignedPeakSample(measurement),
             ImpulseTimeOrigin.FirstArrival =>
-                TransferIrStartCache.ResolveStartMs(measurement) is { } startMs &&
-                measurement.SampleRate > 0
-                    ? startMs * measurement.SampleRate / 1000.0
-                    : measurement.PeakIndex,
+                SignedArrivalSample(measurement) ?? SignedPeakSample(measurement),
             _ => 0.0
         };
+
+    // The view draws a record's second half as negative time, so every instant placed on it is a signed lag.
+    private static double SignedPeakSample(IImpulseMeasurement measurement) =>
+        DspMath.ToSignedLag(measurement.PeakIndex, measurement.ImpulseResponse?.Length ?? 0);
+
+    private static double? SignedArrivalSample(IImpulseMeasurement measurement) =>
+        TransferIrStartCache.ResolveStartMs(measurement) is { } startMs &&
+        measurement.SampleRate > 0
+            ? DspMath.ToSignedLag(
+                startMs * measurement.SampleRate / 1000.0,
+                measurement.ImpulseResponse?.Length ?? 0)
+            : null;
 
     private void AddImpulseSeries(
         PlotModel model,
@@ -1114,12 +1127,11 @@ internal sealed class PlotModelFactory
         string valueAxisKey = ImpulseStepIsAlone(impulseResponseOptions)
             ? ImpulseStepAxisKey
             : ImpulseAxisKey;
-        if (TransferIrStartCache.ResolveStartMs(measurement) is { } startMs &&
-            measurement.SampleRate > 0)
+        if (SignedArrivalSample(measurement) is { } arrivalSample)
         {
             AddImpulseMarker(
                 model,
-                ToAxis(startMs * measurement.SampleRate / 1000.0),
+                ToAxis(arrivalSample),
                 "arrival",
                 UiPalette.CurveExcessPhase.ToOxy(),
                 ArrivalLabelPosition,
@@ -1154,14 +1166,14 @@ internal sealed class PlotModelFactory
         ImpulseCurveSet set)
     {
         if (!impulseResponseOptions.HasBandFilter(measurement.SampleRate) ||
-            TransferIrStartCache.ResolveStartMs(measurement) is not { } startMs ||
+            SignedArrivalSample(measurement) is not { } arrivalSample ||
             !TransferIrDominantBandCache.Covers(
                 measurement, impulseResponseOptions.BandCenterHz))
         {
             return null;
         }
 
-        return set.PeakSample * 1000.0 / measurement.SampleRate - startMs;
+        return (set.PeakSample - arrivalSample) * 1000.0 / measurement.SampleRate;
     }
 
     // Fractions from the plot bottom; both captions hang downwards so the top edge cannot cut them.

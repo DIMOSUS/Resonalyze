@@ -75,7 +75,7 @@ namespace Resonalyze.Dsp
             {
                 ImpulseEnvelopeReading reading = WholeRecordEnvelope(measurement, opt, samples);
                 snrDb = reading.SnrDb;
-                double[] envelope = (double[])reading.Envelope.Clone();
+                double[] envelope = ToViewOrder(reading.Envelope);
                 SmoothEnvelopeInPlace(envelope, opt.EnvelopeSmoothingMs, measurement.SampleRate);
                 envelopeCurve = new AnalysisCurve(
                     "Envelope (ETC)",
@@ -84,22 +84,34 @@ namespace Resonalyze.Dsp
                     AnalysisCurveKind.ImpulseEnvelope);
             }
 
+            double[]? viewSamples = opt.ShowImpulse || opt.ShowStep ? ToViewOrder(samples) : null;
             return new ImpulseCurveSet(
                 opt.ShowImpulse
                     ? new AnalysisCurve(
                         "Impulse Response",
-                        RenderSignedTrace(samples, opt, frame, measurement.SampleRate, reference))
+                        RenderSignedTrace(viewSamples!, opt, frame, measurement.SampleRate, reference))
                     : null,
                 envelopeCurve,
                 opt.ShowStep
                     ? new AnalysisCurve(
                         "Step Response",
-                        RenderStepTrace(samples, opt, frame, measurement.SampleRate, reference),
+                        RenderStepTrace(viewSamples!, opt, frame, measurement.SampleRate, reference),
                         AnalysisCurveKind.ImpulseStep)
                     : null,
                 reference,
-                ownPeakIndex,
+                (int)DspMath.ToSignedLag(ownPeakIndex, length),
                 snrDb);
+        }
+
+        // View order starts at the earliest negative sample; circular work (band, envelope) stays in record order.
+        private static double[] ToViewOrder(double[] recordOrder)
+        {
+            int length = recordOrder.Length;
+            int lead = DspMath.NegativeLagCount(length);
+            var view = new double[length];
+            Array.Copy(recordOrder, length - lead, view, 0, lead);
+            Array.Copy(recordOrder, 0, view, lead, length - lead);
+            return view;
         }
 
         private static ImpulseEnvelopeReading WholeRecordEnvelope(
@@ -159,12 +171,13 @@ namespace Resonalyze.Dsp
         }
 
         private static double ImpulseTime(
-            int index,
+            int viewIndex,
+            int length,
             ImpulseResponseOptions opt,
             ImpulseRenderFrame frame,
             int sampleRate)
         {
-            double offset = index - frame.OriginSamples;
+            double offset = viewIndex - DspMath.NegativeLagCount(length) - frame.OriginSamples;
             return opt.TimeUnit == ImpulseTimeUnit.Milliseconds && sampleRate > 0
                 ? offset * 1000.0 / sampleRate
                 : offset;
@@ -181,7 +194,7 @@ namespace Resonalyze.Dsp
             for (int i = 0; i < samples.Length; i++)
             {
                 data.Add(new SignalPoint(
-                    ImpulseTime(i, opt, frame, sampleRate),
+                    ImpulseTime(i, samples.Length, opt, frame, sampleRate),
                     ScaleImpulseAmplitude(samples[i], opt.AmplitudeScale, reference)));
             }
 
@@ -222,7 +235,7 @@ namespace Resonalyze.Dsp
             for (int i = 0; i < magnitude.Length; i++)
             {
                 data.Add(new SignalPoint(
-                    ImpulseTime(i, opt, frame, sampleRate),
+                    ImpulseTime(i, magnitude.Length, opt, frame, sampleRate),
                     ScaleImpulseAmplitude(magnitude[i], opt.AmplitudeScale, reference)));
             }
 
@@ -237,14 +250,27 @@ namespace Resonalyze.Dsp
             int sampleRate,
             double reference)
         {
+            // Zero just before time zero, integrating both ways: from the left edge, half a record of noise would shift the arrival's level.
+            int lead = DspMath.NegativeLagCount(samples.Length);
             var step = new double[samples.Length];
             double running = 0.0;
-            double stepPeak = 0.0;
-            for (int i = 0; i < samples.Length; i++)
+            for (int i = lead; i < samples.Length; i++)
             {
                 running += samples[i];
                 step[i] = running;
-                stepPeak = Math.Max(stepPeak, Math.Abs(running));
+            }
+
+            running = 0.0;
+            for (int i = lead - 1; i >= 0; i--)
+            {
+                step[i] = running;
+                running -= samples[i];
+            }
+
+            double stepPeak = 0.0;
+            foreach (double value in step)
+            {
+                stepPeak = Math.Max(stepPeak, Math.Abs(value));
             }
 
             double divisor = opt.NormalizeStepToImpulsePeak
@@ -257,7 +283,7 @@ namespace Resonalyze.Dsp
             for (int i = 0; i < step.Length; i++)
             {
                 data.Add(new SignalPoint(
-                    ImpulseTime(i, opt, frame, sampleRate),
+                    ImpulseTime(i, step.Length, opt, frame, sampleRate),
                     step[i] / divisor));
             }
 

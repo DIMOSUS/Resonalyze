@@ -203,13 +203,13 @@ public static class TimeAlignmentAnalysis
 
         if (options.WrapPeakPositions)
         {
-            firstArrivalPeakSample = ToSignedDelaySamples(
+            firstArrivalPeakSample = DspMath.ToSignedLag(
                 firstArrivalPeakSample,
                 envelope.Length);
-            strongestPeakSample = ToSignedDelaySamples(
+            strongestPeakSample = DspMath.ToSignedLag(
                 strongestPeakSample,
                 envelope.Length);
-            energyOnsetSample = ToSignedDelaySamples(
+            energyOnsetSample = DspMath.ToSignedLag(
                 energyOnsetSample,
                 envelope.Length);
         }
@@ -525,9 +525,4 @@ public static class TimeAlignmentAnalysis
             envelope[peakIndex],
             envelope[peakIndex + 1]);
     }
-
-    private static double ToSignedDelaySamples(double wrappedPeakSample, int length) =>
-        wrappedPeakSample <= length * 0.5
-            ? wrappedPeakSample
-            : wrappedPeakSample - length;
 }

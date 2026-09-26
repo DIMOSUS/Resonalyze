@@ -87,6 +87,17 @@ at most twice over the life of the impulse. Public accessors
 (`GetPhaseAnalysisSpectrum`, `GetGroupDelayAnalysisSpectra`) return copies,
 because the arrays are shared cache entries.
 
+Each entry also keeps what the phase views derive from it (`PhaseSpectrumReadings`):
+the minimum phase of its magnitude, the Auto detrend estimate (which reads that same
+minimum phase, through `ExcessDelay.Estimate` over a reconstructed one) and the last
+measured phase per unwrap mode, with the reference sample and coherence it was read
+at. Within a Phase build without Compare the Auto detrend is computed once instead of
+twice and the minimum phase once instead of four times; a rebuild of the same gate (a curve
+toggled, the mode entered again, Compare chosen) reads all three from the entry. A
+group-delay reader that replaces the entry carries the readings over, since the
+spectrum is bit-identical. Readers racing on one entry compute the same values, so
+whichever write lands is right.
+
 ## FDW bank
 
 Under the frequency-dependent window (FDW) the window applied at a frequency is

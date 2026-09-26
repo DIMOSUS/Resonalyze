@@ -180,4 +180,41 @@ public sealed class PhaseCurvesTests
         Assert.Equal(expectedMs, slopeMs, tolerance: 0.05);
         Assert.Equal(expectedMs, peakMs, tolerance: 0.05);
     }
+
+    [Fact]
+    public void TheCachedReadings_MatchTheUncachedGate_BitForBit_OnEveryRead()
+    {
+        // A reflection and a coherence dip, so the detrend, unwrap gate and minimum phase all have work to do.
+        var ir = new Complex[8_192];
+        ir[960] = Complex.One;
+        ir[1_100] = new Complex(-0.45, 0.0);
+        ir[1_400] = new Complex(0.2, 0.0);
+        var measurement = new SyntheticMeasurement(ir, SampleRate, 960);
+        double[] coherence = Enumerable.Range(0, 4_097).Select(i => i is > 900 and < 1_100 ? 0.3 : 0.95).ToArray();
+        var settings = new PhaseAnalysisSettings(
+            PhaseWindowMode.Fixed, PhaseAnalysisSettings.DefaultFdwCycles, PhaseDetrendMode.Auto,
+            ManualDetrendMilliseconds: 0.0, GateOffsetMs: 19.0, LeftMs: 1.0, PlateauMs: 6.0,
+            RightMs: 3.0, Unwrap: false, SmoothingInverseOctaves: 12);
+
+        double detrendMs = DataHelper.EstimatePhaseDetrend(measurement, 19.0, 1.0, 6.0, 3.0).SlopeMilliseconds;
+        AnalysisCurve phase = DataHelper.GetPhase(measurement, 19.0, 1.0, 6.0, 3.0, detrendMs, 12, unwrap: false, coherence);
+        AnalysisCurve minimum = DataHelper.GetMinimumPhase(measurement, 19.0, 1.0, 6.0, 3.0, 12);
+        AnalysisCurve excess = DataHelper.GetExcessPhase(measurement, 19.0, 1.0, 6.0, 3.0, detrendMs, 12, coherence);
+        for (int read = 0; read < 2; read++)
+        {
+            Assert.Equal(detrendMs, DataHelper.ResolvePhaseDetrendMilliseconds(measurement, settings));
+            Assert.Equal(phase.Points, DataHelper.GetPhase(measurement, settings, coherence).Points);
+            Assert.Equal(minimum.Points, DataHelper.GetMinimumPhase(measurement, settings).Points);
+            Assert.Equal(excess.Points, DataHelper.GetExcessPhase(measurement, settings, coherence).Points);
+        }
+
+        // Another reference or coherence is not the remembered reading.
+        var manual = settings with { DetrendMode = PhaseDetrendMode.Manual, ManualDetrendMilliseconds = 20.5 };
+        Assert.Equal(
+            DataHelper.GetPhase(measurement, 19.0, 1.0, 6.0, 3.0, 20.5, 12, unwrap: false).Points,
+            DataHelper.GetPhase(measurement, manual).Points);
+        Assert.Equal(
+            DataHelper.GetExcessPhase(measurement, 19.0, 1.0, 6.0, 3.0, 20.5, 12).Points,
+            DataHelper.GetExcessPhase(measurement, manual).Points);
+    }
 }

@@ -175,8 +175,8 @@ namespace Resonalyze.Dsp
         private static readonly ConditionalWeakTable<Complex[], PhaseSpectrumCache>
             PhaseSpectrumCaches = new();
 
-        /// <summary>Gates kept per IR, least recently used out first. Each holds a 32768-bin spectrum (and its
-        /// time-weighted twin once group delay reads it), 0.5-1 MiB, and stepping a gate field makes a new one per step.
+        /// <summary>Gates kept per IR, least recently used out first. Each holds a 32768-bin spectrum (with its time-weighted
+        /// twin and the phase views' readings once they ask), 0.5-2 MiB, and stepping a gate field makes a new one per step.
         /// Enough for every view reading one record at once.</summary>
         internal const int PhaseSpectrumCacheCapacity = 8;
 
@@ -233,7 +233,22 @@ namespace Resonalyze.Dsp
         private sealed record CachedPhaseSpectrum(
             Complex[] Spectrum,
             Complex[]? TimeWeighted,
-            int ExtractionStart);
+            int ExtractionStart,
+            PhaseSpectrumReadings Readings);
+
+        // What the phase views derive from one entry, computed once and handed out read-only. Racing readers compute the
+        // same values, so whichever write lands is right; the measured phase keeps the last reading per unwrap mode.
+        private sealed class PhaseSpectrumReadings
+        {
+            public double[]? MinimumPhase;
+            public StrongBox<(double SlopeMilliseconds, double PeakMilliseconds)>? Detrend;
+            public readonly MeasuredPhaseReading?[] Measured = new MeasuredPhaseReading?[2];
+        }
+
+        private sealed record MeasuredPhaseReading(
+            double ReferenceSamples,
+            IReadOnlyList<double>? Coherence,
+            List<SignalPoint> Phase);
 
         private sealed record FdwSpectrumEntry(
             double CenterFrequencyHz,
@@ -359,13 +374,24 @@ namespace Resonalyze.Dsp
                 measurement, settings, timeWeighted: false, out extractionStart, cancellationToken)
                 .Spectrum;
 
-        // A group-delay reader replaces a phase-only cache entry with the pair (spectrum bit-identical).
         private static (Complex[] Spectrum, Complex[]? TimeWeighted) BuildAnalysisSpectra(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
             bool timeWeighted,
             out int extractionStart,
             CancellationToken cancellationToken = default)
+        {
+            CachedPhaseSpectrum entry = AnalysisEntry(measurement, settings, timeWeighted, cancellationToken);
+            extractionStart = entry.ExtractionStart;
+            return (entry.Spectrum, entry.TimeWeighted);
+        }
+
+        // A group-delay reader replaces a phase-only entry with the pair (spectrum bit-identical), keeping its readings.
+        private static CachedPhaseSpectrum AnalysisEntry(
+            IImpulseMeasurement measurement,
+            PhaseAnalysisSettings settings,
+            bool timeWeighted,
+            CancellationToken cancellationToken)
         {
             Complex[] impulse = measurement.ImpulseResponse
                 ?? throw new InvalidOperationException("Impulse response is not available.");
@@ -379,17 +405,22 @@ namespace Resonalyze.Dsp
                 settings.ValidatedFdwCycles,
                 GatedFftLength);
             PhaseSpectrumCache cache = PhaseSpectrumCaches.GetOrCreateValue(impulse);
+            PhaseSpectrumReadings? readings = null;
             lock (cache.Entries)
             {
-                if (cache.Entries.TryGetValue(key, out CachedPhaseSpectrum? cached) &&
-                    (!timeWeighted || cached.TimeWeighted != null))
+                if (cache.Entries.TryGetValue(key, out CachedPhaseSpectrum? cached))
                 {
-                    cache.Touch(key);
-                    extractionStart = cached.ExtractionStart;
-                    return (cached.Spectrum, cached.TimeWeighted);
+                    if (!timeWeighted || cached.TimeWeighted != null)
+                    {
+                        cache.Touch(key);
+                        return cached;
+                    }
+
+                    readings = cached.Readings;
                 }
             }
 
+            int extractionStart;
             Complex[] spectrum;
             Complex[]? weighted;
             if (settings.WindowMode == PhaseWindowMode.Fixed)
@@ -408,11 +439,63 @@ namespace Resonalyze.Dsp
                 (spectrum, weighted) = BuildFdwSpectra(
                     measurement, settings, timeWeighted, out extractionStart, cancellationToken);
             }
+            var entry = new CachedPhaseSpectrum(
+                spectrum, weighted, extractionStart, readings ?? new PhaseSpectrumReadings());
             lock (cache.Entries)
             {
-                cache.Store(key, new CachedPhaseSpectrum(spectrum, weighted, extractionStart));
+                cache.Store(key, entry);
             }
-            return (spectrum, weighted);
+            return entry;
+        }
+
+        private static double[] MinimumPhaseOf(CachedPhaseSpectrum entry) =>
+            LazyInitializer.EnsureInitialized(
+                ref entry.Readings.MinimumPhase,
+                () => MinimumPhase.FromMagnitude(entry.Spectrum.Select(value => value.Magnitude).ToArray()));
+
+        private static (double SlopeMilliseconds, double PeakMilliseconds) DetrendOf(
+            CachedPhaseSpectrum entry,
+            int sampleRate) =>
+            LazyInitializer.EnsureInitialized(
+                ref entry.Readings.Detrend,
+                () => new StrongBox<(double, double)>(EstimatePhaseDetrend(
+                    entry.Spectrum, entry.ExtractionStart, sampleRate, MinimumPhaseOf(entry)))).Value;
+
+        private static double DetrendMilliseconds(
+            CachedPhaseSpectrum entry,
+            int sampleRate,
+            PhaseAnalysisSettings settings) => settings.DetrendMode switch
+            {
+                PhaseDetrendMode.Off => 0.0,
+                PhaseDetrendMode.Manual => settings.ManualDetrendMilliseconds,
+                PhaseDetrendMode.Auto => DetrendOf(entry, sampleRate).SlopeMilliseconds,
+                _ => 0.0
+            };
+
+        // Shared by the phase and excess curves, which only read it.
+        private static List<SignalPoint> MeasuredPhaseOf(
+            CachedPhaseSpectrum entry,
+            int sampleRate,
+            PhaseAnalysisSettings settings,
+            bool unwrap,
+            IReadOnlyList<double>? coherence)
+        {
+            double referenceSamples = DetrendMilliseconds(entry, sampleRate, settings) * sampleRate / 1000.0;
+            ref MeasuredPhaseReading? slot = ref entry.Readings.Measured[unwrap ? 1 : 0];
+            MeasuredPhaseReading? reading = Volatile.Read(ref slot);
+            if (reading == null ||
+                !reading.ReferenceSamples.Equals(referenceSamples) ||
+                !ReferenceEquals(reading.Coherence, coherence))
+            {
+                reading = new MeasuredPhaseReading(
+                    referenceSamples,
+                    coherence,
+                    BuildMeasuredPhase(
+                        entry.Spectrum, entry.ExtractionStart, referenceSamples, sampleRate, unwrap, coherence));
+                Volatile.Write(ref slot, reading);
+            }
+
+            return reading.Phase;
         }
 
         // Operands of τ = Re[T·conj(H)] / |H|². See docs/tech/phase-and-group-delay.md#group-delay-identity.
@@ -846,17 +929,12 @@ namespace Resonalyze.Dsp
             IReadOnlyList<double>? coherence = null,
             CancellationToken cancellationToken = default)
         {
-            Complex[] spectrum = BuildAnalysisSpectrum(
-                measurement, settings, out int extractionStart, cancellationToken);
-            double detrendMilliseconds = ResolveDetrendMilliseconds(
-                spectrum,
-                extractionStart,
-                measurement.SampleRate,
-                settings);
+            CachedPhaseSpectrum entry = AnalysisEntry(
+                measurement, settings, timeWeighted: false, cancellationToken);
             return BuildMeasuredPhase(
-                spectrum,
-                extractionStart,
-                detrendMilliseconds * measurement.SampleRate / 1000.0,
+                entry.Spectrum,
+                entry.ExtractionStart,
+                DetrendMilliseconds(entry, measurement.SampleRate, settings) * measurement.SampleRate / 1000.0,
                 measurement.SampleRate,
                 settings.Unwrap,
                 coherence);
@@ -971,35 +1049,17 @@ namespace Resonalyze.Dsp
         public static double ResolvePhaseDetrendMilliseconds(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
-            CancellationToken cancellationToken = default)
-        {
-            Complex[] spectrum = BuildAnalysisSpectrum(
-                measurement, settings, out int extractionStart, cancellationToken);
-            return ResolveDetrendMilliseconds(
-                spectrum,
-                extractionStart,
+            CancellationToken cancellationToken = default) =>
+            DetrendMilliseconds(
+                AnalysisEntry(measurement, settings, timeWeighted: false, cancellationToken),
                 measurement.SampleRate,
                 settings);
-        }
 
         /// <summary>One Auto reference for every channel and sum; accepting only the reference measurement makes per-channel flattening impossible by accident.</summary>
         public static double ResolveCommonPhaseDetrendMilliseconds(
             IImpulseMeasurement referenceMeasurement,
             PhaseAnalysisSettings settings) =>
             ResolvePhaseDetrendMilliseconds(referenceMeasurement, settings);
-
-        private static double ResolveDetrendMilliseconds(
-            Complex[] spectrum,
-            int extractionStart,
-            int sampleRate,
-            PhaseAnalysisSettings settings) => settings.DetrendMode switch
-            {
-                PhaseDetrendMode.Off => 0.0,
-                PhaseDetrendMode.Manual => settings.ManualDetrendMilliseconds,
-                PhaseDetrendMode.Auto => EstimatePhaseDetrend(
-                    spectrum, extractionStart, sampleRate).SlopeMilliseconds,
-                _ => 0.0
-            };
 
         public static AnalysisCurve GetPhase(
             IImpulseMeasurement measurement,
@@ -1039,7 +1099,10 @@ namespace Resonalyze.Dsp
             IReadOnlyList<double>? coherence = null,
             CancellationToken cancellationToken = default)
         {
-            List<SignalPoint> phase = GetGatedPhaseData(measurement, settings, coherence, cancellationToken);
+            CachedPhaseSpectrum entry = AnalysisEntry(
+                measurement, settings, timeWeighted: false, cancellationToken);
+            List<SignalPoint> phase = MeasuredPhaseOf(
+                entry, measurement.SampleRate, settings, settings.Unwrap, coherence);
             List<SignalPoint> data = phase
                 .Select(point => new SignalPoint(point.X, point.Y / Math.PI * 180.0))
                 .ToList();
@@ -1095,18 +1158,18 @@ namespace Resonalyze.Dsp
             PhaseAnalysisSettings settings,
             CancellationToken cancellationToken = default)
         {
-            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _, cancellationToken);
+            CachedPhaseSpectrum entry = AnalysisEntry(
+                measurement, settings, timeWeighted: false, cancellationToken);
             return BuildMinimumPhaseCurve(
-                spectrum, measurement.SampleRate, settings.SmoothingInverseOctaves);
+                entry.Spectrum, MinimumPhaseOf(entry), measurement.SampleRate, settings.SmoothingInverseOctaves);
         }
 
         private static AnalysisCurve BuildMinimumPhaseCurve(
             Complex[] spectrum,
+            double[] minimumPhase,
             int sampleRate,
             double smoothingInverseOctaves)
         {
-            double[] magnitude = spectrum.Select(value => value.Magnitude).ToArray();
-            double[] minimumPhase = MinimumPhase.FromMagnitude(magnitude);
             var data = new List<SignalPoint>(spectrum.Length / 2);
             for (int i = 1; i < spectrum.Length / 2; i++)
             {
@@ -1178,19 +1241,11 @@ namespace Resonalyze.Dsp
             IReadOnlyList<double>? coherence = null,
             CancellationToken cancellationToken = default)
         {
-            Complex[] spectrum = BuildAnalysisSpectrum(
-                measurement, settings, out int extractionStart, cancellationToken);
-            double detrendMilliseconds = ResolveDetrendMilliseconds(
-                spectrum, extractionStart, measurement.SampleRate, settings);
-            List<SignalPoint> measured = BuildMeasuredPhase(
-                spectrum,
-                extractionStart,
-                detrendMilliseconds * measurement.SampleRate / 1000.0,
-                measurement.SampleRate,
-                unwrap: true,
-                coherence);
-            double[] minimumPhase = MinimumPhase.FromMagnitude(
-                spectrum.Select(value => value.Magnitude).ToArray());
+            CachedPhaseSpectrum entry = AnalysisEntry(
+                measurement, settings, timeWeighted: false, cancellationToken);
+            List<SignalPoint> measured = MeasuredPhaseOf(
+                entry, measurement.SampleRate, settings, unwrap: true, coherence);
+            double[] minimumPhase = MinimumPhaseOf(entry);
             var data = new List<SignalPoint>(measured.Count);
             for (int j = 0; j < measured.Count; j++)
             {
@@ -1226,18 +1281,21 @@ namespace Resonalyze.Dsp
 
         public static (double SlopeMilliseconds, double PeakMilliseconds) EstimatePhaseDetrend(
             IImpulseMeasurement measurement,
-            PhaseAnalysisSettings settings)
-        {
-            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out int extractionStart);
-            return EstimatePhaseDetrend(spectrum, extractionStart, measurement.SampleRate);
-        }
+            PhaseAnalysisSettings settings) =>
+            DetrendOf(
+                AnalysisEntry(measurement, settings, timeWeighted: false, CancellationToken.None),
+                measurement.SampleRate);
 
+        // minimumPhase: the spectrum's own, already reconstructed.
         private static (double SlopeMilliseconds, double PeakMilliseconds) EstimatePhaseDetrend(
             Complex[] spectrum,
             int extractionStart,
-            int sampleRate)
+            int sampleRate,
+            double[]? minimumPhase = null)
         {
-            ExcessDelayResult result = ExcessDelay.Estimate(spectrum, sampleRate);
+            ExcessDelayResult result = minimumPhase == null
+                ? ExcessDelay.Estimate(spectrum, sampleRate)
+                : ExcessDelay.Estimate(spectrum, sampleRate, minimumPhase);
             double toMilliseconds = 1000.0 / sampleRate;
             return (
                 (extractionStart + result.SlopeDelaySamples) * toMilliseconds,

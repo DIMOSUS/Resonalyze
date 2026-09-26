@@ -19,11 +19,11 @@ public sealed record DspChannelChain(
     public static DspChannelChain Identity { get; } = new();
 
     /// <summary>The low-pass edge the crossover realizes (a low- or band-pass), else null.</summary>
-    public CrossoverEdge? LowPassEdge =>
+    internal CrossoverEdge? LowPassEdge =>
         Crossover is { Kind: CrossoverKind.LowPass or CrossoverKind.BandPass } spec ? spec.LowPassEdge : null;
 
     /// <summary>The high-pass edge the crossover realizes (a high- or band-pass), else null.</summary>
-    public CrossoverEdge? HighPassEdge =>
+    internal CrossoverEdge? HighPassEdge =>
         Crossover is { Kind: CrossoverKind.HighPass or CrossoverKind.BandPass } spec ? spec.HighPassEdge : null;
 
     public Complex Response(double frequencyHz, double sampleRateHz)

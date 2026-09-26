@@ -632,6 +632,9 @@ per-junction delay.
   to exactly that impostor).
 - Deliberate simplifications versus the full engine, acceptable for ranking: no PHAT-seeded timeline and
   no cascade reprocessing of settled neighbours (junction deltas of a mono N-way compose independently).
+  Having no seed, the check forces a settled relation even where Auto delay would leave polarity to a
+  wide-seeded or joint search. Those arise below 1 kHz: over the archive, none of 36 Auto delay searches at
+  1 kHz or above ran on a wide seed, against 19 of 60 below.
 - Candidates are ranked with the optimizer's level-matched gains (right for comparing crossovers); the
   emitted proposals carry target-curve gains. The conventional candidate is identified by signature
   and forced into the post-check, replacing the worst pool entry if truncation dropped it.

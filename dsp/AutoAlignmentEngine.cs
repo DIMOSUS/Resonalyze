@@ -774,7 +774,7 @@ public static class AutoAlignmentEngine
     /// <summary>The relation Auto delay forces on a junction, as stage 2 does: at a matched split at or above 1 kHz, true where
     /// the pair's own filters sum inverted (LR12/LR36, BW12/BW36), false where they sum in phase (LR24/LR48); null where the
     /// search decides. See docs/tech/auto-alignment.md#expected-polarity.</summary>
-    public static bool? SettledRelativeInversion(
+    internal static bool? SettledRelativeInversion(
         CrossoverEdge? lowPass,
         CrossoverEdge? highPass,
         int processorSampleRate) =>

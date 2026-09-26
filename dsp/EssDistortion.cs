@@ -194,6 +194,7 @@ public static class EssDistortion
         double[] frequencies = noise.BinFrequenciesHz;
         double[] magnitude = noise.Magnitude;
         double[] result = new double[grid.Length];
+        Func<double, double>? correction = calibration?.AscendingCorrections();
         int cursor = 0;
         for (int i = 0; i < grid.Length; i++)
         {
@@ -214,9 +215,9 @@ public static class EssDistortion
             double x1 = frequencies[cursor + 1];
             double t = x1 > x0 ? (frequency - x0) / (x1 - x0) : 0.0;
             double amplitude = magnitude[cursor] + t * (magnitude[cursor + 1] - magnitude[cursor]);
-            if (calibration != null)
+            if (correction != null)
             {
-                amplitude *= Math.Pow(10.0, -calibration.GetDecibelCorrection(frequency) / 20.0);
+                amplitude *= Math.Pow(10.0, -correction(frequency) / 20.0);
             }
 
             result[i] = amplitude;
@@ -251,22 +252,50 @@ public static class EssDistortion
         ArgumentNullException.ThrowIfNull(sweep);
         ArgumentNullException.ThrowIfNull(options);
 
-        var result = new List<AnalysisCurve>();
         if ((curves & SpectrumCurves.Distortion) == 0 || deconvolvedImpulse.Length == 0)
         {
             return new DistortionCurveResult(
-                result, Array.Empty<string>(), Array.Empty<HarmonicPacketValidity>(), false);
+                [], Array.Empty<string>(), Array.Empty<HarmonicPacketValidity>(), false);
         }
 
-        EssHarmonicDecomposition decomposition = EssHarmonicAnalysis.AnalyzeEssHarmonics(
+        EssHarmonicDecomposition decomposition = Decompose(deconvolvedImpulse, sweep, options);
+        NoiseEstimate? noise = options.IncludeNoise
+            ? EssNoise.EstimateNoise(deconvolvedImpulse, decomposition, options)
+            : null;
+        return ComputeDistortionCurvesResult(decomposition, noise, options, calibration, curves);
+    }
+
+    /// <summary>What the curves start from, set by the record, its sweep, MaxHarmonic and FadeFraction alone; a caller
+    /// drawing one record again keeps it (with the noise estimate) instead of analysing each time.</summary>
+    public static EssHarmonicDecomposition Decompose(
+        ReadOnlySpan<double> deconvolvedImpulse,
+        EssSweepMetadata sweep,
+        DistortionOptions options) =>
+        EssHarmonicAnalysis.AnalyzeEssHarmonics(
             deconvolvedImpulse,
             sweep,
             new HarmonicAnalysisOptions(
                 MaxHarmonic: options.MaxHarmonic,
                 FadeFraction: options.FadeFraction));
-        NoiseEstimate? noise = options.IncludeNoise
-            ? EssNoise.EstimateNoise(deconvolvedImpulse, decomposition, options)
-            : null;
+
+    /// <param name="noise">From <see cref="EssNoise.EstimateNoise"/> when <see cref="DistortionOptions.IncludeNoise"/>.</param>
+    public static DistortionCurveResult ComputeDistortionCurvesResult(
+        EssHarmonicDecomposition decomposition,
+        NoiseEstimate? noise,
+        DistortionOptions options,
+        CalibrationFile? calibration,
+        SpectrumCurves curves)
+    {
+        ArgumentNullException.ThrowIfNull(decomposition);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var result = new List<AnalysisCurve>();
+        if ((curves & SpectrumCurves.Distortion) == 0)
+        {
+            return new DistortionCurveResult(
+                result, Array.Empty<string>(), Array.Empty<HarmonicPacketValidity>(), false);
+        }
+
         DistortionSpectrum spectrum = ComputeDistortion(decomposition, calibration, options, noise);
 
         var droppedOrders = new HashSet<int>(
@@ -331,6 +360,7 @@ public static class EssDistortion
 
         var excitationHz = new List<double>(usableBins);
         var amplitude = new List<double>(usableBins);
+        Func<double, double>? correction = calibration?.AscendingCorrections();
         for (int bin = 1; bin < usableBins; bin++)
         {
             double productHz = spectrum.BinFrequencyHz(bin);
@@ -340,9 +370,9 @@ public static class EssDistortion
             }
 
             double amp = spectrum.AmplitudeAt(bin);
-            if (calibration != null)
+            if (correction != null)
             {
-                amp *= Math.Pow(10.0, -calibration.GetDecibelCorrection(productHz) / 20.0);
+                amp *= Math.Pow(10.0, -correction(productHz) / 20.0);
             }
 
             excitationHz.Add(productHz / order);

@@ -139,3 +139,17 @@ packet inside the record.
 **Certifying clean** requires a below-threshold ceiling *and* complete coverage; "nothing detected" alone
 never means clean. A null result means no verdict at all (for example second-order probes do not fit, the
 probe radius rounds to zero, or the linear packet is empty or non-finite).
+
+## Reuse across plot builds
+
+The decomposition depends on the record, its sweep, `MaxHarmonic` and `FadeFraction` alone, and the noise
+estimate on the record, the decomposition and the noise window fields. `EssDistortion.Decompose` and the
+`ComputeDistortionCurvesResult` overload that takes a decomposition let a caller keep both;
+`MeasurementPlotContext` keeps them per `MeasurementResult`, so a Frequency Response rebuild (smoothing,
+calibration, a curve toggled) only redoes the calibrated grid and the smoothing. The plot never changes the
+fields the analysis reads.
+
+Calibration is applied per bin at the product frequency, tens of thousands of reads per packet in ascending
+order. `CalibrationFile.AscendingCorrections` answers them with the bracketing points and their levels
+carried from read to read, and returns exactly `GetDecibelCorrection`'s values (a read below the current
+segment starts over).

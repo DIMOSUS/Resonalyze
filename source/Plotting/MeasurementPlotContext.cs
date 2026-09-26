@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 
@@ -86,6 +87,9 @@ internal sealed class MeasurementPlotContext
     // HD curves smoothed at the primary's width so HD2..HDn read at HD1's resolution.
     private const double HarmonicSmoothingWidthFactor = 1.0;
 
+    // Shared by every build of a result: its decomposition and noise floor depend on nothing a build changes.
+    private static readonly ConditionalWeakTable<MeasurementResult, DistortionAnalysis> DistortionAnalyses = new();
+
     public FrequencyResponseCurves CreateFrequencyResponseCurves(
         FrequencyResponseOptions options,
         CalibrationFile? calibration,
@@ -117,6 +121,7 @@ internal sealed class MeasurementPlotContext
         // The result's recorded sweep geometry, not the rebuilt one (length-capped, legacy edges unreachable).
         if ((curves & SpectrumCurves.Distortion) == 0 ||
             document.Result is not { } result ||
+            result.SweepDeconvolution.ImpulseResponse.Length == 0 ||
             result.SweepSampleCount <= 0 ||
             !(result.AchievedLowFrequencyHz > 0) ||
             !(result.AchievedHighFrequencyHz > result.AchievedLowFrequencyHz))
@@ -134,13 +139,6 @@ internal sealed class MeasurementPlotContext
             deconvolution.PeakIndex,
             result.MeasuredHighFrequencyHz);
 
-        Complex[] impulse = deconvolution.ImpulseResponse;
-        double[] real = new double[impulse.Length];
-        for (int i = 0; i < impulse.Length; i++)
-        {
-            real[i] = impulse[i].Real;
-        }
-
         // Noise floor as its own trace (REW-style), so THD stays harmonics-only.
         var distortionOptions = new DistortionOptions(
             // The psychoacoustic dip floor applies to the fundamental's trace only.
@@ -148,12 +146,43 @@ internal sealed class MeasurementPlotContext
                 SpectrumSmoothing.SmoothingOctaves(options.SmoothingInverseOctaves),
             IncludeNoise: (curves & SpectrumCurves.NoiseFloor) != 0);
 
+        // The harmonic and noise options the analysis reads are the defaults, never a build's own.
+        DistortionAnalysis analysis = DistortionAnalyses.GetValue(
+            result,
+            _ => new DistortionAnalysis(deconvolution.ImpulseResponse, sweepMetadata, distortionOptions));
         return EssDistortion.ComputeDistortionCurvesResult(
-            real,
-            sweepMetadata,
+            analysis.Decomposition,
+            distortionOptions.IncludeNoise ? analysis.Noise : null,
             distortionOptions,
             options.UseCalibration ? calibration : null,
             curves & SpectrumCurves.Distortion);
+    }
+
+    private sealed class DistortionAnalysis
+    {
+        private readonly Lazy<EssHarmonicDecomposition> decomposition;
+        private readonly Lazy<NoiseEstimate> noise;
+
+        public DistortionAnalysis(Complex[] impulse, EssSweepMetadata sweep, DistortionOptions options)
+        {
+            decomposition = new(() => EssDistortion.Decompose(RealPart(impulse), sweep, options));
+            noise = new(() => EssNoise.EstimateNoise(RealPart(impulse), decomposition.Value, options));
+        }
+
+        public EssHarmonicDecomposition Decomposition => decomposition.Value;
+
+        public NoiseEstimate Noise => noise.Value;
+
+        private static double[] RealPart(Complex[] impulse)
+        {
+            double[] real = new double[impulse.Length];
+            for (int i = 0; i < impulse.Length; i++)
+            {
+                real[i] = impulse[i].Real;
+            }
+
+            return real;
+        }
     }
 }
 

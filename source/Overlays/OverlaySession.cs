@@ -202,6 +202,20 @@ internal sealed class OverlaySession
         plotChanged();
     }
 
+    /// <summary><see cref="RestoreActiveSlots"/> for a plot whose model is still building: the slots holding something
+    /// come back checked, and <see cref="Show(Mode)"/> draws them on the model that lands.</summary>
+    public void ArmActiveSlots(Mode mode, IReadOnlyList<int> activeSlots)
+    {
+        Mode overlayMode = OverlayModes.SlotModeFor(mode);
+        foreach (OverlaySlot slot in slots)
+        {
+            if (slot.SeriesMode == overlayMode && slot.Title.Length > 0 && activeSlots.Contains(slot.Index))
+            {
+                SetChecked(slot, true);
+            }
+        }
+    }
+
     /// <summary>The captures a calculated overlay or target in <paramref name="forSlot"/> may read: never its own, which it replaces.</summary>
     public IReadOnlyList<OverlaySlotOption> CaptureSourceOptions(OverlaySlot forSlot)
     {

@@ -254,6 +254,25 @@ public sealed class AnalyzerWiringTests : IDisposable
         });
     }
 
+    [Fact]
+    public void ARunThatLandsNothing_TakesTheReadoutOffMeasuring_EvenWhenNothingElseMoved()
+    {
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Select(ModeTab.Phase);
+            string idle = analyzer.PeakInfo;
+
+            analyzer.StartRun();
+            typeof(Form1).GetMethod("EnterMeasurementRunningState", Hidden)!.Invoke(analyzer.Form, []);
+            analyzer.Pump();
+            Assert.NotEqual(idle, analyzer.PeakInfo);
+
+            analyzer.CompleteRun(null);
+            Assert.Equal(idle, analyzer.PeakInfo);
+        });
+    }
+
     // A save renames the open measurement; the title follows the document, and nothing else is rebuilt.
     [Fact]
     public void ARenameRetitlesThePlot()

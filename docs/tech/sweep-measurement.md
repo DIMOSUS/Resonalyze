@@ -94,8 +94,8 @@ curves builds on the thread pool through `SupersedingBuild`:
   dropped. The factory checks the token between curves, and the long stages check it as they
   go: each FDW window, between the group-delay smoothing passes, each waterfall slice and
   burst-decay band. The analysis caches only ever take complete entries.
-- A mode switch shows the mode's frame at once (title, axes, peak read-out, the overlay slots it
-  restores) and the curves when they land. The frame takes the saved zoom but is never remembered
+- A mode switch shows the mode's frame at once (title, axes, peak read-out) and the curves, with
+  the overlay slots, when they land. The frame takes the saved zoom but is never remembered
   from (`PlotViewportMemory.ShowPlaceholder`), so its own ranges cannot pass for the user's; a zoom
   made on the frame is lost when the curves land. Any other redraw keeps the model on screen until
   the new one lands.
@@ -112,8 +112,13 @@ curves builds on the thread pool through `SupersedingBuild`:
 - A document or compare change that moves nothing drawn draws nothing (`PlotDrawInputs`): a
   rename only retitles the model on screen, a compare selection counts only with curves in the
   modes that draw it (Frequency Response, Phase, Group Delay, Impulse), and a producer that lets
-  go without a result leaves the plot as it was. Settings edits and mode switches always draw,
-  since the view options are not among what it compares.
+  go without a result leaves the curves as they were; the peak read-out still follows whether
+  the document is held. Settings edits and mode switches always draw, since the view options
+  are not among what it compares.
+- A switch whose curves are building checks the mode's saved overlay slots on the frame
+  (`OverlaySession.ArmActiveSlots`) and draws them once, when the model lands: drawn on the frame
+  too, a calculated slot would compute twice, and an impulse capture would draw under the frame's
+  default framing.
 
 ## Sweep generation
 

@@ -348,6 +348,21 @@ public sealed class OverlaySessionTests : IDisposable
     }
 
     [Fact]
+    public void ArmedSlots_ComeBackChecked_AndDrawWithTheNextShow()
+    {
+        session.Capture(Slot(1), AddLiveCurve(AnalysisCurveKind.Primary, "Frequency Response", 0.0));
+        session.HideAll();
+
+        session.ArmActiveSlots(mode, [1, 5]);
+
+        Assert.True(Slot(1).Checked);
+        Assert.False(Slot(5).Checked);
+        Assert.Null(OverlaySeriesOrNull(1));
+        session.Show(mode);
+        Assert.NotNull(OverlaySeriesOrNull(1));
+    }
+
+    [Fact]
     public void RestoringAnEmptySlot_LeavesItUnchecked()
     {
         session.RestoreActiveSlots(mode, [5]);

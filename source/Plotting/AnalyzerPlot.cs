@@ -170,10 +170,8 @@ internal sealed class AnalyzerPlot : IModeView
 
     public void Present()
     {
-        if (DrawsMeasurement)
-        {
-            Observe(Draw(placeholder: true));
-        }
+        Task drawing = DrawsMeasurement ? Draw(placeholder: true) : Task.CompletedTask;
+        Observe(drawing);
 
         // Show() with a null model unchecks the slots and loses the saved selection.
         if (!ShowsOverlays)
@@ -183,7 +181,15 @@ internal sealed class AnalyzerPlot : IModeView
 
         if (activeOverlaySlots.TryGet(OverlayModes.SlotModeFor(Mode), out List<int> slots))
         {
-            Overlays.RestoreActiveSlots(Mode, slots);
+            // On a frame whose curves are building, the slots draw once, with the curves and their impulse framing.
+            if (drawing.IsCompleted)
+            {
+                Overlays.RestoreActiveSlots(Mode, slots);
+            }
+            else
+            {
+                Overlays.ArmActiveSlots(Mode, slots);
+            }
         }
     }
 
@@ -376,6 +382,11 @@ internal sealed class AnalyzerPlot : IModeView
         else if (redraw != PlotRedraw.None)
         {
             Redraw();
+        }
+        else
+        {
+            // The read-out follows whether a producer holds the document, which the curves do not.
+            UpdatePeakInfo();
         }
     }
 

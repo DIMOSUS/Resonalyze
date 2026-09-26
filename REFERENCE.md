@@ -177,8 +177,8 @@ the Virtual DSP view between magnitude, phase, group delay, impulse and step —
 impulse and step share one time axis, so a toggle between those two keeps it).
 
 The analysis curves are computed in the background, so the window never waits
-on them: switching modes shows the new mode's axes, overlays and read-out at
-once and draws its curves the moment they are computed, and a setting changed or
+on them: switching modes shows the new mode's axes and read-out at once and
+draws its curves, with its overlays, the moment they are computed; a setting changed or
 a mode chosen meanwhile replaces that computation instead of queueing behind it.
 A zoom made on the empty frame, before the curves arrive, is not kept; the range
 remembered for the mode is.

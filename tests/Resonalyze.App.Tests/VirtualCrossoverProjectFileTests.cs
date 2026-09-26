@@ -447,6 +447,7 @@ public sealed class VirtualCrossoverProjectFileTests
                 HighPassSlopeDbPerOctave = 48,
                 HighPassSampleRateHz = 96_000
             };
+            saved.Pairs[2].Left.SpatialAverageFile = new SpatialAverageFileSettings { CalibratedAsIs = true };
             saved.Save(root);
 
             VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadOrDefault(root);
@@ -458,6 +459,8 @@ public sealed class VirtualCrossoverProjectFileTests
                 new ProtectiveHighPassConfiguration(ProtectiveHighPassKind.LinkwitzRiley, 1_500, 48),
                 answers.HighPass);
             Assert.Equal(96_000, answers.HighPassSampleRateHz);
+            Assert.False(answers.CalibratedAsIs);
+            Assert.True(loaded.Pairs[2].Left.SpatialAverageFile!.CalibratedAsIs);
             Assert.Null(loaded.Pairs[0].Left.SpatialAverageFile);
         }
         finally

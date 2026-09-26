@@ -96,8 +96,8 @@ partial class VirtualCrossoverSpatialAverageFileDialog
         labelCalibrationHint.Size = new Size(496, 34);
         labelCalibrationHint.TabIndex = 5;
         labelCalibrationHint.Text =
-            "The file REW corrected the levels with (REW applies the input's calibration file on " +
-            "export). With the right answer the panel's calibration choice can replace or remove it.";
+            "REW applies its input's calibration on export: pick that file so Mic cal can swap it. " +
+            "An array or several positions averaged, each through its own file, is already correct.";
         //
         // labelHighPass
         //

@@ -7,9 +7,12 @@ namespace Resonalyze;
 /// <summary>What the user stated about a response file attached as a spatial average; the file records none of it.</summary>
 public sealed class SpatialAverageFileSettings
 {
-    /// <summary>The microphone correction the file's levels already carry; null when they are uncalibrated.</summary>
+    /// <summary>The microphone correction the file's levels already carry; null when they are uncalibrated or <see cref="CalibratedAsIs"/>.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public VirtualCrossoverCalibrationSettings? Calibration { get; set; }
+
+    /// <summary>Stated as already correct (e.g. an array averaged through each capsule's own file): drawn as stored, Mic cal never reaches it.</summary>
+    public bool CalibratedAsIs { get; set; }
 
     /// <summary>Protective high-pass that was in the measured path, divided out on import; Off when there was none.</summary>
     public ProtectiveHighPassKind HighPassKind { get; set; }
@@ -38,14 +41,17 @@ public sealed class SpatialAverageFileSettings
     }
 }
 
-/// <summary>One answer to "which calibration do the file's levels carry"; null curve = uncalibrated.</summary>
+/// <summary>One answer to "which calibration do the file's levels carry"; null curve = uncalibrated unless <see cref="AsIs"/>.</summary>
 internal sealed record SpatialAverageFileCalibrationChoice(
     string Label,
-    VirtualCrossoverCalibrationSettings? Calibration)
+    VirtualCrossoverCalibrationSettings? Calibration,
+    bool AsIs = false)
 {
+    public const int AsIsIndex = 1;
+
     public override string ToString() => Label;
 
-    /// <summary>None first, then the measurement's own file, then the app's list; a stated curve none of them holds is kept.</summary>
+    /// <summary>None, as-is, the measurement's own file, then the app's list; a stated curve none of them holds is kept.</summary>
     public static List<SpatialAverageFileCalibrationChoice> Offer(
         VirtualCrossoverCalibrationSettings? stated,
         VirtualCrossoverCalibrationSettings? measurement,
@@ -54,7 +60,8 @@ internal sealed record SpatialAverageFileCalibrationChoice(
         ArgumentNullException.ThrowIfNull(available);
         var choices = new List<SpatialAverageFileCalibrationChoice>
         {
-            new("None — the levels are uncalibrated", null)
+            new("None — the levels are uncalibrated", null),
+            new("Already correct — no calibration on top (Mic cal ignored)", null, AsIs: true)
         };
         if (measurement != null)
         {
@@ -138,7 +145,8 @@ internal static class SpatialAverageFileImport
         double[] curve = SpatialAverage.FromLevels(file.FrequenciesHz, file.LevelsDb);
 
         double[] calibrationDb = [];
-        if (answers.Calibration?.ToCalibrationFile() is { HasData: true } calibration)
+        if (!answers.CalibratedAsIs &&
+            answers.Calibration?.ToCalibrationFile() is { HasData: true } calibration)
         {
             calibrationDb = grid.Select(calibration.GetDecibelCorrection).ToArray();
         }
@@ -178,6 +186,7 @@ internal static class SpatialAverageFileImport
                 ProtectiveHighPassSlopeDbPerOctave = highPass.SlopeDbPerOctave
             },
             Calibration = calibrationDb.Length > 0 ? answers.Calibration : null,
+            CalibrationFixed = answers.CalibratedAsIs,
             CurveDb = curve,
             GridStartHz = grid[0],
             GridStopHz = grid[^1],

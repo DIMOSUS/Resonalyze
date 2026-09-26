@@ -93,9 +93,15 @@ answers on the side beside the path. The file is re-read and rebuilt from them o
 
 - *Calibration in the levels*, stated as a curve (none, the channel measurement's file, one from the
   list, or a file picked by hand). It is recorded as `CalibrationCorrectionDb` on the grid, exactly as
-  a capture records its own, so *Off* and *Specific* stay exact. "Calibrated with an unknown file" is
-  not offered: neither Off nor a swap could then be honoured, and the aggregate flag that would carry
-  it means per-position array files to every warning that reads it.
+  a capture records its own, so *Off* and *Specific* stay exact.
+- *Already correct* (`CalibratedAsIs`): a REW array or multi-position average went in with each
+  microphone through its own file, so no single curve can be undone or swapped. The document is marked
+  `CalibrationFixed` and `SpatialAverageHybrid.BuildChannelCurve` reads it as stored under every
+  calibration mode, which covers the plot, the datum, the audition and the EQ Wizard handoff at once.
+  It is a flag of its own rather than `CalibrationIsAggregate`, whose warnings speak of array
+  positions; `DescribeFixedCalibration` names such channels while Mic cal is not Own. The datum then
+  pairs a calibrated curve with the raw impulse response, so the calibration's shape enters it; the
+  median absorbs its broadband part.
 - *Protective high-pass in the measured path*, divided out with
   `ProtectiveHighPassCompensation.MagnitudeCorrectionDb` — the model, cap and fade the swept path
   uses — realized at the channel measurement's rate (the rate that divided the same filter out of its

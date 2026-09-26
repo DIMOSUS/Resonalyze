@@ -60,6 +60,28 @@ public sealed class SpatialAverageFileImportTests
     }
 
     [Fact]
+    public void AFileStatedAsAlreadyCorrect_IsDrawnAsStoredWhateverCalibrationIsAsked()
+    {
+        LiveCaptureDocument document = SpatialAverageFileImport.Build(
+            FlatFile(),
+            new SpatialAverageFileSettings { CalibratedAsIs = true, Calibration = FlatCalibration(2.0) },
+            "l tw.txt");
+        double[] probe = [Grid[100], Grid[900]];
+
+        foreach (SpatialAverageCalibration calibration in new[]
+        {
+            SpatialAverageCalibration.Off,
+            SpatialAverageCalibration.Own,
+            SpatialAverageCalibration.Specific(FlatCalibration(5.0).ToCalibrationFile())
+        })
+        {
+            List<SignalPoint>? curve = SpatialAverageHybrid.BuildChannelCurve(
+                document, DspChannelChain.Identity, 48_000, calibration, probe, 0);
+            Assert.All(curve!, point => Assert.Equal(80.0, point.Y, 6));
+        }
+    }
+
+    [Fact]
     public void AStatedHighPass_IsDividedOutOfTheFile()
     {
         var answers = new SpatialAverageFileSettings
@@ -139,10 +161,11 @@ public sealed class SpatialAverageFileImportTests
         List<SpatialAverageFileCalibrationChoice> choices = SpatialAverageFileCalibrationChoice.Offer(
             stated, measurement, [("umik", null, listed), ("ecm copy", null, duplicate)]);
 
-        Assert.Equal(4, choices.Count);
+        Assert.Equal(5, choices.Count);
         Assert.Null(choices[0].Calibration);
-        Assert.Equal(3, SpatialAverageFileCalibrationChoice.IndexOf(choices, stated));
-        Assert.Equal(1, SpatialAverageFileCalibrationChoice.IndexOf(choices, measurement));
+        Assert.True(choices[SpatialAverageFileCalibrationChoice.AsIsIndex].AsIs);
+        Assert.Equal(4, SpatialAverageFileCalibrationChoice.IndexOf(choices, stated));
+        Assert.Equal(2, SpatialAverageFileCalibrationChoice.IndexOf(choices, measurement));
         Assert.Equal(0, SpatialAverageFileCalibrationChoice.IndexOf(choices, null));
     }
 }

@@ -181,6 +181,10 @@ public sealed class LiveCaptureDocument
     /// <summary>Correction is an aggregate of several mic files: undoing stays exact, but replacing it with one curve is wrong.</summary>
     public bool CalibrationIsAggregate { get; set; }
 
+    /// <summary>A response file stated as already correct: drawn as stored whatever calibration is asked for. Built in memory only.</summary>
+    [JsonIgnore]
+    public bool CalibrationFixed { get; set; }
+
     /// <summary>Protective high-pass divided out of <see cref="CurveDb"/>, dB per point; NaN where unrecoverable. Empty when none.</summary>
     public double[] ProtectiveHighPassCorrectionDb { get; set; } = [];
 

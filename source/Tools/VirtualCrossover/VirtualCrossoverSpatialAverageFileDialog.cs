@@ -43,6 +43,7 @@ internal sealed partial class VirtualCrossoverSpatialAverageFileDialog : Form
     public SpatialAverageFileSettings Answers => new()
     {
         Calibration = (comboBoxCalibration.SelectedItem as SpatialAverageFileCalibrationChoice)?.Calibration,
+        CalibratedAsIs = (comboBoxCalibration.SelectedItem as SpatialAverageFileCalibrationChoice)?.AsIs == true,
         HighPassKind = HighPassKinds[Math.Max(0, comboBoxHighPassKind.SelectedIndex)].Kind,
         HighPassFrequencyHz = (double)numericHighPassHz.Value,
         HighPassSlopeDbPerOctave = comboBoxHighPassSlope.SelectedItem as int? ?? 24,
@@ -74,8 +75,9 @@ internal sealed partial class VirtualCrossoverSpatialAverageFileDialog : Form
             comboBoxCalibration.Items.Add(choice);
         }
 
-        comboBoxCalibration.SelectedIndex =
-            SpatialAverageFileCalibrationChoice.IndexOf(calibrations, stated.Calibration);
+        comboBoxCalibration.SelectedIndex = stated.CalibratedAsIs
+            ? SpatialAverageFileCalibrationChoice.AsIsIndex
+            : SpatialAverageFileCalibrationChoice.IndexOf(calibrations, stated.Calibration);
 
         highPassSampleRateHz = stated.HighPassSampleRateHz;
         ProtectiveHighPassConfiguration highPass = stated.HighPass;

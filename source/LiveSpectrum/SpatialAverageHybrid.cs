@@ -9,7 +9,8 @@ internal static class SpatialAverageHybrid
 {
     /// <summary>Hybrid curve at the capture's own level (the set offset is the caller's), or null.</summary>
     /// <param name="chainSampleRateHz">The channel's DSP rate, not the capture's.</param>
-    /// <param name="calibration">Off undoes the capture's correction; Own keeps it; Specific swaps it unless the correction is an aggregate (then Own).</param>
+    /// <param name="calibration">Off undoes the capture's correction; Own keeps it; Specific swaps it unless the correction is an aggregate (then Own).
+    /// A fixed calibration ignores all three.</param>
     public static List<SignalPoint>? BuildChannelCurve(
         LiveCaptureDocument document,
         DspChannelChain chain,
@@ -24,6 +25,11 @@ internal static class SpatialAverageHybrid
             document.CurveDb.Length < 2)
         {
             return null;
+        }
+
+        if (document.CalibrationFixed)
+        {
+            calibration = SpatialAverageCalibration.Own;
         }
 
         bool swap = calibration.Mode == SpatialAverageCalibrationMode.Specific &&

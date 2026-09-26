@@ -2793,7 +2793,10 @@ records nothing about how it was measured, so before attaching it Resonalyze ask
   calibration file, otherwise the one it applied (REW applies it on export): this
   channel's measurement's file, one from the calibration list, or **Other file...**.
   With the answer the panel's **Mic cal** choice can remove or replace it exactly, as it
-  does for a capture.
+  does for a capture. An array, or several positions averaged in REW, went in with each
+  microphone through its own file, so there is no single file to name: answer
+  **Already correct**, and the file is drawn as exported whatever **Mic cal** says (a
+  note names such channels while **Mic cal** is anything but **Own (as measured)**).
 - **Protective high-pass in the measured path** — the filter in your DSP ahead of the
   driver while the file was measured. A sweep here divides it out; a file measured
   through it carries it, so the same filter is divided out of the file. The answer

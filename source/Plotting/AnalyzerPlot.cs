@@ -190,7 +190,8 @@ internal sealed class AnalyzerPlot : IModeView
     /// <summary>Redraws the mode on screen; a build still running is cancelled.</summary>
     public void Redraw() => Observe(RedrawAsync());
 
-    /// <summary><see cref="Redraw"/>, done once the model is shown or superseded; a failed build faults it.</summary>
+    /// <summary><see cref="Redraw"/>, done once the model is shown or a superseded build has stopped; a failed build
+    /// faults it.</summary>
     public Task RedrawAsync()
     {
         if (DrawsMeasurement)
@@ -363,8 +364,9 @@ internal sealed class AnalyzerPlot : IModeView
         }
 
         PlotDrawInputs inputs = ReadInputs();
-        PlotRedraw redraw = inputs.RedrawFrom(drawn);
-        // A build in flight may have read the old name.
+        // A failed draw left something other than what it read on screen.
+        PlotRedraw redraw = Drawing.IsFaulted ? PlotRedraw.Rebuild : inputs.RedrawFrom(drawn);
+        // A build in flight carries the old name.
         if (redraw == PlotRedraw.Retitle && Drawing.IsCompleted && View.Model is { } model)
         {
             model.Title = Factory.Title(Mode);
@@ -400,8 +402,9 @@ internal sealed class AnalyzerPlot : IModeView
         }
 
         Mode mode = Mode;
+        PlotModelFactory frozen = Factory.Freeze();
         return Drawing = builds.RunAsync(
-            token => Factory.Create(mode, includeCurves: true, token),
+            token => frozen.Create(mode, includeCurves: true, token),
             model =>
             {
                 if (!owner.IsDisposed && Mode == mode)
@@ -411,7 +414,7 @@ internal sealed class AnalyzerPlot : IModeView
             });
     }
 
-    // A failed build reaches Application.ThreadException, as a draw on the UI thread did.
+    // A failed build nobody awaits reaches Application.ThreadException.
     private static async void Observe(Task drawing) => await drawing;
 
     private void Show(PlotModel model, bool includeCurves, bool showOverlay)

@@ -95,6 +95,29 @@ public sealed class PlotModelFactoryTests
         Assert.NotEmpty(factory.CreateImpulseResponse(includeCurves: true).Series);
     }
 
+    [Fact]
+    public void AFrozenFactory_BuildsWhatWasOpenWhenItWasFrozen()
+    {
+        using var measurement = CreateTransferMeasurement();
+        measurement.Document.Rename("first.json");
+        PlotModelFactory factory = CreateFactory(measurement);
+        var compareImpulse = new Complex[2048];
+        compareImpulse[80] = Complex.One;
+        CompareAnalysisSource? compare = new("reference", 44_100, compareImpulse, 80, Band: MeasuredBand.Everything);
+        factory.SetCompareSourceProvider(() => compare);
+
+        PlotModelFactory frozen = factory.Freeze();
+        measurement.Document.Clear();
+        Assert.NotNull(measurement.Document.TryAcquire());
+        compare = null;
+
+        PlotModel model = frozen.CreateFrequencyResponse(includeCurves: true);
+        Assert.Equal("Frequency Response - first.json", model.Title);
+        Assert.Contains(model.Series, series => series.Tag is CurveTag { Source: CurveSource.Main });
+        Assert.Contains(model.Series, series => series.Tag is CurveTag { Source: CurveSource.Compare });
+        Assert.Empty(factory.CreateFrequencyResponse(includeCurves: true).Series);
+    }
+
     [Theory]
     [InlineData(Mode.ImpulseResponse)]
     [InlineData(Mode.FrequencyResponse)]

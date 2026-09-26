@@ -36,7 +36,7 @@ internal sealed class PlotModelFactory
     private readonly ImpulseResponseOptions impulseResponseOptions;
     private readonly WaterfallGenerateOptions waterfallGenOptions;
     private readonly WaterfallGenerateOptions burstDecayGenOptions;
-    private readonly ConditionalWeakTable<PlotModel, StrongBox<ImpulseOverlayFrame>> impulseFrames = new();
+    private readonly ConditionalWeakTable<PlotModel, StrongBox<ImpulseOverlayFrame>> impulseFrames;
     private Func<CompareAnalysisSource?>? getCompareSource;
 
     public PlotModelFactory(
@@ -58,6 +58,43 @@ internal sealed class PlotModelFactory
         impulseResponseOptions = view.ImpulseResponse;
         waterfallGenOptions = view.Waterfall;
         burstDecayGenOptions = view.BurstDecay;
+        impulseFrames = new();
+    }
+
+    private PlotModelFactory(
+        PlotModelFactory live,
+        MeasurementPlotContext measurement,
+        Func<string?, CalibrationFile?> calibrations,
+        CompareAnalysisSource? compare)
+    {
+        expSweepMeasurement = live.expSweepMeasurement;
+        getCalibration = calibrations;
+        measurementContext = measurement;
+        frequencyResponseOptions = live.frequencyResponseOptions;
+        phaseResponseOptions = live.phaseResponseOptions;
+        groupDelayOptions = live.groupDelayOptions;
+        frequencyResponseVisibility = live.frequencyResponseVisibility;
+        phaseResponseVisibility = live.phaseResponseVisibility;
+        groupDelayVisibility = live.groupDelayVisibility;
+        impulseResponseOptions = live.impulseResponseOptions;
+        waterfallGenOptions = live.waterfallGenOptions;
+        burstDecayGenOptions = live.burstDecayGenOptions;
+        impulseFrames = live.impulseFrames;
+        getCompareSource = () => compare;
+    }
+
+    /// <summary>A factory over this moment of the open measurement, the compare selection and the calibration, for a
+    /// build off the UI thread; taken on the UI thread. It frames impulse overlays through this factory.</summary>
+    public PlotModelFactory Freeze()
+    {
+        // The Own calibration is the open result's; resolved here, it cannot come from another result.
+        string? calibrationId = frequencyResponseOptions.CalibrationId;
+        CalibrationFile? calibration = getCalibration(calibrationId);
+        return new PlotModelFactory(
+            this,
+            measurementContext.Freeze(),
+            id => id == calibrationId ? calibration : getCalibration(id),
+            getCompareSource?.Invoke());
     }
 
     public string? ImpulseResponseFileName => measurementContext.ImpulseResponseFileName;

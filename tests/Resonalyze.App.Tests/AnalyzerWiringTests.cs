@@ -6,6 +6,7 @@ using OxyPlot;
 using OxyPlot.Annotations;
 using OxyPlot.WindowsForms;
 using Resonalyze.Audio;
+using Resonalyze.Dsp;
 using Resonalyze.History;
 
 namespace Resonalyze.App.Tests;
@@ -230,6 +231,26 @@ public sealed class AnalyzerWiringTests : IDisposable
             Assert.Equal("Group Delay - cabin left.json", analyzer.Plot.Title);
             Assert.DoesNotContain(analyzer.Plot.Series, series => IsCurveOf(series, Mode.PhaseResponse));
             Assert.Contains(analyzer.Plot.Series, series => IsCurveOf(series, Mode.GroupDelay));
+        });
+    }
+
+    // The build read what was open when it started; a run taking the document meanwhile cannot tear it.
+    [Fact]
+    public void ARunStartedWhileTheCurvesBuild_LeavesThemOnScreen()
+    {
+        string path = WriteMeasurement("cabin left.json", peak: 240);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Open(path);
+
+            // The harmonics read the document after the slow primary spectrum, so a live read would find it emptied.
+            Assert.True(analyzer.Start("SelectModeAsync", ModeTab.Frequency).IsCompleted);
+            analyzer.StartRun();
+            analyzer.Pump();
+
+            Assert.Equal("Frequency Response - cabin left.json", analyzer.Plot.Title);
+            Assert.Contains(analyzer.Plot.Series, series => series.Tag is CurveTag { Kind: AnalysisCurveKind.SecondHarmonic });
         });
     }
 

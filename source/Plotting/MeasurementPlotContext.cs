@@ -5,25 +5,36 @@ using Resonalyze.Options;
 
 namespace Resonalyze;
 
-/// <summary>What a plot build reads of the open measurement; one build reads one result, whatever lands meanwhile.</summary>
+/// <summary>What a plot build reads of the open measurement: the document as it is, or one moment of it
+/// (<see cref="Freeze"/>) for a build off the UI thread, which whatever lands meanwhile cannot tear.</summary>
 internal sealed class MeasurementPlotContext
 {
-    private readonly AnalyzerDocument document;
+    private readonly AnalyzerDocument? document;
+    private readonly FrozenDocument frozen;
 
     public MeasurementPlotContext(AnalyzerDocument document)
     {
         this.document = document;
     }
 
-    /// <summary>The open result; builds that span several reads take it once.</summary>
-    public MeasurementResult? Result => document.Result;
+    private MeasurementPlotContext(FrozenDocument frozen)
+    {
+        this.frozen = frozen;
+    }
 
-    public int SampleRate => document.Result?.SampleRate ?? 0;
+    private FrozenDocument State => document != null ? FrozenDocument.Of(document) : frozen;
+
+    /// <summary>Taken on the UI thread, which alone writes the document.</summary>
+    public MeasurementPlotContext Freeze() => new(State);
+
+    public MeasurementResult? Result => State.Result;
+
+    public int SampleRate => State.Result?.SampleRate ?? 0;
 
     public string? ImpulseResponseFileName =>
-        string.IsNullOrWhiteSpace(document.SourceName)
+        State.SourceName is not { } sourceName || string.IsNullOrWhiteSpace(sourceName)
             ? null
-            : Path.GetFileName(document.SourceName);
+            : Path.GetFileName(sourceName);
 
     public string CreateTitle(string baseTitle) =>
         ImpulseResponseFileName is not { } fileName
@@ -32,14 +43,13 @@ internal sealed class MeasurementPlotContext
 
     public bool CanIncludeCurves(bool includeCurves) =>
         includeCurves &&
-        document.HasResult &&
-        !document.IsBusy;
+        State is { Result: not null, IsBusy: false };
 
-    public bool HasTransferImpulseResponse => document.Result?.HasTransfer == true;
+    public bool HasTransferImpulseResponse => State.Result?.HasTransfer == true;
 
     /// <summary>Estimated IR start (ms) for the Auto gate offset, memoized in <see cref="TransferIrStartCache"/>.</summary>
     public double? ResolveAutoGateOffsetMs() =>
-        document.Result is { Transfer.ImpulseResponse.Length: > 0, SampleRate: > 0 } result
+        State.Result is { Transfer.ImpulseResponse.Length: > 0, SampleRate: > 0 } result
             ? TransferIrStartCache.ResolveStartMs(
                 result.Transfer.ImpulseResponse,
                 result.SampleRate,
@@ -47,12 +57,12 @@ internal sealed class MeasurementPlotContext
             : null;
 
     /// <summary>The result's frozen anchor, so a live recalibration does not rescale what is on screen.</summary>
-    public double? SplOffsetDb => document.Result?.SplOffsetDb;
+    public double? SplOffsetDb => State.Result?.SplOffsetDb;
 
     // All analysis derives from the loopback transfer IR (callers gate on HasTransferImpulseResponse); sweep deconvolution is for harmonics/noise.
     public IImpulseMeasurement CreatePrimaryMeasurement()
     {
-        MeasurementResult result = document.Result
+        MeasurementResult result = State.Result
             ?? throw new InvalidOperationException("Transfer impulse response is not available.");
         MeasurementImpulseResponse transfer = result.Transfer
             ?? throw new InvalidOperationException(
@@ -70,7 +80,7 @@ internal sealed class MeasurementPlotContext
     }
 
     /// <summary>Band every derived curve stops at; overlays carry it past the measurement's lifetime.</summary>
-    public MeasuredBand MeasuredBand => document.Result?.MeasuredBand ?? MeasuredBand.Everything;
+    public MeasuredBand MeasuredBand => State.Result?.MeasuredBand ?? MeasuredBand.Everything;
 
     /// <summary>Uncalibrated oversampled spectrum for exact re-smoothing; calibration applies after smoothing.</summary>
     public IReadOnlyList<SignalPoint>? CreateRawPrimarySpectrum(
@@ -120,7 +130,7 @@ internal sealed class MeasurementPlotContext
     {
         // The result's recorded sweep geometry, not the rebuilt one (length-capped, legacy edges unreachable).
         if ((curves & SpectrumCurves.Distortion) == 0 ||
-            document.Result is not { } result ||
+            State.Result is not { } result ||
             result.SweepDeconvolution.ImpulseResponse.Length == 0 ||
             result.SweepSampleCount <= 0 ||
             !(result.AchievedLowFrequencyHz > 0) ||
@@ -184,6 +194,12 @@ internal sealed class MeasurementPlotContext
             return real;
         }
     }
+}
+
+internal readonly record struct FrozenDocument(MeasurementResult? Result, string? SourceName, bool IsBusy)
+{
+    public static FrozenDocument Of(AnalyzerDocument document) =>
+        new(document.Result, document.SourceName, document.IsBusy);
 }
 
 /// <summary>A Frequency Response build's curves, with what explains a harmonic it could not draw.</summary>

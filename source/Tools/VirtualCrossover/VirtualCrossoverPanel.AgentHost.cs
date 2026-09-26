@@ -13,7 +13,7 @@ public partial class VirtualCrossoverPanel
 
     EqAutoTunePolicy IAgentImportHost.AutoTunePolicy() => AutoTunePolicyProvider?.Invoke() ?? EqAutoTunePolicy.Default;
 
-    string? IAgentImportHost.OpenAutoSetupWizard() => OpenAutoSetupWizard();
+    string? IAgentImportHost.OpenAutoSetupWizard() => OpenAutoSetupWizard(undoable: false);
 
     Task IAgentImportHost.ApplyAutoDelayAsync(AutoDelayRunResult result) => ApplyConfirmedAutoDelayAsync(result);
 

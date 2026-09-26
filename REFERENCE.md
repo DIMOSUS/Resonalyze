@@ -2548,6 +2548,9 @@ other side's own alignment standing. Sources are never copied: every side keeps
 its own measurement.
 **Mute**, **Bypass** and the two curve toggles are absent from the list because
 they are shared by the two sides already — there is nothing to copy.
+**Undo last copy**, in either direction's dialog, puts every channel back
+exactly as it was before the last copy, whichever way that copy went (see
+[Undoing a command](#undoing-a-command)).
 
 **Lock**, beside them, is for the tune that is meant to be symmetric: while it is
 ticked, a crossover, polarity or FIR change made on the side shown is written onto
@@ -2572,9 +2575,9 @@ locked, for the reason they start unticked in the copy dialog; mono pairs have o
 settings set and need no lock. A run that writes both sides itself — **Auto
 delay**, which decides polarity per side, or the crossover wizard — keeps its own
 answer for the hidden side: the lock is for the hand on the knob, which only
-reaches the side shown. An AI import and its undo land exactly as their rows
-say, for the same reason: the rows name their sides, and the dialog showed
-those. It is on by default, because a car tune is symmetric far
+reaches the side shown. An AI import lands exactly as its rows say, for the
+same reason: the rows name their sides, and the dialog showed those. Every
+undo puts both sides back as they were, the lock carrying nothing over it. It is on by default, because a car tune is symmetric far
 more often than not; untick it to work one side alone. The state is not stored
 with the session, so the next opening starts symmetric again.
 
@@ -3036,6 +3039,9 @@ that way is the reverberant tail rather than the driver, and the sum-loss
 read-out built from it describes nothing real, so **Auto delay** and **Auto
 crossover** decline to run until the gate is moved: an alignment computed
 through such a window would optimize the room's answer, not the loudspeaker.
+While the last Apply of either can still be undone, the refusal offers to undo
+it instead, since that Apply can be what misplaced the gate (see
+[Undoing a command](#undoing-a-command)).
 
 A second plot shows each DSP chain's own magnitude and phase (without the
 driver) — or, on its **Correlation** mode, one adjacent pair's band-limited GCC-PHAT
@@ -3471,6 +3477,12 @@ keeps the angle — that is what the device itself does, and the read-out moves
 under it where you can see — but a wizard rewriting every channel at once is not
 something to leave a stale all-pass under.
 
+**Undo last Apply**, in the same dialog, puts every channel back exactly as it
+was before the last Apply: the crossovers, gains and polarity, the phase
+rotations it cleared, and the blocks in the order and with the letters they had
+(see [Undoing a command](#undoing-a-command)). It is off while Apply ranks the
+candidates.
+
 ### Tune junction
 
 **Auto crossover** decides a whole system from magnitudes under ideal alignment.
@@ -3526,8 +3538,8 @@ and why this one has the last word on a finished tune.
   goal onto the edges that crossover runs. Where nothing different was found,
   Apply is offered only for a goal the cards do not state yet. **Undo last
   Apply**, in the same dialog, puts every channel back exactly as it was before
-  the last Apply — one step, gone once a session is loaded; where the session
-  has changed since, it asks first, because those changes go too.
+  the last Apply (see [Undoing a command](#undoing-a-command)). It is off while
+  a search runs.
 - **The dialog remembers what it was left on**: the junction, the families, both
   toggles, the mode, the slope window, the goal, and each junction's corner
   window. It is kept in the session, so reopening the dialog — in the same run
@@ -3948,6 +3960,38 @@ measurement supported that pick, with `ref` the anchor the others align to and
 a `LOW` one is named in a warning line, the margin behind it in the notes
 under the table.
 
+**Undo last Apply**, in the same dialog, puts every channel back exactly as it
+was before the last Apply — delays, polarity and gains — together with the scene
+offset, the steering side, the near-side cut and the rear fill offset that Apply
+stored. It is off while a run is in progress (see
+[Undoing a command](#undoing-a-command)).
+
+### Undoing a command
+
+**Undo last Apply** in the crossover wizard, Tune junction and Auto delay, and
+**Undo last copy** in both copy dialogs, take back that command's last write.
+Undo puts every channel back exactly as it was before it — the crossovers and
+their acoustic goals, gains, delays, polarity, phase rotations, PEQ and FIR —
+with the block order, the stereo scene, tilt and rear fill offset, the
+spatial-average mode, the **Hybrid** tick and the target level. Each command
+keeps one step, gone once a session is loaded.
+
+- Where any of that has changed since, Undo asks first, because those changes
+  go too. Showing the other side, moving the gate, muting a block or loading a
+  measurement is none of that and stays as it is; so does a block added or
+  removed since, and the block order with it.
+- An Apply or a copy that changed nothing leaves the step before it standing.
+- An undo drops what was written after it — another command's Apply, an AI
+  import — which would otherwise bring back what it just took away. Undoing
+  the last write and then the one before it walks back without a question.
+- Auto crossover and Auto delay refuse to open on a misplaced gate, among other
+  things, and an Apply that moved the arrivals can be what misplaced it. While
+  that Apply can still be undone, such a refusal offers to undo it instead; the
+  refusals that only beep (fewer than two measured channels) do not.
+- A run an [AI import](#ai-assistant-bridge) started keeps no step of its own:
+  the crossover wizard it opens offers no Undo, and **Undo AI import** takes the
+  run back with the rest of that import.
+
 ### Panel commands
 
 The remaining buttons in the column beside the plots. The two used occasionally
@@ -4244,7 +4288,13 @@ this: the clipboard is the only transport, and you are the one who pastes.
 - **Undo AI import** puts back everything the last import could have moved, not
   only the channels its rows named: every channel's chain, the spatial average
   mode and the **Hybrid** tick, and the block order Auto crossover may have
-  changed. One step; it is gone once a session is loaded. The fingerprint
+  changed. One step; it is gone once a session is loaded. The engines an import
+  runs keep no undo of their own: the crossover wizard it opens offers no **Undo
+  last Apply**, and what they write never becomes the last Apply the Auto
+  crossover and Auto delay dialogs offer to undo. The import's undo shares their
+  order ([Undoing a command](#undoing-a-command)): undoing a command written
+  before the import drops it, and undoing the import drops the commands' steps
+  written after it. The fingerprint
   check reads the undone session as what it is: a package copied before the
   import describes it again, one copied after the import (the diagnostic pass
   the guide asks for) no longer does, and a reply answering that one has its

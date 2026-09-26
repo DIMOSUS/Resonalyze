@@ -20,6 +20,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
     private Func<AutoDelayRunRequest, Task<AutoDelayRunResult>>? runner;
     private bool stereo;
     private bool running;
+    private string? undoable;
 
     public VirtualCrossoverAutoDelayDialog()
     {
@@ -30,6 +31,12 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         CancelButton = buttonCancel;
         buttonApply.Enabled = false;
         buttonRun.Click += async (_, _) => await RunAsync();
+        buttonUndo.Click += (_, _) =>
+        {
+            UndoRequested = true;
+            DialogResult = DialogResult.Cancel;
+            Close();
+        };
         // Any LHD/RHD toggle flips RHD's Checked, so one handler suffices.
         radioRightHandDrive.CheckedChanged += (_, _) => InvalidateResult();
         numericSceneOffset.ValueChanged += (_, _) => InvalidateResult();
@@ -71,7 +78,10 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
 
     public AutoDelayRunResult? Result { get; private set; }
 
+    public bool UndoRequested { get; private set; }
+
     /// <summary><paramref name="polarityWarning"/>: shown at launch when a driver's L and R measured polarities disagree.</summary>
+    /// <param name="undoable">Which sides the last Apply aligned, while it can be undone.</param>
     public void Init(
         bool stereo,
         double sceneOffsetMs,
@@ -80,10 +90,19 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         Func<AutoDelayRunRequest, Task<AutoDelayRunResult>> runner,
         string? polarityWarning = null,
         bool hasRearFill = false,
-        double rearFillOffsetMs = VirtualCrossoverLimits.DefaultRearFillOffsetMs)
+        double rearFillOffsetMs = VirtualCrossoverLimits.DefaultRearFillOffsetMs,
+        string? undoable = null)
     {
         this.stereo = stereo;
         this.runner = runner;
+        this.undoable = undoable;
+        buttonUndo.Enabled = undoable != null;
+        toolTip.SetToolTip(
+            buttonUndo,
+            (undoable == null ? "Nothing applied here to undo." : $"The last Apply aligned {undoable}.") + "\r\n" +
+            "Undo puts every channel back exactly as it was before it:\r\n" +
+            "delays, polarity, gains, the scene and anything changed since.\r\n" +
+            "One step; gone once a session is loaded.");
         numericRearFill.Value = Math.Clamp(
             (decimal)rearFillOffsetMs,
             numericRearFill.Minimum,
@@ -213,6 +232,8 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         buttonRun.Enabled = false;
         buttonApply.Enabled = false;
         buttonCancel.Enabled = false;
+        // The dialog cannot close mid-run: a click would stay armed and turn the next Apply into an Undo.
+        buttonUndo.Enabled = false;
         UiStyle.SetTextEnabledLook(radioLeftHandDrive, false, interactive: true);
         UiStyle.SetTextEnabledLook(radioRightHandDrive, false, interactive: true);
         numericSceneOffset.Enabled = false;
@@ -261,6 +282,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
                 running = false;
                 buttonRun.Enabled = true;
                 buttonCancel.Enabled = true;
+                buttonUndo.Enabled = undoable != null;
                 UiStyle.SetTextEnabledLook(radioLeftHandDrive, stereo, interactive: true);
                 UiStyle.SetTextEnabledLook(radioRightHandDrive, stereo, interactive: true);
                 numericSceneOffset.Enabled = stereo;

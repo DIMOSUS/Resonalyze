@@ -16,7 +16,7 @@ public partial class VirtualCrossoverPanel
             index => VirtualCrossoverJunctionTuneSearch.Opening(junctions, index),
             request => RunJunctionTuneAsync(junctions, request),
             session.Project.JunctionTune,
-            junctionTune.Undoable(session.ProjectGeneration));
+            junctionTune.Undo.Undoable(session.ProjectGeneration));
         DialogResult answer = dialog.ShowDialog(FindForm());
         if (IsDisposed)
         {
@@ -28,7 +28,7 @@ public partial class VirtualCrossoverPanel
         if (dialog.UndoRequested)
         {
             junctionTune.Landed = null;
-            UndoJunctionTune();
+            UndoLast(junctionTune.Undo);
             return;
         }
 
@@ -67,29 +67,7 @@ public partial class VirtualCrossoverPanel
         // Both sides were decided here, so the Lock remembers rather than carries.
         sideLock.Remember(session.Channels.Select(channel => channel.Pair));
         SaveAndRedraw();
-        junctionTune.Remember(before, session.ProjectGeneration, lower, upper, ComputeAgentFingerprint());
-    }
-
-    /// <summary>Changes made since the Apply go too, so that is asked first.</summary>
-    private void UndoJunctionTune()
-    {
-        if (junctionTune.UndoFor(session.ProjectGeneration) is not { } undo)
-        {
-            return;
-        }
-
-        if (!junctionTune.Unchanged(ComputeAgentFingerprint()) &&
-            ShowMessage($"The session has changed since the tune of {undo.Junction} was applied. Undo puts every channel " +
-                "back exactly as it was before that Apply, so the later changes go as well." +
-                Environment.NewLine + Environment.NewLine + "Undo anyway?",
-                "Tune junction",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning) != DialogResult.Yes)
-        {
-            return;
-        }
-
-        RestoreChannels(junctionTune.TakeUndo());
+        junctionTune.Remember(before, session.ProjectGeneration, lower, upper, CaptureSession());
     }
 
     private readonly VirtualCrossoverJunctionTuneApply junctionTune;

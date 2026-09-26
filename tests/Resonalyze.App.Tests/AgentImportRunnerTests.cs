@@ -97,6 +97,43 @@ public sealed class AgentImportRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task TheUndo_AndTheCommandsSteps_KeepTheOrderTheyWereWrittenIn()
+    {
+        VirtualCrossoverChannelSettings a = Channels[0].SideSettings(rightSide: false);
+        VirtualCrossoverUndo crossover = VirtualCrossoverUndo.AutoCrossover(import.UndoHistory);
+        WriteStep(crossover, () => a.GainDb = -1);
+        await Trim(-1, -3);
+        Assert.NotNull(Runner.Undo);
+
+        crossover.Take();
+
+        Assert.Null(Runner.Undo);
+
+        await Trim(-3, -5);
+        VirtualCrossoverUndo delay = VirtualCrossoverUndo.AutoDelay(import.UndoHistory);
+        WriteStep(delay, () => a.DelayMs = 2);
+
+        Assert.NotNull(Runner.TakeUndo().Undo);
+        Assert.Null(delay.Step);
+    }
+
+    private async Task Trim(double fromDb, double toDb) =>
+        await Runner.CommitAsync(
+            new AgentProposal(null, "trim", [], [], [new SetGainOperation("op-1", "A:left", "", fromDb, toDb)], []),
+            new HashSet<string> { "op-1" },
+            Runner.Snapshot().Fingerprint,
+            1,
+            [],
+            null);
+
+    private void WriteStep(VirtualCrossoverUndo undo, Action write)
+    {
+        AgentImportUndo before = Runner.CaptureUndo();
+        write();
+        undo.Remember(before, import.Session.ProjectGeneration, "test", Runner.CaptureUndo());
+    }
+
+    [Fact]
     public async Task EngineRequests_RunInTheImportsOwnOrder_AndSayWhatWasSkipped()
     {
         Project.SpatialAverageMode = VirtualCrossoverSpatialAverageMode.Off;

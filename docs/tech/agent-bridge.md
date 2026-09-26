@@ -316,7 +316,10 @@ also records the project generation: after a session load the entries would rest
 objects nobody displays. `CopyEditable` restores phase rotation and FIR even though no operation
 writes them, since undo must not leave a later edit behind. After undo the side lock remembers the
 restored state as it stands; reading it as a difference could carry a side where it never was
-(L=A, R=B; import wrote L=B; undo restores L=A and a difference would carry A onto R).
+(L=A, R=B; import wrote L=B; undo restores L=A and a difference would carry A onto R). The same snapshot is the
+one step of undo Tune junction, Auto crossover, Auto delay and the side copy each keep, on one clock with the
+import's, so undoing one drops what was written after it; the engines an import runs keep none of their own
+([virtual-dsp-panel.md](virtual-dsp-panel.md#undo)).
 
 ## Engine order
 

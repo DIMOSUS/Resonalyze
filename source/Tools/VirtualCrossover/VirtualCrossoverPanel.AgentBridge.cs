@@ -217,44 +217,6 @@ public partial class VirtualCrossoverPanel : IAgentImportHost
         RestoreChannels(undo!);
     }
 
-    /// <summary>Every channel, the block order and the session-wide settings an engine commits, back as the
-    /// snapshot holds them. Shared by Undo AI import and Tune junction's Undo last Apply.</summary>
-    private void RestoreChannels(AgentImportUndo undo)
-    {
-        (List<VirtualCrossoverChannel> written, bool reordered) = undo.Restore(session, agentReader);
-        foreach (VirtualCrossoverChannel channel in written)
-        {
-            ShowChannel(channel);
-        }
-
-        if (reordered)
-        {
-            ShowChannelOrder();
-        }
-
-        bool suppressed = suppressProjectEvents;
-        suppressProjectEvents = true;
-        try
-        {
-            checkBoxHybrid.Checked = undo.HybridTicked;
-            ShowTargetLevel();
-        }
-        finally
-        {
-            suppressProjectEvents = suppressed;
-        }
-
-        foreach (VirtualCrossoverChannel channel in session.Channels)
-        {
-            RefreshSpatialAverageStatus(channel);
-        }
-
-        RefreshHybridAvailability();
-        // Remember the restored state as it stands: a difference could carry a side where it never was (L=A,R=B; import wrote L=B; undo restores L=A and would carry A onto R).
-        sideLock.Remember(session.Channels.Select(channel => channel.Pair));
-        SaveAndRedraw();
-    }
-
     // Excess group delay per measured channel, as a separate text beside the package (which already fills a chat), named after the last package so the two line up by channel id.
     private async Task CopyExcessGroupDelayForAiAsync()
     {

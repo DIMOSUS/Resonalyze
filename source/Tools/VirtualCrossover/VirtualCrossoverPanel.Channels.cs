@@ -81,14 +81,23 @@ public partial class VirtualCrossoverPanel
                     : $"{channel.Name} — {source}";
             })
             .ToList();
-        using var dialog = new VirtualCrossoverCopySideDialog(fromRight, labels);
-        if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
+        using var dialog = new VirtualCrossoverCopySideDialog(
+            fromRight, labels, copySideUndo.Undoable(session.ProjectGeneration));
+        DialogResult answer = dialog.ShowDialog(FindForm());
+        if (dialog.UndoRequested)
+        {
+            UndoLast(copySideUndo);
+            return;
+        }
+
+        if (answer != DialogResult.OK ||
             dialog.SelectedIndices.Count == 0 ||
             dialog.Scope.IsEmpty)
         {
             return;
         }
 
+        AgentImportUndo before = CaptureSession();
         VirtualCrossoverCopyScope scope = dialog.Scope;
         bool targetSideShown = session.ActiveSideRight == !fromRight;
         foreach (int index in dialog.SelectedIndices)
@@ -102,6 +111,11 @@ public partial class VirtualCrossoverPanel
         }
 
         SaveAndRedraw();
+        copySideUndo.Remember(
+            before,
+            session.ProjectGeneration,
+            VirtualCrossoverUndo.Copied(fromRight, dialog.SelectedIndices.Select(index => candidates[index])),
+            CaptureSession());
     }
 
     // Engaging copies nothing; see docs/tech/virtual-dsp-panel.md#side-lock. On by default, not stored.

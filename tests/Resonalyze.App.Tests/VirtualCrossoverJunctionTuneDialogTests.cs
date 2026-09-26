@@ -155,6 +155,20 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
     });
 
     [Fact]
+    public void WhileTheSearchRuns_UndoIsOff_SinceTheDialogCannotCloseToDoIt() => StaTest.Run(() =>
+    {
+        var searching = new TaskCompletionSource<JunctionTuneOutcome>();
+        using VirtualCrossoverJunctionTuneDialog dialog = Shown(_ => searching.Task, undoable: "A/B");
+
+        Click(dialog, "buttonRun");
+
+        Assert.False(Find<Button>(dialog, "buttonUndo").Enabled);
+        searching.SetResult(Found);
+        StaTest.Pump();
+        Assert.True(Find<Button>(dialog, "buttonUndo").Enabled);
+    });
+
+    [Fact]
     public void TheActionButtonsStayVisibleAtEveryHeight() => StaTest.Run(() =>
     {
         using var dialog = new VirtualCrossoverJunctionTuneDialog();

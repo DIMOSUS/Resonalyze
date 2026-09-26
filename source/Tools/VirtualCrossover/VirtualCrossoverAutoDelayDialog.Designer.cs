@@ -45,6 +45,7 @@ namespace Resonalyze
             textBoxReport = new TextBox();
             buttonApply = new ReleaseClickButton();
             buttonCancel = new ReleaseClickButton();
+            buttonUndo = new ReleaseClickButton();
             (numericSceneOffset).BeginInit();
             (numericRearFill).BeginInit();
             (numericNearSideCut).BeginInit();
@@ -236,6 +237,19 @@ namespace Resonalyze
             buttonCancel.Text = "Discard";
             buttonCancel.UseVisualStyleBackColor = true;
             // 
+            // buttonUndo
+            // 
+            buttonUndo.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+            buttonUndo.Enabled = false;
+            buttonUndo.FlatStyle = FlatStyle.Popup;
+            buttonUndo.ForeColor = UiPalette.TextPrimary;
+            buttonUndo.Location = new Point(12, 677);
+            buttonUndo.Name = "buttonUndo";
+            buttonUndo.Size = new Size(130, 26);
+            buttonUndo.TabIndex = 13;
+            buttonUndo.Text = "Undo last Apply";
+            buttonUndo.UseVisualStyleBackColor = true;
+            // 
             // VirtualCrossoverAutoDelayDialog
             // 
             AutoScaleDimensions = new SizeF(96F, 96F);
@@ -257,6 +271,7 @@ namespace Resonalyze
             Controls.Add(textBoxReport);
             Controls.Add(buttonApply);
             Controls.Add(buttonCancel);
+            Controls.Add(buttonUndo);
             Font = new Font("Segoe UI", 9F);
             ForeColor = UiPalette.TextPrimary;
             MinimizeBox = false;
@@ -289,5 +304,6 @@ namespace Resonalyze
         private TextBox textBoxReport;
         private ReleaseClickButton buttonApply;
         private ReleaseClickButton buttonCancel;
+        private ReleaseClickButton buttonUndo;
     }
 }

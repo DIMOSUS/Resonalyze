@@ -22,7 +22,7 @@ the channel blocks' fields, the Auto delay fields) are `VirtualCrossoverLimits`,
 session. `VirtualCrossoverPanel` is its only writer: it binds the controls to it and presents what the readers
 return, and only its binding methods look a block's `VirtualCrossoverChannelControl` up. Its partials are named
 for what they bind (`.Project`, `.Calibration`, `.Channels`, `.Sources`, `.Peq`, `.Fir`, `.Views`, `.DspPlot`,
-`.Target`, `.SpatialAverage`, `.AutoDelay`, `.AutoCrossover`, `.JunctionTune`, `.Audition`, `.AgentBridge`,
+`.Target`, `.SpatialAverage`, `.AutoDelay`, `.AutoCrossover`, `.JunctionTune`, `.Undo`, `.Audition`, `.AgentBridge`,
 `.Export`, `.ToolTips`, `.Layout`); the main file holds the constructor, the host's API and the redraw loop.
 
 | Reads the session | For |
@@ -35,6 +35,7 @@ for what they bind (`.Project`, `.Calibration`, `.Channels`, `.Sources`, `.Peq`,
 | `VirtualCrossoverAutoSetup` | what the crossover wizard reads and writes |
 | `VirtualCrossoverEqHandoff` | what a channel side hands the EQ Wizard, and whether its bank may come back ([EQ handoff](#eq-handoff-code-map)) |
 | `VirtualCrossoverJunctionTuneSearch`, `VirtualCrossoverJunctionTuneApply` | Tune junction: its search, its verdict, Apply and Undo; the dialog's question is in [its code map](#junction-tune-code-map) |
+| `VirtualCrossoverUndo` | one step of undo each for Tune junction, Auto crossover, Auto delay and the side copy ([Undo](#undo)) |
 | `DspProcessorSession`, `DspProcessorStatus`, `DspProcessorApply` | the processor dialog ([DSP processor](#dsp-processor-code-map)) |
 | `VirtualCrossoverGateEstimate` | the Gate dialog's τ estimate and auto detrend line ([gate estimate](#gate-estimate)) |
 | `VirtualCrossoverAudition` | what the audition renders; the dialog's own state is in [its code map](#audition-code-map) |
@@ -87,11 +88,10 @@ plan (or the refusal that stands in for a search) and the result into the report
 `VirtualCrossoverJunctionTuneRun` runs the tuner off the UI thread with the session's fingerprint taken on both sides
 and drops a result the session moved under, for the dialog and the AI import alike.
 `VirtualCrossoverJunctionTuneApply` holds the result the open dialog shows, writes it on Apply through
-`AgentJunctionTune.Write`, and keeps the one step of Undo: the session before the Apply (`AgentImportUndo`, which
-Undo AI import shares), the project generation it belongs to and the fingerprint after it, by which Undo knows that
-later changes would go too and asks. The panel's `.JunctionTune` refreshes the cards and restores through
-`RestoreChannels`. `VirtualCrossoverJunctionTuneQuestionTests` test the question; `VirtualCrossoverJunctionTuneDialogTests`
-drive a shown dialog, and `VirtualCrossoverJunctionTuneWiringTests` the real dialog from a live panel.
+`AgentJunctionTune.Write`, and keeps the one step of Undo in a `VirtualCrossoverUndo` named for the junction (see
+[Undo](#undo)). The panel's `.JunctionTune` refreshes the cards. `VirtualCrossoverJunctionTuneQuestionTests` test the
+question; `VirtualCrossoverJunctionTuneDialogTests` drive a shown dialog, and `VirtualCrossoverJunctionTuneWiringTests`
+the real dialog from a live panel.
 
 ### EQ handoff code map
 
@@ -106,9 +106,10 @@ request and lands its fit through the same type.
 the probes, the re-check, the rows, the engines in their order and the one step of undo. It reads the view through
 `IAgentImportHost`, which the panel implements with what only a control can do: the crossover wizard, the Auto delay
 commit, showing a channel or a bank, the target level, the side lock, the wait cursor. `AgentImportUndo.Restore` puts
-the session back, block order included (`VirtualCrossoverSession.Reorder`); the panel refreshes the cards. The menu, the
-clipboard, the review and every message stay in the panel's `.AgentBridge`, the messages and menus through
-`ShowMessage` and `ShowMenu`, which a test answers. `AgentImportRunnerTests` drive the runner over a bare session;
+the session back, block order included (`VirtualCrossoverSession.Reorder`); the panel refreshes the cards through the
+`RestoreChannels` every undo shares. The import's undo shares the commands' write order, and the engines an import runs
+keep no undo of their own (see [Undo](#undo)). The menu, the clipboard, the review and every message stay in the panel's
+`.AgentBridge`, the messages and menus through `ShowMessage` and `ShowMenu`, which a test answers. `AgentImportRunnerTests` drive the runner over a bare session;
 `VirtualCrossoverPanelDialogWiringTests` drive the menu on a live panel.
 
 ### DSP processor code map
@@ -638,8 +639,8 @@ nothing; the pairs are remembered as they stand (rules in `VirtualCrossoverSideL
 because car tunes are usually symmetric, and it is not stored: unticking is for working one side alone, and
 the next opening starts symmetric. The designer ticks the box before the handler exists, so the constructor
 engages it by hand. `Remember` is called after a bind, after Auto delay commits (a per-side polarity decision
-is invisible to the lock as a difference) and after the crossover wizard (which writes both sides and may
-carry only one edge).
+is invisible to the lock as a difference), after the crossover wizard (which writes both sides and may
+carry only one edge) and after every undo ([Undo](#undo)).
 
 ## Copying between sides
 
@@ -655,6 +656,46 @@ never copied and mono pairs are not offered.
   the uncopied kind survives on the target.
 - Over `EqualizationCurve.MaxBandCount` the copied kind gives way, because an unticked scope promised the
   target's bands stay. With both copied, the all-pass stays: it sits on a junction this side was aligned on.
+
+## Undo
+
+Tune junction, Auto crossover, Auto delay and the side copy each keep one step of undo in a `VirtualCrossoverUndo`,
+offered from the command's own dialog (**Undo last Apply**, **Undo last copy**; both copy directions share one). A
+step holds:
+
+- The session before the write: `AgentImportUndo`, the snapshot Undo AI import restores (see
+  [agent-bridge.md](agent-bridge.md#import-flow)). It takes every channel side, not only those written, and the
+  block order, which Auto crossover can change, and it carries the scene, tilt and rear-fill offset Auto delay
+  commits. It is taken before the write; Auto delay keeps its step even when the commit throws, since the commit may
+  have written part of the run.
+- The project generation. Channel objects are reused across binds, so a step from another project would restore into
+  settings nothing displays; `For` drops it, and a dialog opened in the new project offers nothing.
+- The same snapshot taken just after the write, once the cards show it (showing a value can still move a field). Undo
+  asks first (`ChangedSince`) only when a snapshot taken now differs from it (`AgentImportUndo.SameAs`, over
+  `AgentProposalApplier.SameEditable`, which sits beside `CopyEditable` so the two name the same fields). The
+  session fingerprint was the first choice and asked too often: it also covers the shown side, the view, the gate,
+  mutes and the measurements, which a restore neither reads nor puts back, so a side switch read as a change Undo
+  would take. A block added or removed since is not taken back, and `OrderOf` then leaves the order as it is.
+- What the write was, for the dialog's tooltip and the question; and when, on the `VirtualCrossoverUndoHistory` clock.
+
+A write that changed nothing (a copy of what the target already held) keeps no step, so it cannot bury the one before
+it. `RestoreChannels` (`.Undo`) is shared by every undo, Undo AI import's included: it restores, shows the cards and the
+block order, and has the side lock remember the restored pairs rather than read them as a difference.
+
+- One step per command rather than one history: each dialog says what its own last write was. All of them, the AI
+  import's undo included, share one clock, and taking a step drops every step written after it. Those describe a
+  session the restore has left: Auto crossover, then Auto delay, then Undo of the crossover would otherwise leave the
+  delay's step standing, and taking it would bring the undone crossover back. Undoing the last write and then the one
+  before walks back without a question, since each restore leaves the session exactly as the earlier write did.
+- The engines an AI import runs (the wizard it opens, the Auto delay it commits) keep no step. The import's own undo
+  covers them, and a wizard opened mid-import offering Undo would restore the session under the running import.
+- Undo is off while a dialog works toward a write (Auto delay's run, Tune junction's search, the wizard's ranking).
+  The first two refuse to close then, so a click would stay armed and turn the next Apply into an Undo; the wizard
+  closes, and its ranking would run on for nothing.
+- Auto crossover and Auto delay refuse before their dialog opens, and a write can cause the refusal: moved arrivals
+  can leave a pinned gate opening after them. The refusal keeps the dialog holding Undo shut, so while a step stands
+  a refusal with a message offers the undo instead (`InsteadOf`). The ones that only beep (fewer than two measured
+  channels) and the copy's (no stereo pair) cannot follow from a write and offer nothing.
 
 ## View-dependent controls
 

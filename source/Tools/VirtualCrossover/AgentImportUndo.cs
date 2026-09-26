@@ -2,8 +2,8 @@ using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze;
 
-/// <summary>The session before a write, for Undo AI import and Tune junction's Undo last Apply. Auto delay commits the
-/// scene, tilt and rear-fill offset (CommitAutoDelayResult), so undo carries them.</summary>
+/// <summary>The session before a write, for Undo AI import and each command's <see cref="VirtualCrossoverUndo"/>. Auto delay
+/// commits the scene, tilt and rear-fill offset (CommitAutoDelayResult), so undo carries them.</summary>
 internal sealed record AgentImportUndo(
     IReadOnlyList<AgentUndoEntry> Channels,
     VirtualCrossoverSpatialAverageMode? SpatialAverageMode,
@@ -57,6 +57,25 @@ internal sealed record AgentImportUndo(
         session.Project.RearFillOffsetMs = RearFillOffsetMs;
         session.Project.TargetLevelDb = (double)VirtualCrossoverLimits.TargetLevel.Clamp(TargetLevelDb);
         return (written, reordered);
+    }
+
+    /// <summary>Whether two snapshots hold the same session as far as <see cref="Restore"/> reaches: the view, the
+    /// sources and the gate are not in it.</summary>
+    public bool SameAs(AgentImportUndo other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        return Order.SequenceEqual(other.Order) &&
+            Channels.Count == other.Channels.Count &&
+            Channels.Zip(other.Channels).All(pair =>
+                ReferenceEquals(pair.First.Target, pair.Second.Target) &&
+                AgentProposalApplier.SameEditable(pair.First.Before, pair.Second.Before)) &&
+            SpatialAverageMode == other.SpatialAverageMode &&
+            HybridTicked == other.HybridTicked &&
+            SceneOffsetMagnitudeMs.Equals(other.SceneOffsetMagnitudeMs) &&
+            RightHandDrive == other.RightHandDrive &&
+            StereoLevelDifferenceDb.Equals(other.StereoLevelDifferenceDb) &&
+            RearFillOffsetMs.Equals(other.RearFillOffsetMs) &&
+            TargetLevelDb.Equals(other.TargetLevelDb);
     }
 
     /// <summary>The blocks holding these settings; a control shows the active side, so a write to the other side shows

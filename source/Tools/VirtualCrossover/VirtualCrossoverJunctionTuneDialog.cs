@@ -19,6 +19,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
     private Func<JunctionTuneRequest, Task<JunctionTuneOutcome>>? runner;
     private IReadOnlyList<JunctionTuneLine>? shownReport;
     private bool presenting;
+    private bool undoOffered;
 
     private CheckBox[] FamilyBoxes => [checkButterworth, checkLinkwitzRiley, checkBessel];
 
@@ -98,7 +99,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         ArgumentNullException.ThrowIfNull(junctions);
         ArgumentNullException.ThrowIfNull(defaults);
         runner = search ?? throw new ArgumentNullException(nameof(search));
-        buttonUndo.Enabled = undoable != null;
+        undoOffered = undoable != null;
         toolTip.SetToolTip(
             buttonUndo,
             (undoable == null ? "Nothing applied here to undo." : $"The last Apply was for {undoable}.") + "\r\n" +
@@ -196,6 +197,8 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             buttonRun.Enabled = question.Junctions.Count > 0 && !searching;
             buttonApply.Enabled = question.Result != null && !searching;
             buttonCancel.Enabled = !searching;
+            // The dialog cannot close mid-search: a click would stay armed and turn the next Apply into an Undo.
+            buttonUndo.Enabled = undoOffered && !searching;
             UseWaitCursor = searching;
         }
         finally

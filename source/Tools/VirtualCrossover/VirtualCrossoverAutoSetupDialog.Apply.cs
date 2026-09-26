@@ -55,6 +55,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog
         }
 
         subElevation.Enabled = enabled && session.SubElevationApplies;
+        // As in the other dialogs: no Undo while a write is on its way.
+        buttonUndo.Enabled = enabled && undoOffered;
         if (enabled)
         {
             PopulateTable();

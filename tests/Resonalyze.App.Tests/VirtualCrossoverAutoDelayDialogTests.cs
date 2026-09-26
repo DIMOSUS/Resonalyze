@@ -47,6 +47,37 @@ public sealed class VirtualCrossoverAutoDelayDialogTests
     });
 
     [Fact]
+    public void UndoLastApply_IsOfferedWhileThereIsOne_ButNotWhileARunHoldsTheDialogOpen() => StaTest.Run(() =>
+    {
+        using var nothing = new VirtualCrossoverAutoDelayDialog();
+        nothing.Init(true, 0.25, false, 1.0, _ => throw new InvalidOperationException("no run"));
+        Assert.False(Field<Button>(nothing, "buttonUndo").Enabled);
+
+        var running = new TaskCompletionSource<AutoDelayRunResult>();
+        using var dialog = new VirtualCrossoverAutoDelayDialog
+        {
+            StartPosition = FormStartPosition.Manual,
+            Location = new(-5000, -5000)
+        };
+        dialog.Init(true, 0.25, false, 1.0, _ => running.Task, undoable: "both sides");
+        dialog.Show();
+        Button undo = Field<Button>(dialog, "buttonUndo");
+        Assert.True(undo.Enabled);
+
+        Field<Button>(dialog, "buttonRun").PerformClick();
+        Assert.False(undo.Enabled);
+        running.SetResult(new AutoDelayRunResult(
+            [], true, new AutoDelayRunRequest(0.25, false, false, 1.0), "Proposal.", new StringBuilder()));
+        StaTest.Pump();
+        Assert.True(undo.Enabled);
+
+        undo.PerformClick();
+        StaTest.Pump();
+        Assert.True(dialog.UndoRequested);
+        Assert.False(dialog.Visible);
+    });
+
+    [Fact]
     public void TheActionButtonsStayVisibleAtEveryHeight() => StaTest.Run(() =>
     {
         using var dialog = new VirtualCrossoverAutoDelayDialog();
@@ -63,7 +94,7 @@ public sealed class VirtualCrossoverAutoDelayDialogTests
 
     private static void AssertNothingCoversTheActionButtons(Form dialog)
     {
-        foreach (string name in new[] { "buttonApply", "buttonCancel" })
+        foreach (string name in new[] { "buttonApply", "buttonCancel", "buttonUndo" })
         {
             Button button = Field<Button>(dialog, name);
 

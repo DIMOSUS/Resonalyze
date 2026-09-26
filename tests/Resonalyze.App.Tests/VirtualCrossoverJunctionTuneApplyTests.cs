@@ -36,7 +36,7 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests : IDisposable
             VirtualCrossoverMetrics.Through(
                 coordinator, () => session.MagnitudeGate, oppositeSide: false, channel => session.Calibration.For(channel)),
             new VirtualCrossoverHybrid(session));
-        tune = new VirtualCrossoverJunctionTuneApply(session, reader);
+        tune = new VirtualCrossoverJunctionTuneApply(session, reader, new VirtualCrossoverUndoHistory());
     }
 
     private VirtualCrossoverChannel Lower => session.Channels[0];
@@ -120,7 +120,7 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests : IDisposable
         Apply(Result(changed: true), new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24));
         AssertFound();
 
-        AgentProposalApplier.Restore(tune.TakeUndo().Channels);
+        AgentProposalApplier.Restore(tune.Undo.Take().Channels);
 
         foreach (bool right in new[] { false, true })
         {
@@ -146,7 +146,7 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests : IDisposable
         }
 
         Apply(Result(changed: true), new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24));
-        AgentProposalApplier.Restore(tune.TakeUndo().Channels);
+        AgentProposalApplier.Restore(tune.Undo.Take().Channels);
 
         foreach (bool right in new[] { false, true })
         {
@@ -161,14 +161,14 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests : IDisposable
     {
         Apply(Result(changed: true), goal: null, generation: 3);
 
-        Assert.Equal("A/B", tune.Undoable(3));
-        Assert.Null(tune.Undoable(2));
-        Assert.True(tune.Unchanged(reader.Fingerprint(View)));
+        Assert.Equal("A/B", tune.Undo.Undoable(3));
+        Assert.Null(tune.Undo.Undoable(2));
+        Assert.True(tune.Undo.Unchanged(Now()));
 
         session.Channels[2].SideSettings(false).GainDb = -3;
 
-        Assert.False(tune.Unchanged(reader.Fingerprint(View)));
-        Assert.Same(tune.Undo, tune.UndoFor(3));
+        Assert.False(tune.Undo.Unchanged(Now()));
+        Assert.Same(tune.Undo.Step, tune.Undo.For(3));
     }
 
     [Fact]
@@ -176,12 +176,12 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests : IDisposable
     {
         Apply(Result(changed: true), goal: null, generation: 3);
 
-        Assert.Null(tune.Undoable(4));
-        Assert.Null(tune.UndoFor(4));
+        Assert.Null(tune.Undo.Undoable(4));
+        Assert.Null(tune.Undo.For(4));
 
-        Assert.Null(tune.Undo);
-        Assert.Null(tune.Undoable(3));
-        Assert.Throws<InvalidOperationException>(() => tune.TakeUndo());
+        Assert.Null(tune.Undo.Step);
+        Assert.Null(tune.Undo.Undoable(3));
+        Assert.Throws<InvalidOperationException>(() => tune.Undo.Take());
     }
 
     [Fact]
@@ -189,10 +189,10 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests : IDisposable
     {
         Apply(Result(changed: true), goal: null);
 
-        tune.TakeUndo();
+        tune.Undo.Take();
 
-        Assert.Null(tune.Undo);
-        Assert.False(tune.Unchanged(reader.Fingerprint(View)));
+        Assert.Null(tune.Undo.Step);
+        Assert.False(tune.Undo.Unchanged(Now()));
     }
 
     [Fact]
@@ -252,7 +252,9 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests : IDisposable
     }
 
     private void Apply(JunctionTuneResult landed, JunctionAcousticTarget? goal, long generation = 1) =>
-        tune.Remember(tune.Apply(Lower, Upper, landed, goal, View), generation, Lower, Upper, reader.Fingerprint(View));
+        tune.Remember(tune.Apply(Lower, Upper, landed, goal, View), generation, Lower, Upper, Now());
+
+    private AgentImportUndo Now() => AgentImportUndo.Capture(session, reader, View);
 
     private void AssertFound()
     {

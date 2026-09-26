@@ -9,9 +9,9 @@ namespace Resonalyze;
 /// curve labels, the zoom it was left at and the phase modes' peak read-out.
 /// </summary>
 /// <remarks>
-/// Redraws on its own when the open measurement or the compare selection changes, once per burst of changes. Live
-/// Spectrum draws its captures into the same view itself (<see cref="LiveSpectrumController"/>); this class still owns
-/// the view's mode, zoom memory and overlays while it does.
+/// Redraws on its own when the open measurement or the compare selection changes, once per burst of changes, building
+/// curves off the UI thread (docs/tech/sweep-measurement.md#plot-builds). Live Spectrum draws its captures into the same
+/// view itself (<see cref="LiveSpectrumController"/>); this class still owns the view's mode, zoom memory and overlays.
 /// </remarks>
 internal sealed class AnalyzerPlot : IModeView
 {
@@ -26,13 +26,12 @@ internal sealed class AnalyzerPlot : IModeView
     private readonly DeferredRefresh measurementChanged;
     // Each mode's checked slots, kept while another mode is shown.
     private readonly ActiveOverlaySlotTracker activeOverlaySlots = new();
+    private readonly SupersedingBuild builds = new();
     private ModeDescriptor descriptor = ModeCatalog.For(ModeTab.Frequency);
     // The last tab that drew the measurement, which a history entry keeps while a tool is shown.
     private ModeTab lastAnalysisTab = ModeTab.Frequency;
     // The slot mode the overlay slots were last loaded for; entering another tab of it keeps them (null: reload).
     private Mode? preparedSlotMode;
-    // A build that finishes after a newer one started is dropped.
-    private int refreshVersion;
 
     public AnalyzerPlot(
         Form owner,
@@ -72,15 +71,19 @@ internal sealed class AnalyzerPlot : IModeView
         // Impulse axes are view settings, so overlays store record coordinates and re-frame on draw.
         overlaySources.SetImpulseCaptureProvider(tag => factory.BuildImpulseCapture(tag));
         overlaySources.SetImpulseFrameProvider(
-            () => Mode == Mode.ImpulseResponse ? factory.ImpulseFrame : null);
+            () => Mode == Mode.ImpulseResponse ? factory.ImpulseFrameOf(view.Model) : null);
         overlaySources.SetComplexSumProvider(BuildComplexSumOverlayPoints);
         OverlayControls = new OverlayPanel(owner, overlaysPanel, view, toolTip, overlaySources, RefreshLabels);
         measurementChanged = new DeferredRefresh(owner, RedrawChangedMeasurement);
         document.Changed += measurementChanged.Request;
         compare.Changed += measurementChanged.Request;
+        owner.Disposed += (_, _) => builds.Cancel();
     }
 
     public PlotView View { get; }
+
+    /// <summary>The draw in flight, done once its model is shown or dropped.</summary>
+    public Task Drawing { get; private set; } = Task.CompletedTask;
 
     public PlotModelFactory Factory { get; }
 
@@ -137,6 +140,8 @@ internal sealed class AnalyzerPlot : IModeView
     {
         descriptor = mode;
         Mode = mode.Mode;
+        // The mode left will not show what it was building, whether or not the new one draws.
+        builds.Cancel();
         Viewports.Show(null, Mode);
         RefreshLabels();
         if (descriptor.HasPlotView)
@@ -163,7 +168,7 @@ internal sealed class AnalyzerPlot : IModeView
     {
         if (DrawsMeasurement)
         {
-            Draw();
+            Observe(Draw(placeholder: true));
         }
 
         // Show() with a null model unchecks the slots and loses the saved selection.
@@ -178,40 +183,19 @@ internal sealed class AnalyzerPlot : IModeView
         }
     }
 
-    /// <summary>Redraws the mode on screen now; a slower build still running is dropped.</summary>
-    public void Redraw()
+    /// <summary>Redraws the mode on screen; a build still running is cancelled.</summary>
+    public void Redraw() => Observe(RedrawAsync());
+
+    /// <summary><see cref="Redraw"/>, done once the model is shown or superseded; a failed build faults it.</summary>
+    public Task RedrawAsync()
     {
-        Interlocked.Increment(ref refreshVersion);
         if (DrawsMeasurement)
         {
-            Draw();
-        }
-    }
-
-    /// <summary>Builds off the UI thread, for edits that arrive one after another; only the newest build is shown.</summary>
-    public async Task RedrawAsync()
-    {
-        if (!DrawsMeasurement)
-        {
-            Redraw();
-            return;
+            return Draw(placeholder: false);
         }
 
-        bool includeCurves = IncludesCurves;
-        bool showOverlay = descriptor.ShowOverlayCurves;
-        int version = Interlocked.Increment(ref refreshVersion);
-        // A change during the build queues a redraw, which drops this build.
-        measurementChanged.Refreshed();
-        Mode mode = Mode;
-        PlotModel model = await Task.Run(() => Factory.Create(mode, includeCurves));
-        if (owner.IsDisposed ||
-            version != Volatile.Read(ref refreshVersion) ||
-            Mode != mode)
-        {
-            return;
-        }
-
-        Show(model, includeCurves, showOverlay);
+        builds.Cancel();
+        return Task.CompletedTask;
     }
 
     /// <summary>For a setting that changes what an axis means: the next draw fits instead of restoring the zoom.</summary>
@@ -372,13 +356,41 @@ internal sealed class AnalyzerPlot : IModeView
         }
     }
 
-    private void Draw()
+    // placeholder: a switch shows the mode's frame while the curves build, never a blank plot or another mode's.
+    private Task Draw(bool placeholder)
     {
         using var _ = AppProfiler.Zone("AnalyzerPlot.Draw");
+        // A change during the build queues a redraw, which cancels this one.
         measurementChanged.Refreshed();
-        bool includeCurves = IncludesCurves;
-        Show(Factory.Create(Mode, includeCurves), includeCurves, descriptor.ShowOverlayCurves);
+        bool showOverlay = descriptor.ShowOverlayCurves;
+        if (!IncludesCurves)
+        {
+            builds.Cancel();
+            Show(Factory.Create(Mode, includeCurves: false), includeCurves: false, showOverlay);
+            return Drawing = Task.CompletedTask;
+        }
+
+        if (placeholder)
+        {
+            Viewports.ShowPlaceholder(Factory.Create(Mode, includeCurves: false), Mode);
+            UpdatePeakInfo();
+            RefreshLabels();
+        }
+
+        Mode mode = Mode;
+        return Drawing = builds.RunAsync(
+            token => Factory.Create(mode, includeCurves: true, token),
+            model =>
+            {
+                if (!owner.IsDisposed && Mode == mode)
+                {
+                    Show(model, includeCurves: true, showOverlay);
+                }
+            });
     }
+
+    // A failed build reaches Application.ThreadException, as a draw on the UI thread did.
+    private static async void Observe(Task drawing) => await drawing;
 
     private void Show(PlotModel model, bool includeCurves, bool showOverlay)
     {

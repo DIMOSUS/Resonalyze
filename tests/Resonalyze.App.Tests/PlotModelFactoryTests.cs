@@ -95,6 +95,24 @@ public sealed class PlotModelFactoryTests
         Assert.NotEmpty(factory.CreateImpulseResponse(includeCurves: true).Series);
     }
 
+    [Theory]
+    [InlineData(Mode.ImpulseResponse)]
+    [InlineData(Mode.FrequencyResponse)]
+    [InlineData(Mode.PhaseResponse)]
+    [InlineData(Mode.GroupDelay)]
+    [InlineData(Mode.CumulativeSpectrumDecay)]
+    [InlineData(Mode.BurstDecay)]
+    [InlineData(Mode.Autocorrelation)]
+    public void ACurveBuild_StopsOnACancelledToken(Mode mode)
+    {
+        using var measurement = CreateTransferMeasurement();
+        PlotModelFactory factory = CreateFactory(measurement);
+
+        Assert.ThrowsAny<OperationCanceledException>(
+            () => factory.Create(mode, includeCurves: true, new CancellationToken(true)));
+        Assert.NotNull(factory.Create(mode, includeCurves: false, new CancellationToken(true)));
+    }
+
     [Fact]
     public void Autocorrelation_RespectsShowAutocorrelationFlag()
     {
@@ -1343,10 +1361,10 @@ public sealed class PlotModelFactoryTests
             PlotModelFactory factory =
                 CreateFactory(measurement, impulseOptions: options);
 
-            // Nothing frames an overlay before the first impulse build.
-            Assert.Null(factory.ImpulseFrame);
+            // Only an impulse model frames an overlay, with its own build's framing.
+            Assert.Null(factory.ImpulseFrameOf(factory.CreateFrequencyResponse(includeCurves: true)));
             var model = factory.CreateImpulseResponse(includeCurves: true);
-            ImpulseOverlayFrame frame = factory.ImpulseFrame!.Value;
+            ImpulseOverlayFrame frame = factory.ImpulseFrameOf(model)!.Value;
 
             Assert.Empty(model.Series);
             Assert.Equal(measurement.Result.Transfer!.PeakIndex, frame.OriginSamples, precision: 9);

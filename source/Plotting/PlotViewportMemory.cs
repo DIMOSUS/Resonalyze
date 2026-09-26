@@ -22,7 +22,12 @@ internal sealed class PlotViewportMemory
     public PlotModel? Model => view.Model;
 
     /// <summary>Applies the zoom before showing: overlays repaint synchronously, and a late restore flashes the default scale.</summary>
-    public void Show(PlotModel? model, Mode mode)
+    public void Show(PlotModel? model, Mode mode) => Show(model, mode, remembered: true);
+
+    /// <summary>A stand-in while the mode's model builds: shown at the saved zoom, never remembered from.</summary>
+    public void ShowPlaceholder(PlotModel model, Mode mode) => Show(model, mode, remembered: false);
+
+    private void Show(PlotModel? model, Mode mode, bool remembered)
     {
         Remember();
         if (savedByMode.TryGetValue(mode, out IReadOnlyList<PlotAxisViewport>? saved))
@@ -31,7 +36,7 @@ internal sealed class PlotViewportMemory
         }
 
         view.Model = model;
-        trackedModel = model;
+        trackedModel = remembered ? model : null;
         trackedMode = mode;
     }
 

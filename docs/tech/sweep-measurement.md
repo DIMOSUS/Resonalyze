@@ -82,6 +82,29 @@ What each tab shows is the plain table `ModeCatalog`, and every mode's view opti
 `AnalyzerViewSettings`: the settings file keeps one copy and each history entry keeps the copy it
 was left with (`CaptureSession`, `ApplySession`).
 
+### Plot builds
+
+`AnalyzerPlot` draws through `PlotModelFactory.Create`. A model without curves (nothing open, a
+producer holding the document) is axes and notices, and builds on the UI thread. A model with
+curves builds on the thread pool through `SupersedingBuild`:
+
+- Every draw (a mode switch, the document or the compare selection changing, a settings edit)
+  supersedes the build in flight: its token is cancelled, and whatever it returns or throws is
+  dropped. The factory checks the token between curves, and the long stages check it as they
+  go: each FDW window, between the group-delay smoothing passes, each waterfall slice and
+  burst-decay band. The analysis caches only ever take complete entries.
+- A mode switch shows the mode's frame at once (title, axes, peak read-out, the overlay slots it
+  restores) and the curves when they land. The frame takes the saved zoom but is never remembered
+  from (`PlotViewportMemory.ShowPlaceholder`), so its own ranges cannot pass for the user's; a zoom
+  made on the frame is lost when the curves land. Any other redraw keeps the model on screen until
+  the new one lands.
+- A build keeps what it computes to itself: the distortion warnings travel with the Frequency
+  Response curves, and the impulse framing that stored overlays redraw under is looked up per
+  model (`ImpulseFrameOf`), so two builds in flight cannot mix them.
+- The settings panels await the draw (`RedrawAsync`) and apply the edits that arrived meanwhile
+  once it lands, so a held spin button redraws at the pace of the build. A failed build nobody
+  awaits reaches `Application.ThreadException`, as a draw on the UI thread did.
+
 ## Sweep generation
 
 `ExponentialSineSweep` is pure signal generation: it exposes float samples and the audio

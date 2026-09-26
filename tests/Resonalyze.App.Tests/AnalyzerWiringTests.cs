@@ -192,6 +192,47 @@ public sealed class AnalyzerWiringTests : IDisposable
         });
     }
 
+    [Fact]
+    public void ASwitchShowsTheModesFrameAtOnce_AndItsCurvesOnceBuilt()
+    {
+        string path = WriteMeasurement("cabin left.json", peak: 240);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Open(path);
+
+            Task select = analyzer.Start("SelectModeAsync", ModeTab.Phase);
+
+            Assert.True(select.IsCompleted);
+            Assert.Equal("Phase Response - cabin left.json", analyzer.Plot.Title);
+            Assert.Empty(analyzer.Plot.Series);
+            analyzer.Pump();
+            Assert.Contains(analyzer.Plot.Series, series => IsCurveOf(series, Mode.PhaseResponse));
+        });
+    }
+
+    [Fact]
+    public void ASwitchBeforeTheLastOneLands_ShowsOnlyTheNewMode()
+    {
+        string path = WriteMeasurement("cabin left.json", peak: 240);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Open(path);
+
+            Assert.True(analyzer.Start("SelectModeAsync", ModeTab.Phase).IsCompleted);
+            Task phase = analyzer.Plotter.Drawing;
+            Assert.True(analyzer.Start("SelectModeAsync", ModeTab.GroupDelay).IsCompleted);
+            StaTest.Settle(phase);
+            analyzer.Pump();
+
+            Assert.True(phase.IsCompletedSuccessfully);
+            Assert.Equal("Group Delay - cabin left.json", analyzer.Plot.Title);
+            Assert.DoesNotContain(analyzer.Plot.Series, series => IsCurveOf(series, Mode.PhaseResponse));
+            Assert.Contains(analyzer.Plot.Series, series => IsCurveOf(series, Mode.GroupDelay));
+        });
+    }
+
     // A save renames the open measurement; the title follows the document.
     [Fact]
     public void ARenameRetitlesThePlot()
@@ -371,6 +412,9 @@ public sealed class AnalyzerWiringTests : IDisposable
     private static bool IsCompareCurve(OxyPlot.Series.Series series) =>
         series.Tag is CurveTag { Source: CurveSource.Compare };
 
+    private static bool IsCurveOf(OxyPlot.Series.Series series, Mode mode) =>
+        series.Tag is CurveTag tag && tag.Mode == mode;
+
     private static MeasurementResult Measurement(int peak)
     {
         var impulse = new Complex[8_192];
@@ -457,6 +501,8 @@ public sealed class AnalyzerWiringTests : IDisposable
 
         public PlotModel Plot => Field<PlotView>("plotView1").Model!;
 
+        public AnalyzerPlot Plotter => Field<AnalyzerPlot>("analyzerPlot");
+
         public string PeakInfo => Plot.Annotations
             .OfType<TextualAnnotation>()
             .Single(annotation => Equals(annotation.Tag, "PeakInfoAnnotation"))
@@ -520,7 +566,7 @@ public sealed class AnalyzerWiringTests : IDisposable
             MainWindowData.Reset();
         }
 
-        /// <summary>Lets queued UI work run: a view redraws after the input that changed it.</summary>
+        /// <summary>Lets queued UI work run: a view redraws after the input that changed it, and its curves land.</summary>
         public void Pump()
         {
             for (int i = 0; i < 20; i++)
@@ -528,6 +574,14 @@ public sealed class AnalyzerWiringTests : IDisposable
                 StaTest.Pump();
                 Thread.Sleep(5);
             }
+
+            Task drawing;
+            do
+            {
+                drawing = Plotter.Drawing;
+                StaTest.Settle(drawing);
+            }
+            while (drawing != Plotter.Drawing);
         }
     }
 }

@@ -353,8 +353,10 @@ namespace Resonalyze.Dsp
         private static Complex[] BuildAnalysisSpectrum(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
-            out int extractionStart) =>
-            BuildAnalysisSpectra(measurement, settings, timeWeighted: false, out extractionStart)
+            out int extractionStart,
+            CancellationToken cancellationToken = default) =>
+            BuildAnalysisSpectra(
+                measurement, settings, timeWeighted: false, out extractionStart, cancellationToken)
                 .Spectrum;
 
         // A group-delay reader replaces a phase-only cache entry with the pair (spectrum bit-identical).
@@ -362,7 +364,8 @@ namespace Resonalyze.Dsp
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
             bool timeWeighted,
-            out int extractionStart)
+            out int extractionStart,
+            CancellationToken cancellationToken = default)
         {
             Complex[] impulse = measurement.ImpulseResponse
                 ?? throw new InvalidOperationException("Impulse response is not available.");
@@ -403,7 +406,7 @@ namespace Resonalyze.Dsp
             else
             {
                 (spectrum, weighted) = BuildFdwSpectra(
-                    measurement, settings, timeWeighted, out extractionStart);
+                    measurement, settings, timeWeighted, out extractionStart, cancellationToken);
             }
             lock (cache.Entries)
             {
@@ -456,7 +459,8 @@ namespace Resonalyze.Dsp
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
             bool timeWeighted,
-            out int extractionStart)
+            out int extractionStart,
+            CancellationToken cancellationToken)
         {
             int sampleRate = measurement.SampleRate;
             FdwGateGeometry geometry = FdwGateGeometry.Resolve(settings, sampleRate);
@@ -465,6 +469,7 @@ namespace Resonalyze.Dsp
 
             foreach ((double center, int effectiveGate) in FdwBankPlan(geometry, sampleRate))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 Complex[] spectrum = ExtractFdwWindowedImpulse(
                     measurement,
                     settings.GateOffsetMs,
@@ -838,9 +843,11 @@ namespace Resonalyze.Dsp
         public static List<SignalPoint> GetGatedPhaseData(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
-            IReadOnlyList<double>? coherence = null)
+            IReadOnlyList<double>? coherence = null,
+            CancellationToken cancellationToken = default)
         {
-            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out int extractionStart);
+            Complex[] spectrum = BuildAnalysisSpectrum(
+                measurement, settings, out int extractionStart, cancellationToken);
             double detrendMilliseconds = ResolveDetrendMilliseconds(
                 spectrum,
                 extractionStart,
@@ -963,9 +970,11 @@ namespace Resonalyze.Dsp
 
         public static double ResolvePhaseDetrendMilliseconds(
             IImpulseMeasurement measurement,
-            PhaseAnalysisSettings settings)
+            PhaseAnalysisSettings settings,
+            CancellationToken cancellationToken = default)
         {
-            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out int extractionStart);
+            Complex[] spectrum = BuildAnalysisSpectrum(
+                measurement, settings, out int extractionStart, cancellationToken);
             return ResolveDetrendMilliseconds(
                 spectrum,
                 extractionStart,
@@ -1027,9 +1036,10 @@ namespace Resonalyze.Dsp
         public static AnalysisCurve GetPhase(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
-            IReadOnlyList<double>? coherence = null)
+            IReadOnlyList<double>? coherence = null,
+            CancellationToken cancellationToken = default)
         {
-            List<SignalPoint> phase = GetGatedPhaseData(measurement, settings, coherence);
+            List<SignalPoint> phase = GetGatedPhaseData(measurement, settings, coherence, cancellationToken);
             List<SignalPoint> data = phase
                 .Select(point => new SignalPoint(point.X, point.Y / Math.PI * 180.0))
                 .ToList();
@@ -1082,9 +1092,10 @@ namespace Resonalyze.Dsp
 
         public static AnalysisCurve GetMinimumPhase(
             IImpulseMeasurement measurement,
-            PhaseAnalysisSettings settings)
+            PhaseAnalysisSettings settings,
+            CancellationToken cancellationToken = default)
         {
-            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _);
+            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _, cancellationToken);
             return BuildMinimumPhaseCurve(
                 spectrum, measurement.SampleRate, settings.SmoothingInverseOctaves);
         }
@@ -1164,9 +1175,11 @@ namespace Resonalyze.Dsp
         public static AnalysisCurve GetExcessPhase(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
-            IReadOnlyList<double>? coherence = null)
+            IReadOnlyList<double>? coherence = null,
+            CancellationToken cancellationToken = default)
         {
-            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out int extractionStart);
+            Complex[] spectrum = BuildAnalysisSpectrum(
+                measurement, settings, out int extractionStart, cancellationToken);
             double detrendMilliseconds = ResolveDetrendMilliseconds(
                 spectrum, extractionStart, measurement.SampleRate, settings);
             List<SignalPoint> measured = BuildMeasuredPhase(
@@ -1288,10 +1301,11 @@ namespace Resonalyze.Dsp
             PhaseAnalysisSettings settings,
             double smoothingInverseOctaves,
             double magnitudeGateDb = -30.0,
-            bool includeMinimumPhase = false)
+            bool includeMinimumPhase = false,
+            CancellationToken cancellationToken = default)
         {
             (Complex[] spectrum, Complex[]? weighted) = BuildAnalysisSpectra(
-                measurement, settings, timeWeighted: true, out int extractionStart);
+                measurement, settings, timeWeighted: true, out int extractionStart, cancellationToken);
             return BuildGroupDelayCurves(
                 spectrum,
                 weighted!,
@@ -1302,7 +1316,8 @@ namespace Resonalyze.Dsp
                 magnitudeGateDb,
                 includeMinimumPhase,
                 lowestMeasuredFrequencyHz: 0.0,
-                highestMeasuredFrequencyHz: double.PositiveInfinity);
+                highestMeasuredFrequencyHz: double.PositiveInfinity,
+                cancellationToken);
         }
 
         /// <summary>Curves over a prebuilt pair; <paramref name="settings"/> must carry the window geometry the pair was analysed through (its offset is ignored: <paramref name="extractionStart"/> sets the time reference).</summary>
@@ -1355,7 +1370,8 @@ namespace Resonalyze.Dsp
             double magnitudeGateDb,
             bool includeMinimumPhase,
             double lowestMeasuredFrequencyHz,
-            double highestMeasuredFrequencyHz)
+            double highestMeasuredFrequencyHz,
+            CancellationToken cancellationToken = default)
         {
             int n = spectrum.Length;
             double invSampleRate = 1.0 / sampleRate;
@@ -1377,6 +1393,7 @@ namespace Resonalyze.Dsp
             double[]? minimumNumerator = includeMinimumPhase
                 ? ComputeMinimumPhaseGroupDelayNumerator(spectrum, invSampleRate)
                 : null;
+            cancellationToken.ThrowIfCancellationRequested();
 
             double decodedOctaves =
                 SpectrumSmoothing.SmoothingOctaves(smoothingInverseOctaves);
@@ -1413,6 +1430,7 @@ namespace Resonalyze.Dsp
                         minimumNumerator, smoothingOctaves, binWidthHz, minHalfWidthAt);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             double maxEnergy = 0.0;
             for (int i = 1; i < halfLength; i++)
             {

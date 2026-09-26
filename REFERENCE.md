@@ -176,6 +176,13 @@ something changes what the axis means (loading a new wizard source, switching
 the Virtual DSP view between magnitude, phase, group delay, impulse and step —
 impulse and step share one time axis, so a toggle between those two keeps it).
 
+The analysis curves are computed in the background, so the window never waits
+on them: switching modes shows the new mode's axes, overlays and read-out at
+once and draws its curves the moment they are computed, and a setting changed or
+a mode chosen meanwhile replaces that computation instead of queueing behind it.
+A zoom made on the empty frame, before the curves arrive, is not kept; the range
+remembered for the mode is.
+
 Axes you have **not** touched still scale themselves — the dB axis lifts its
 ceiling for a padded loopback, group delay fits its data — so the automatic
 framing steps aside only where you took over, and **Home** hands an axis back to

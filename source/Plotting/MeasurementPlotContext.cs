@@ -86,16 +86,11 @@ internal sealed class MeasurementPlotContext
     // HD curves smoothed at the primary's width so HD2..HDn read at HD1's resolution.
     private const double HarmonicSmoothingWidthFactor = 1.0;
 
-    public IReadOnlyList<string> DistortionWarnings { get; private set; } = Array.Empty<string>();
-
-    /// <summary>Separates overlap drops (amber) from below-noise drops (neutral note).</summary>
-    public IReadOnlyList<HarmonicPacketValidity> DistortionPacketValidity
-    { get; private set; } = Array.Empty<HarmonicPacketValidity>();
-
-    public IReadOnlyList<AnalysisCurve> CreateFrequencyResponseCurves(
+    public FrequencyResponseCurves CreateFrequencyResponseCurves(
         FrequencyResponseOptions options,
         CalibrationFile? calibration,
-        SpectrumCurves curves)
+        SpectrumCurves curves,
+        CancellationToken cancellationToken = default)
     {
         var result = new List<AnalysisCurve>();
         result.AddRange(DataHelper.GetSpectrum(
@@ -103,18 +98,22 @@ internal sealed class MeasurementPlotContext
             options,
             calibration,
             curves & SpectrumCurves.Primary));
+        cancellationToken.ThrowIfCancellationRequested();
 
-        result.AddRange(CreateDistortionCurves(options, calibration, curves));
-        return result;
+        if (CreateDistortionCurves(options, calibration, curves) is not { } distortion)
+        {
+            return new FrequencyResponseCurves(result, [], []);
+        }
+
+        result.AddRange(distortion.Curves);
+        return new FrequencyResponseCurves(result, distortion.Warnings, distortion.PacketValidity);
     }
 
-    private IReadOnlyList<AnalysisCurve> CreateDistortionCurves(
+    private EssDistortion.DistortionCurveResult? CreateDistortionCurves(
         FrequencyResponseOptions options,
         CalibrationFile? calibration,
         SpectrumCurves curves)
     {
-        DistortionWarnings = Array.Empty<string>();
-        DistortionPacketValidity = Array.Empty<HarmonicPacketValidity>();
         // The result's recorded sweep geometry, not the rebuilt one (length-capped, legacy edges unreachable).
         if ((curves & SpectrumCurves.Distortion) == 0 ||
             document.Result is not { } result ||
@@ -122,7 +121,7 @@ internal sealed class MeasurementPlotContext
             !(result.AchievedLowFrequencyHz > 0) ||
             !(result.AchievedHighFrequencyHz > result.AchievedLowFrequencyHz))
         {
-            return Array.Empty<AnalysisCurve>();
+            return null;
         }
 
         MeasurementImpulseResponse deconvolution = result.SweepDeconvolution;
@@ -149,15 +148,18 @@ internal sealed class MeasurementPlotContext
                 SpectrumSmoothing.SmoothingOctaves(options.SmoothingInverseOctaves),
             IncludeNoise: (curves & SpectrumCurves.NoiseFloor) != 0);
 
-        EssDistortion.DistortionCurveResult distortion =
-            EssDistortion.ComputeDistortionCurvesResult(
-                real,
-                sweepMetadata,
-                distortionOptions,
-                options.UseCalibration ? calibration : null,
-                curves & SpectrumCurves.Distortion);
-        DistortionWarnings = distortion.Warnings;
-        DistortionPacketValidity = distortion.PacketValidity;
-        return distortion.Curves;
+        return EssDistortion.ComputeDistortionCurvesResult(
+            real,
+            sweepMetadata,
+            distortionOptions,
+            options.UseCalibration ? calibration : null,
+            curves & SpectrumCurves.Distortion);
     }
 }
+
+/// <summary>A Frequency Response build's curves, with what explains a harmonic it could not draw.</summary>
+/// <param name="DistortionPacketValidity">Separates overlap drops (amber) from below-noise drops (neutral note).</param>
+internal sealed record FrequencyResponseCurves(
+    IReadOnlyList<AnalysisCurve> Curves,
+    IReadOnlyList<string> DistortionWarnings,
+    IReadOnlyList<HarmonicPacketValidity> DistortionPacketValidity);

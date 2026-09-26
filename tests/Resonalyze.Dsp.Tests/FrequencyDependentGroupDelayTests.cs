@@ -59,6 +59,20 @@ public sealed class FrequencyDependentGroupDelayTests
         Assert.Equal(before, after);
     }
 
+    [Fact]
+    public void ACancelledRead_StopsAndCachesNothing()
+    {
+        SyntheticMeasurement measurement = ReflectedImpulse();
+        PhaseAnalysisSettings settings = Settings(PhaseWindowMode.FrequencyDependent, 8);
+
+        Assert.Throws<OperationCanceledException>(() => DataHelper.GetGroupDelayCurves(
+            measurement, settings, smoothingInverseOctaves: 12, cancellationToken: new CancellationToken(true)));
+        Assert.Throws<OperationCanceledException>(() => DataHelper.GetPhase(
+            measurement, settings, cancellationToken: new CancellationToken(true)));
+
+        Assert.Equal(0, DataHelper.CachedPhaseSpectrumCount(measurement.ImpulseResponse!));
+    }
+
     [Theory]
     [InlineData(4)]
     [InlineData(6)]

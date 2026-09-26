@@ -227,6 +227,9 @@ Time Alignment previews each have their own memory.
   incoming mode's saved ranges to the new model before assigning it to the view. Applying afterwards would flash
   the default scale, because overlays force a synchronous repaint while drawing.
 - A capture with no overrides removes the mode's entry, so the next model scales itself freely.
+- `ShowPlaceholder(model, mode)` shows the frame a mode switch puts up while the curves build: it takes the
+  saved ranges but is never captured from, since the frame's own ranges (no curves to fit) differ from the
+  model's and a saved zoom that happened to equal them would read as untouched and be dropped.
 - Untouched axes keep whatever the new model computes, so automatic behaviours still work: the dB ceiling that
   `PlotModelStyle.RaiseDecibelViewCeiling` lifts for a padded loopback, the group-delay auto-fit, auto-scaled
   axes widening for overlays.

@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using OxyPlot;
 using OxyPlot.Annotations;
 using OxyPlot.Axes;
@@ -35,6 +36,7 @@ internal sealed class PlotModelFactory
     private readonly ImpulseResponseOptions impulseResponseOptions;
     private readonly WaterfallGenerateOptions waterfallGenOptions;
     private readonly WaterfallGenerateOptions burstDecayGenOptions;
+    private readonly ConditionalWeakTable<PlotModel, StrongBox<ImpulseOverlayFrame>> impulseFrames = new();
     private Func<CompareAnalysisSource?>? getCompareSource;
 
     public PlotModelFactory(
@@ -186,19 +188,20 @@ internal sealed class PlotModelFactory
             calibration);
 
     /// <summary>The main plot of a plot mode but Live Spectrum, which draws its own (<see cref="LiveSpectrumController"/>).</summary>
-    public PlotModel Create(Mode mode, bool includeCurves) => mode switch
+    /// <remarks>Safe off the UI thread, several at once: a build keeps what it computes to itself.</remarks>
+    public PlotModel Create(Mode mode, bool includeCurves, CancellationToken cancellationToken = default) => mode switch
     {
-        Mode.ImpulseResponse => CreateImpulseResponse(includeCurves),
-        Mode.FrequencyResponse => CreateFrequencyResponse(includeCurves),
-        Mode.PhaseResponse => CreatePhaseResponse(includeCurves),
-        Mode.GroupDelay => CreateGroupDelay(includeCurves),
-        Mode.CumulativeSpectrumDecay => CreateWaterfall(includeCurves),
-        Mode.BurstDecay => CreateBurstDecay(includeCurves),
-        Mode.Autocorrelation => CreateAutocorrelation(includeCurves),
+        Mode.ImpulseResponse => CreateImpulseResponse(includeCurves, cancellationToken),
+        Mode.FrequencyResponse => CreateFrequencyResponse(includeCurves, cancellationToken),
+        Mode.PhaseResponse => CreatePhaseResponse(includeCurves, cancellationToken),
+        Mode.GroupDelay => CreateGroupDelay(includeCurves, cancellationToken),
+        Mode.CumulativeSpectrumDecay => CreateWaterfall(includeCurves, cancellationToken),
+        Mode.BurstDecay => CreateBurstDecay(includeCurves, cancellationToken),
+        Mode.Autocorrelation => CreateAutocorrelation(includeCurves, cancellationToken),
         _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Not a mode this factory draws.")
     };
 
-    public PlotModel CreateFrequencyResponse(bool includeCurves)
+    public PlotModel CreateFrequencyResponse(bool includeCurves, CancellationToken cancellationToken = default)
     {
         PlotModel model = PlotModelStyle.CreateTitledModel(
             measurementContext.CreateTitle("Frequency Response"));
@@ -215,6 +218,7 @@ internal sealed class PlotModelFactory
             measurementContext.HasTransferImpulseResponse)
         {
             IReadOnlyList<AnalysisCurve> curves = Array.Empty<AnalysisCurve>();
+            FrequencyResponseCurves? built = null;
             if (splViewOnly)
             {
                 // The Compare curve is judged on its own anchor and may stay visible.
@@ -227,10 +231,12 @@ internal sealed class PlotModelFactory
                 bool anchorsHiddenPrimary = renderSpl &&
                     (requested & SpectrumCurves.Primary) == 0 &&
                     (requested & SpectrumCurves.Distortion) != 0;
-                curves = measurementContext.CreateFrequencyResponseCurves(
+                built = measurementContext.CreateFrequencyResponseCurves(
                     frequencyResponseOptions,
                     GetCalibration(frequencyResponseOptions),
-                    anchorsHiddenPrimary ? requested | SpectrumCurves.Primary : requested);
+                    anchorsHiddenPrimary ? requested | SpectrumCurves.Primary : requested,
+                    cancellationToken);
+                curves = built.Curves;
                 if (renderSpl)
                 {
                     curves = SplConversion.ToSoundPressureLevel(curves, splOffset!.Value);
@@ -254,7 +260,9 @@ internal sealed class PlotModelFactory
                 }
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             AddCompareFrequencyResponse(model, splRequested, splViewOnly);
+            cancellationToken.ThrowIfCancellationRequested();
 
             if (!splViewOnly)
             {
@@ -265,7 +273,7 @@ internal sealed class PlotModelFactory
 
                 AddArrayMicrophones(model, splOffset);
 
-                AddHiddenHarmonicAnnotation(model, curves);
+                AddHiddenHarmonicAnnotation(model, curves, built);
             }
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
@@ -359,7 +367,7 @@ internal sealed class PlotModelFactory
         return note;
     }
 
-    public PlotModel CreatePhaseResponse(bool includeCurves)
+    public PlotModel CreatePhaseResponse(bool includeCurves, CancellationToken cancellationToken = default)
     {
         PlotModel model = PlotModelStyle.CreateTitledModel(
             measurementContext.CreateTitle("Phase Response"));
@@ -384,7 +392,8 @@ internal sealed class PlotModelFactory
                 // One common time reference: resolve Auto from Main once, reuse as Manual for all curves so relative delay survives.
                 double commonDetrend = DataHelper.ResolvePhaseDetrendMilliseconds(
                     primaryMeasurement,
-                    phaseSettings);
+                    phaseSettings,
+                    cancellationToken);
                 phaseSettings = phaseSettings with
                 {
                     DetrendMode = PhaseDetrendMode.Manual,
@@ -397,7 +406,8 @@ internal sealed class PlotModelFactory
                 AnalysisCurve curve = DataHelper.GetPhase(
                     primaryMeasurement,
                     phaseSettings,
-                    measurementContext.Result?.TransferCoherence);
+                    measurementContext.Result?.TransferCoherence,
+                    cancellationToken);
 
                 // Tag representation so overlay math knows whether a difference must use the wrapped formula.
                 AddLineSeries(
@@ -409,11 +419,13 @@ internal sealed class PlotModelFactory
                     phaseResponseOptions.Unwrap);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             if (phaseResponseVisibility.ShowMinimumPhase)
             {
                 AnalysisCurve minimumPhaseCurve = DataHelper.GetMinimumPhase(
                     primaryMeasurement,
-                    phaseSettings);
+                    phaseSettings,
+                    cancellationToken);
 
                 AddLineSeries(
                     model,
@@ -424,12 +436,14 @@ internal sealed class PlotModelFactory
                     phaseUnwrapped: true);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             if (phaseResponseVisibility.ShowExcessPhase)
             {
                 AnalysisCurve excessPhaseCurve = DataHelper.GetExcessPhase(
                     primaryMeasurement,
                     phaseSettings,
-                    measurementContext.Result?.TransferCoherence);
+                    measurementContext.Result?.TransferCoherence,
+                    cancellationToken);
 
                 AddLineSeries(
                     model,
@@ -442,6 +456,7 @@ internal sealed class PlotModelFactory
 
             // Compare shares gate length, window, detrend and smoothing; gate placement is per-curve under Auto (fronts differ).
             // Measured and excess phase need both records on one clock; minimum phase is magnitude-only (Bode) and always comparable.
+            cancellationToken.ThrowIfCancellationRequested();
             if (compare is { } compareData)
             {
                 bool sharesTimeReference = CompareSharesATimeReference();
@@ -456,7 +471,8 @@ internal sealed class PlotModelFactory
                     AnalysisCurve compareCurve = DataHelper.GetPhase(
                         compareData.Measurement,
                         comparePhaseSettings,
-                        compareData.Coherence);
+                        compareData.Coherence,
+                        cancellationToken);
                     AddCompareLineSeries(
                         model,
                         compareCurve,
@@ -466,11 +482,13 @@ internal sealed class PlotModelFactory
                         phaseResponseOptions.Unwrap);
                 }
 
+                cancellationToken.ThrowIfCancellationRequested();
                 if (phaseResponseVisibility.ShowMinimumPhase)
                 {
                     AnalysisCurve compareCurve = DataHelper.GetMinimumPhase(
                         compareData.Measurement,
-                        comparePhaseSettings);
+                        comparePhaseSettings,
+                        cancellationToken);
                     AddCompareLineSeries(
                         model,
                         compareCurve,
@@ -480,12 +498,14 @@ internal sealed class PlotModelFactory
                         phaseUnwrapped: true);
                 }
 
+                cancellationToken.ThrowIfCancellationRequested();
                 if (phaseResponseVisibility.ShowExcessPhase && sharesTimeReference)
                 {
                     AnalysisCurve compareCurve = DataHelper.GetExcessPhase(
                         compareData.Measurement,
                         comparePhaseSettings,
-                        compareData.Coherence);
+                        compareData.Coherence,
+                        cancellationToken);
                     AddCompareLineSeries(
                         model,
                         compareCurve,
@@ -527,7 +547,7 @@ internal sealed class PlotModelFactory
         return model;
     }
 
-    public PlotModel CreateWaterfall(bool includeCurves)
+    public PlotModel CreateWaterfall(bool includeCurves, CancellationToken cancellationToken = default)
     {
         PlotModel model = PlotModelStyle.CreateWaterfallModel(
             measurementContext.CreateTitle("Fourier Waterfall"),
@@ -542,7 +562,7 @@ internal sealed class PlotModelFactory
                 GenerateOptions = waterfallGenOptions,
             };
 
-            waterfall.FillFourierWaterfallData(measurementContext.CreatePrimaryMeasurement());
+            waterfall.FillFourierWaterfallData(measurementContext.CreatePrimaryMeasurement(), cancellationToken);
             model.Series.Add(waterfall);
             AddSliceVerdict(model, waterfall);
         }
@@ -555,7 +575,7 @@ internal sealed class PlotModelFactory
         return model;
     }
 
-    public PlotModel CreateGroupDelay(bool includeCurves)
+    public PlotModel CreateGroupDelay(bool includeCurves, CancellationToken cancellationToken = default)
     {
         PlotModel model = PlotModelStyle.CreateTitledModel(
             measurementContext.CreateTitle("Group Delay"));
@@ -591,7 +611,8 @@ internal sealed class PlotModelFactory
                     windowSettings,
                     groupDelayOptions.SmoothingInverseOctaves,
                     GroupDelayMagnitudeGateDb,
-                    includeMinimumPhase);
+                    includeMinimumPhase,
+                    cancellationToken);
                 if (groupDelayVisibility.ShowGroupDelay)
                 {
                     AddLineSeries(
@@ -635,6 +656,7 @@ internal sealed class PlotModelFactory
                         GroupDelayAxisKey);
                 }
 
+                cancellationToken.ThrowIfCancellationRequested();
                 // Measured and excess read absolute from the IR start, so they need a shared clock; minimum phase carries no bulk delay.
                 bool sharesTimeReference = CompareSharesATimeReference();
                 if ((sharesTimeReference ||
@@ -652,7 +674,8 @@ internal sealed class PlotModelFactory
                         windowSettings with { GateOffsetMs = compareGateOffsetMs },
                         groupDelayOptions.SmoothingInverseOctaves,
                         GroupDelayMagnitudeGateDb,
-                        includeMinimumPhase);
+                        includeMinimumPhase,
+                        cancellationToken);
                     // Y fit driven by Main only, so Compare extremes do not make the scale jump on every gate edit.
                     if (groupDelayVisibility.ShowGroupDelay && sharesTimeReference)
                     {
@@ -721,7 +744,7 @@ internal sealed class PlotModelFactory
         return model;
     }
 
-    public PlotModel CreateBurstDecay(bool includeCurves)
+    public PlotModel CreateBurstDecay(bool includeCurves, CancellationToken cancellationToken = default)
     {
         PlotModel model = PlotModelStyle.CreateWaterfallModel(
             measurementContext.CreateTitle("Burst Decay"),
@@ -736,7 +759,7 @@ internal sealed class PlotModelFactory
                 GenerateOptions = burstDecayGenOptions,
             };
 
-            waterfall.FillFourierWaterfallData(measurementContext.CreatePrimaryMeasurement());
+            waterfall.FillFourierWaterfallData(measurementContext.CreatePrimaryMeasurement(), cancellationToken);
             model.Series.Add(waterfall);
             AddSliceVerdict(model, waterfall);
         }
@@ -749,14 +772,17 @@ internal sealed class PlotModelFactory
         return model;
     }
 
-    /// <summary>Framing of this build, so stored overlays redraw under the framing on screen now; null until the first
-    /// impulse build, which is later than the slots load on the first entry to the mode.</summary>
-    public ImpulseOverlayFrame? ImpulseFrame { get; private set; }
+    /// <summary>The framing <paramref name="model"/> was built under, so stored overlays redraw under the framing of the
+    /// model on screen; null for a model that is not an impulse plot of this factory.</summary>
+    public ImpulseOverlayFrame? ImpulseFrameOf(PlotModel? model) =>
+        model != null && impulseFrames.TryGetValue(model, out StrongBox<ImpulseOverlayFrame>? frame)
+            ? frame.Value
+            : null;
 
-    public PlotModel CreateImpulseResponse(bool includeCurves)
+    public PlotModel CreateImpulseResponse(bool includeCurves, CancellationToken cancellationToken = default)
     {
         ImpulseResponseOptions opt = impulseResponseOptions;
-        ImpulseFrame = new ImpulseOverlayFrame(
+        var frame = new ImpulseOverlayFrame(
             opt, 0.0, null, AnalysisSampleRate);
         // A band-limited view is not the record; the title says so.
         string band = ImpulseBandLabel(opt, AnalysisSampleRate);
@@ -777,14 +803,16 @@ internal sealed class PlotModelFactory
             defaultSpan = ResolveImpulseDefaultSpan(main, opt, origin);
             ImpulseCurveSet mainSet = DataHelper.GetImpulseCurves(
                 main, opt, new ImpulseRenderFrame(origin));
-            ImpulseFrame = new ImpulseOverlayFrame(
+            frame = new ImpulseOverlayFrame(
                 opt, origin, mainSet.PeakReference, main.SampleRate);
+            cancellationToken.ThrowIfCancellationRequested();
 
             if (anyTrace)
             {
                 AddImpulseSeries(
                     model, mainSet, main.SampleRate, origin, null, drawn, stepCurves);
 
+                cancellationToken.ThrowIfCancellationRequested();
                 if (CompareSharesATimeReference() &&
                     TryCreateCompareMeasurement() is { } compare)
                 {
@@ -845,6 +873,7 @@ internal sealed class PlotModelFactory
             IsAxisVisible = !stepOnLeft && stepCurves.Count > 0,
         };
         PlotModelStyle.AddAxis(model, counterpartAxis);
+        impulseFrames.AddOrUpdate(model, new StrongBox<ImpulseOverlayFrame>(frame));
         return model;
     }
 
@@ -1151,7 +1180,7 @@ internal sealed class PlotModelFactory
         axis.AbsoluteMaximum = maximum;
     }
 
-    public PlotModel CreateAutocorrelation(bool includeCurves)
+    public PlotModel CreateAutocorrelation(bool includeCurves, CancellationToken cancellationToken = default)
     {
         PlotModel model = PlotModelStyle.CreateTitledModel(
             measurementContext.CreateTitle("Autocorrelation"));
@@ -1164,6 +1193,7 @@ internal sealed class PlotModelFactory
                 DataHelper.GetAutocorrelation(
                     measurementContext.CreatePrimaryMeasurement(),
                     impulseResponseOptions);
+            cancellationToken.ThrowIfCancellationRequested();
             AddLineSeries(
                 model,
                 curve,
@@ -1738,7 +1768,7 @@ internal sealed class PlotModelFactory
 
     // Names requested harmonics missing from the plot (overlap, below noise, no sweep). Below-noise is a clean capture: gray note, not amber.
     private void AddHiddenHarmonicAnnotation(
-        PlotModel model, IReadOnlyList<AnalysisCurve> curves)
+        PlotModel model, IReadOnlyList<AnalysisCurve> curves, FrequencyResponseCurves? built)
     {
         var present = new HashSet<AnalysisCurveKind>();
         foreach (AnalysisCurve curve in curves)
@@ -1764,7 +1794,7 @@ internal sealed class PlotModelFactory
         }
 
         var belowNoiseOrders = new HashSet<int>(
-            measurementContext.DistortionPacketValidity
+            (built?.DistortionPacketValidity ?? [])
                 .Where(packet => packet.IsBelowNoiseFloor)
                 .Select(packet => packet.Order));
         List<string> problem = missing
@@ -1779,7 +1809,7 @@ internal sealed class PlotModelFactory
         int nextLine = 0;
         if (problem.Count > 0)
         {
-            IReadOnlyList<string> warnings = measurementContext.DistortionWarnings;
+            IReadOnlyList<string> warnings = built?.DistortionWarnings ?? [];
             string reason = warnings.Count > 0
                 ? string.Join("\n", warnings.Select(w => w.Replace("; ", ";\n")))
                 : "no sweep distortion data — record a sweep,\n"

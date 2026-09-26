@@ -10,7 +10,8 @@ public static class WaterfallAnalysis
         int offset,
         int window,
         double[] windowFunction,
-        double smoothingOctaves)
+        double smoothingOctaves,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(measurement);
         ArgumentNullException.ThrowIfNull(windowFunction);
@@ -49,6 +50,7 @@ public static class WaterfallAnalysis
         var result = new List<BurstDecaySlice>(frequencies.Count);
         foreach (double frequency in frequencies)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             double w0 = (frequency / frequencyStep) * Math.PI * 2.0;
             double fWin = Math.Pow(2.0, smoothingOctaves);
             double t = 2.3548 / (w0 * (fWin - 1.0));

@@ -1529,7 +1529,7 @@ pivot, a **bass shelf**, a **treble shelf**, and a **presence** bump/dip — wit
 editable presets: `Flat`, `Room (gentle)`, `Room (Harman-style)`, `Warm`, `Car`,
 `Car (mild)`, `Car (bass)`, `House / bass boost`, `X-curve (cinema)`, `Smiley`,
 `BBC dip`, `Custom`. The three car presets share one in-car shape — a bass shelf
-over a flat 400 Hz…5 kHz band, then a gentle rolloff reaching ≈3 dB by 20 kHz —
+over a flat 630 Hz…5 kHz band, then a gentle rolloff reaching ≈3 dB by 20 kHz —
 and differ only in how much bass they lift (+6, +9 or +12 dB); a new target
 overlay opens on `Car`. `X-curve (cinema)` follows ISO 2969 / SMPTE ST 202 —
 flat to 2 kHz, then ≈-3 dB/oct. The deviation curve is **Deviation**

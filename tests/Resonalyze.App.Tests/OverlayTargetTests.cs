@@ -63,12 +63,12 @@ public sealed class OverlayTargetTests
         Assert.True(spec.Evaluate(9_000) < 1.0);
     }
 
-    /// <summary>Third-octave in-car target: full ≈+9 dB shelf by 31.5 Hz, flat 400 Hz…5 kHz, -3 dB to 20 kHz. Tolerance is the tanh-shelf fit error.</summary>
+    /// <summary>Third-octave in-car target: full ≈+9 dB shelf by 40 Hz, flat 630 Hz…5 kHz, -3 dB to 20 kHz. Tolerance is the tanh-shelf fit error.</summary>
     public static TheoryData<double, double> CarTargetTable => new()
     {
-        { 20, 9.0 }, { 25, 9.0 }, { 31.5, 9.0 }, { 40, 8.8 }, { 50, 8.5 },
-        { 63, 7.4 }, { 80, 6.0 }, { 100, 4.5 }, { 125, 3.0 }, { 160, 1.8 },
-        { 200, 1.0 }, { 250, 0.5 }, { 315, 0.2 }, { 400, 0.0 }, { 500, 0.0 },
+        { 20, 9.2 }, { 25, 9.2 }, { 31.5, 9.1 }, { 40, 9.1 }, { 50, 8.9 },
+        { 63, 8.7 }, { 80, 8.1 }, { 100, 7.2 }, { 125, 5.9 }, { 160, 4.1 },
+        { 200, 2.6 }, { 250, 1.5 }, { 315, 0.8 }, { 400, 0.4 }, { 500, 0.2 },
         { 630, 0.0 }, { 800, 0.0 }, { 1_000, 0.0 }, { 1_250, 0.0 },
         { 1_600, 0.0 }, { 2_000, 0.0 }, { 2_500, 0.0 }, { 3_150, 0.0 },
         { 4_000, 0.0 }, { 5_000, 0.0 }, { 6_300, -0.5 }, { 8_000, -1.0 },
@@ -95,7 +95,7 @@ public sealed class OverlayTargetTests
             TargetCurveSpec spec = TargetCurveSpec.FromPreset(preset);
 
             Assert.Equal(0.0, spec.TiltDbPerOctave, precision: 9);
-            foreach (double frequencyHz in new[] { 400.0, 1_000.0, 2_500.0, 5_000.0 })
+            foreach (double frequencyHz in new[] { 630.0, 1_000.0, 2_500.0, 5_000.0 })
             {
                 Assert.Equal(0.0, spec.Evaluate(frequencyHz), tolerance: 0.2);
             }
@@ -173,6 +173,7 @@ public sealed class OverlayTargetTests
     // Pre-refit shapes: a stored preset name must not advertise the new shape over old numbers.
     [InlineData(TargetPreset.XCurve, 0, 0, 100, 1.5, -10, 2_500, 2.0)]
     [InlineData(TargetPreset.Car, -1.0, 8, 80, 1.5, 0, 5_000, 1.5)]
+    [InlineData(TargetPreset.Car, 0, 9.2, 100, 0.9, -3, 10_000, 0.7)]
     public void ResolvePreset_FallsBackToCustomWhenTheStoredShapeMovedOn(
         TargetPreset preset,
         double tilt,

@@ -596,11 +596,11 @@ public sealed record TargetCurveSpec(
         TargetPreset.HarmanRoom => new(-0.8, 4, 105, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
         TargetPreset.RoomGentle => new(-0.5, 2, 120, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
         TargetPreset.Warm => new(-1.0, 3, 110, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
-        // Car: bass shelf on a flat 400 Hz–5 kHz band, ≈3 dB down by 20 kHz (OverlayTargetTests.CarTargetTable, within 0.2 dB).
-        // Variants move only the shelf gain; raising the corner would lift 150–300 Hz cabin boom.
-        TargetPreset.Car => new(0, 9.2, 100, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),
-        TargetPreset.CarMild => new(0, 6, 100, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),
-        TargetPreset.CarBass => new(0, 12, 100, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),
+        // Car: bass shelf on a flat 630 Hz–5 kHz band, ≈3 dB down by 20 kHz (OverlayTargetTests.CarTargetTable, within 0.2 dB).
+        // Variants move only the shelf gain.
+        TargetPreset.Car => new(0, 9.2, 150, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),
+        TargetPreset.CarMild => new(0, 6, 150, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),
+        TargetPreset.CarBass => new(0, 12, 150, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),
         TargetPreset.House => new(0, 6, 120, 1.0, 0, 5_000, 1.5, 0, 3_000, 1.0),
         // ISO 2969 / SMPTE ST 202: flat to 2 kHz, then -3 dB/oct; within 0.6 dB (OverlayTargetTests.XCurveTable).
         TargetPreset.XCurve => new(0, 0, 100, 1.5, -10, 6_300, 1.2, 0, 3_000, 1.0),

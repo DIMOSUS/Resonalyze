@@ -1120,6 +1120,60 @@ public sealed class VirtualCrossoverProjectFileTests
         Assert.False(legacyShown.ShowLossCurve);
     }
 
+    [Theory]
+    [InlineData(-60.0, 100.0, 10.0, 24_000.0, 354.375, true)]
+    [InlineData(20.0, 0.0, 83.7, 83.7, 12.3456, true)]
+    [InlineData(20.01, 0.0, 1_000.0, 1_000.0, 0.0, false)]
+    [InlineData(-60.01, 0.0, 1_000.0, 1_000.0, 0.0, false)]
+    [InlineData(0.0, 100.001, 1_000.0, 1_000.0, 0.0, false)]
+    [InlineData(0.0, -0.001, 1_000.0, 1_000.0, 0.0, false)]
+    [InlineData(0.0, 0.0, 9.99, 1_000.0, 0.0, false)]
+    [InlineData(0.0, 0.0, 1_000.0, 24_000.5, 0.0, false)]
+    [InlineData(0.0, 0.0, 1_000.0, 1_000.0, 354.4, false)]
+    public void Validate_HoldsAChannelToItsFieldsRanges_ButNotToTheirDecimals(
+        double gainDb, double delayMs, double highPassHz, double lowPassHz, double phaseDegrees, bool valid)
+    {
+        var project = new VirtualCrossoverProjectFile();
+        VirtualCrossoverChannelSettings side = project.Pairs[0].Right;
+        side.GainDb = gainDb;
+        side.DelayMs = delayMs;
+        side.HighPassEdge = side.HighPassEdge with { FrequencyHz = highPassHz };
+        side.LowPassEdge = side.LowPassEdge with { FrequencyHz = lowPassHz };
+        side.PhaseRotationDegrees = phaseDegrees;
+
+        Exception? refused = Record.Exception(project.Validate);
+
+        Assert.Equal(valid, refused == null);
+    }
+
+    [Fact]
+    public void SaveToAndLoadFrom_KeepValuesFinerThanTheFieldsShow()
+    {
+        string root = CreateTemporaryDirectory();
+        string path = Path.Combine(root, "session.json");
+        try
+        {
+            var original = new VirtualCrossoverProjectFile();
+            VirtualCrossoverChannelSettings side = original.Pairs[1].Left;
+            side.GainDb = -1.25;
+            side.DelayMs = 1.234;
+            side.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.Chebyshev, 83.7, 24, 0.05);
+            side.HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 40, 24, 0);
+
+            original.SaveTo(path);
+            VirtualCrossoverChannelSettings loaded = VirtualCrossoverProjectFile.LoadFrom(path).Pairs[1].Left;
+
+            Assert.Equal(-1.25, loaded.GainDb);
+            Assert.Equal(1.234, loaded.DelayMs);
+            Assert.Equal(side.LowPassEdge, loaded.LowPassEdge);
+            Assert.Equal(side.HighPassEdge, loaded.HighPassEdge);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void SaveToAndLoadFrom_RoundTripAnExportedSession()
     {

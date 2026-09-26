@@ -16,6 +16,8 @@ Code lives in `source/Tools/VirtualCrossover/`:
 - `VirtualCrossoverCalibrationSelection.cs`, `SessionCalibrationFiles.cs` — calibration carried by sessions.
 - `FirKernelWire.cs`, `FirFilterFiles.cs` — FIR kernel storage and import/export.
 - `VirtualCrossoverChannel.cs`, `VirtualCrossoverChannelState.cs` — runtime model of a block and its sides.
+- `VirtualCrossoverLimits.cs`, `VirtualCrossoverChannelEdit.cs` — the channel fields' ranges, and a block edit
+  written back one field at a time.
 - `VirtualCrossoverSideLock.cs` — the L/R Lock.
 - `VirtualDspEqHandoff.cs` — PEQ handoff to and from the EQ Wizard.
 
@@ -243,6 +245,46 @@ meaningful; when neither crossover exists the kind is Off and the edges are retu
 
 Both IIR edges are validated even when the kind ignores them, because the UI shows them greyed out and they must
 round-trip; Chebyshev ripple is validated only for that family (outside (0, max] its pole math is NaN).
+
+## Channel field ranges
+
+A side's numbers are held to the ranges of the block fields that edit them. `VirtualCrossoverLimits` is their one
+owner: the fields take their bounds and decimals from it, `Validate` refuses a file outside it, and the AI review
+holds a reply to it.
+
+| Field | Range | Field step |
+| --- | --- | --- |
+| Gain | −60 to +20 dB | 0.1 dB |
+| Delay | 0 to 100 ms | 0.01 ms |
+| Crossover corner, both edges | 10 Hz to 24 kHz | 1 Hz |
+| Chebyshev ripple | above 0, up to 3 dB (the field: 0.1 to 3.0) | 0.1 dB |
+| Phase rotation | 0 to 354.375° | 0.001° (edits snap to the device's 5.625°) |
+
+**The range is the field's.** A block shows a value outside its field clamped while the chain runs the stored one,
+so the display would lie. Against the file format's former ±60 dB and 1000 ms only the upper gain and delay bounds
+moved, and nothing but a hand edit ever went past the fields' +20 dB and 100 ms: the fields and the AI review stop
+there, Auto delay stays under the processor's ceiling (50 ms unless the catalog says otherwise), and the crossover
+wizard and gain balance only cut. So the loader refuses such a value as it refuses any other impossible one.
+
+**The decimals are not.** A file may hold a value finer than its field shows — 83.7 Hz, 1.234 ms — from a hand edit,
+or a corner or ripple from an AI import reviewed before replies were held to their steps. Refusing it would set aside
+autosaves that loaded before; rounding it on load would change the tune on open. It is kept, the field shows it
+rounded (`NumericFieldRange.Clamp`), and it changes only when that field is edited. The Chebyshev ripple's field
+starts at its first step, 0.1 dB, so a finer positive ripple is the same case and the file keeps the buildable range.
+
+**An edit writes its own field.** The block names the field that changed (`VirtualCrossoverChannelField`) with what
+it shows (`VirtualCrossoverChannelShown`), and `VirtualCrossoverChannelEdit` writes that one field. Writing the whole
+block back rewrote every rounded value on the first unrelated edit, and the [side Lock](#side-lock), reading moves by
+difference, then saw the rounded crossover as a move and carried it over a deliberately different hidden side.
+Family and slope are written together, since the slope list follows the family; when an edge turns Chebyshev, a
+stored ripple it cannot build (another family's ripple is not checked) is replaced by the shown one. Zone and Mono,
+which their fields show exactly, are stored on every edit: a Centre zone ticks Mono while a load's events are
+silenced, and a hand-edited stereo Centre is made mono by its next edit.
+
+**The AI review holds a reply to range and step** for gain, delay, corners and Chebyshev ripple, so a value a reply
+moves is one the field shows unchanged. A corner, or a Chebyshev edge's ripple, that a reply restates exactly as
+stored passes, so echoing a finer stored value is not refused; a ripple stored under another family counts as moved
+once the edge turns Chebyshev. See [agent-bridge.md](agent-bridge.md#review-rules).
 
 ## Phase control
 

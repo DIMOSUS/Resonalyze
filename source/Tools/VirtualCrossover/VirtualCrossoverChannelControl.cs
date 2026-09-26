@@ -33,8 +33,13 @@ public partial class VirtualCrossoverChannelControl : UserControl
         // Measured once here in designer units: a hidden optional row would make it read zero later.
         bottomMargin = Math.Max(
             0, MaximumSize.Height - Controls.Cast<Control>().Max(child => child.Bottom));
-        numericHighPassRipple.Maximum = (decimal)CrossoverFilter.MaximumChebyshevRippleDb;
-        numericLowPassRipple.Maximum = (decimal)CrossoverFilter.MaximumChebyshevRippleDb;
+        numericGain.ApplyFieldRange(VirtualCrossoverLimits.ChannelGain);
+        numericDelay.ApplyFieldRange(VirtualCrossoverLimits.ChannelDelay);
+        numericHighPassHz.ApplyFieldRange(VirtualCrossoverLimits.CrossoverCorner);
+        numericLowPassHz.ApplyFieldRange(VirtualCrossoverLimits.CrossoverCorner);
+        numericHighPassRipple.ApplyFieldRange(VirtualCrossoverLimits.ChebyshevRipple);
+        numericLowPassRipple.ApplyFieldRange(VirtualCrossoverLimits.ChebyshevRipple);
+        numericPhase.ApplyFieldRange(VirtualCrossoverLimits.PhaseRotation);
         PopulateCrossoverCombos();
         WireEvents();
         UpdateZoneAvailability();
@@ -63,7 +68,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
     }
 
-    public event EventHandler? SettingsChanged;
+    /// <summary>A user edit, naming the one field it changed.</summary>
+    internal event EventHandler<VirtualCrossoverChannelField>? SettingsChanged;
 
     public event EventHandler? SourceClicked;
 
@@ -136,6 +142,21 @@ public partial class VirtualCrossoverChannelControl : UserControl
             ? zone
             : VirtualCrossoverZone.Front;
 
+    internal VirtualCrossoverChannelShown Shown => new(
+        (double)numericGain.Value,
+        (double)numericDelay.Value,
+        checkBoxInvert.Checked,
+        checkBoxMono.Checked,
+        SelectedZone,
+        Muted,
+        checkBoxBypass.Checked,
+        checkBoxShowRaw.Checked,
+        checkBoxShowProcessed.Checked,
+        SelectedCrossoverKind,
+        HighPassEdge,
+        LowPassEdge,
+        (double)numericPhase.Value);
+
     /// <summary>Processor rate: the all-pass corner and the FIR length in time depend on it.</summary>
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -199,7 +220,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         buttonMute.Click += (_, _) =>
         {
             Muted = !Muted;
-            RaiseSettingsChanged();
+            RaiseSettingsChanged(VirtualCrossoverChannelField.Mute);
         };
         buttonCollapse.Click += (_, _) => Collapsed = !Collapsed;
         buttonMoveUp.Click += (_, _) => MoveUpClicked?.Invoke(this, EventArgs.Empty);
@@ -211,20 +232,20 @@ public partial class VirtualCrossoverChannelControl : UserControl
         numericGain.ValueChanged += (_, _) =>
         {
             UpdateTotalGain();
-            RaiseSettingsChanged();
+            RaiseSettingsChanged(VirtualCrossoverChannelField.Gain);
         };
         numericDelay.ValueChanged += (_, _) =>
         {
             UpdateDelayTooltip();
-            RaiseSettingsChanged();
+            RaiseSettingsChanged(VirtualCrossoverChannelField.Delay);
         };
-        checkBoxInvert.CheckedChanged += (_, _) => RaiseSettingsChanged();
-        checkBoxMono.CheckedChanged += (_, _) => RaiseSettingsChanged();
+        checkBoxInvert.CheckedChanged += (_, _) => RaiseSettingsChanged(VirtualCrossoverChannelField.Polarity);
+        checkBoxMono.CheckedChanged += (_, _) => RaiseSettingsChanged(VirtualCrossoverChannelField.Mono);
         comboBoxZone.SelectedIndexChanged += (_, _) =>
         {
             UpdateZoneAvailability();
             UpdatePhaseReadout();
-            RaiseSettingsChanged();
+            RaiseSettingsChanged(VirtualCrossoverChannelField.Zone);
         };
         numericPhase.ValueChanged += (_, _) =>
         {
@@ -244,28 +265,35 @@ public partial class VirtualCrossoverChannelControl : UserControl
             }
 
             UpdatePhaseReadout();
-            RaiseSettingsChanged();
+            RaiseSettingsChanged(VirtualCrossoverChannelField.PhaseRotation);
         };
         comboBoxCrossoverKind.SelectedIndexChanged += (_, _) =>
         {
             UpdateCrossoverAvailability();
             UpdateFirReadout();
-            RaiseSettingsChanged();
+            RaiseSettingsChanged(VirtualCrossoverChannelField.CrossoverKind);
         };
         WireEdgeEvents(
-            numericHighPassHz, comboBoxHighPassFamily, comboBoxHighPassSlope, numericHighPassRipple);
+            numericHighPassHz, comboBoxHighPassFamily, comboBoxHighPassSlope, numericHighPassRipple,
+            VirtualCrossoverChannelField.HighPassCorner,
+            VirtualCrossoverChannelField.HighPassFilter,
+            VirtualCrossoverChannelField.HighPassRipple);
         WireEdgeEvents(
-            numericLowPassHz, comboBoxLowPassFamily, comboBoxLowPassSlope, numericLowPassRipple);
-        checkBoxShowRaw.CheckedChanged += (_, _) => RaiseSettingsChanged();
-        checkBoxShowProcessed.CheckedChanged += (_, _) => RaiseSettingsChanged();
-        checkBoxBypass.CheckedChanged += (_, _) => RaiseSettingsChanged();
+            numericLowPassHz, comboBoxLowPassFamily, comboBoxLowPassSlope, numericLowPassRipple,
+            VirtualCrossoverChannelField.LowPassCorner,
+            VirtualCrossoverChannelField.LowPassFilter,
+            VirtualCrossoverChannelField.LowPassRipple);
+        checkBoxShowRaw.CheckedChanged += (_, _) => RaiseSettingsChanged(VirtualCrossoverChannelField.ShowRaw);
+        checkBoxShowProcessed.CheckedChanged +=
+            (_, _) => RaiseSettingsChanged(VirtualCrossoverChannelField.ShowProcessed);
+        checkBoxBypass.CheckedChanged += (_, _) => RaiseSettingsChanged(VirtualCrossoverChannelField.Bypass);
     }
 
-    private void RaiseSettingsChanged()
+    private void RaiseSettingsChanged(VirtualCrossoverChannelField field)
     {
         if (!suppressChangeEvents)
         {
-            SettingsChanged?.Invoke(this, EventArgs.Empty);
+            SettingsChanged?.Invoke(this, field);
         }
     }
 

@@ -328,7 +328,6 @@ namespace Resonalyze.Dsp
 
                 if (left < 0 || frequency < lowX || frequency >= highX)
                 {
-                    // Walks on from the last segment; a read below it starts over.
                     left = left >= 0 && frequency >= lowX ? left : 0;
                     while (calibration[left + 1].X <= frequency)
                     {

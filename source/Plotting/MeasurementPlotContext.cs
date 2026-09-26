@@ -156,7 +156,6 @@ internal sealed class MeasurementPlotContext
                 SpectrumSmoothing.SmoothingOctaves(options.SmoothingInverseOctaves),
             IncludeNoise: (curves & SpectrumCurves.NoiseFloor) != 0);
 
-        // The harmonic and noise options the analysis reads are the defaults, never a build's own.
         DistortionAnalysis analysis = DistortionAnalyses.GetValue(
             result,
             _ => new DistortionAnalysis(deconvolution.ImpulseResponse, sweepMetadata, distortionOptions));
@@ -202,7 +201,6 @@ internal readonly record struct FrozenDocument(MeasurementResult? Result, string
         new(document.Result, document.SourceName, document.IsBusy);
 }
 
-/// <summary>A Frequency Response build's curves, with what explains a harmonic it could not draw.</summary>
 /// <param name="DistortionPacketValidity">Separates overlap drops (amber) from below-noise drops (neutral note).</param>
 internal sealed record FrequencyResponseCurves(
     IReadOnlyList<AnalysisCurve> Curves,

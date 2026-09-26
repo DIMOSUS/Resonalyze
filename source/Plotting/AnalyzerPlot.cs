@@ -33,7 +33,6 @@ internal sealed class AnalyzerPlot : IModeView
     private ModeTab lastAnalysisTab = ModeTab.Frequency;
     // The slot mode the overlay slots were last loaded for; entering another tab of it keeps them (null: reload).
     private Mode? preparedSlotMode;
-    // What the latest draw read; a change that moves none of it draws nothing.
     private PlotDrawInputs? drawn;
 
     public AnalyzerPlot(
@@ -144,7 +143,6 @@ internal sealed class AnalyzerPlot : IModeView
     {
         descriptor = mode;
         Mode = mode.Mode;
-        // The mode left will not show what it was building, whether or not the new one draws.
         builds.Cancel();
         Viewports.Show(null, Mode);
         RefreshLabels();

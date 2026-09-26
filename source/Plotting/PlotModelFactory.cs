@@ -83,8 +83,7 @@ internal sealed class PlotModelFactory
         getCompareSource = () => compare;
     }
 
-    /// <summary>A factory over this moment of the open measurement, the compare selection and the calibration, for a
-    /// build off the UI thread; taken on the UI thread. It frames impulse overlays through this factory.</summary>
+    /// <summary>This moment of the open measurement, compare selection and calibration, for a build off the UI thread.</summary>
     public PlotModelFactory Freeze()
     {
         // The Own calibration is the open result's; resolved here, it cannot come from another result.
@@ -820,8 +819,7 @@ internal sealed class PlotModelFactory
         return model;
     }
 
-    /// <summary>The framing <paramref name="model"/> was built under, so stored overlays redraw under the framing of the
-    /// model on screen; null for a model that is not an impulse plot of this factory.</summary>
+    /// <summary>The framing <paramref name="model"/> was built under, which its impulse overlays redraw under.</summary>
     public ImpulseOverlayFrame? ImpulseFrameOf(PlotModel? model) =>
         model != null && impulseFrames.TryGetValue(model, out StrongBox<ImpulseOverlayFrame>? frame)
             ? frame.Value

@@ -1317,7 +1317,6 @@ namespace Resonalyze.Dsp
                 AnalysisEntry(measurement, settings, timeWeighted: false, CancellationToken.None),
                 measurement.SampleRate);
 
-        // minimumPhase: the spectrum's own, already reconstructed.
         private static (double SlopeMilliseconds, double PeakMilliseconds) EstimatePhaseDetrend(
             Complex[] spectrum,
             int extractionStart,

@@ -159,17 +159,57 @@ public sealed class PreparedDspResponse
 
     public Complex Response(double frequencyHz)
     {
-        double radians = -Math.Tau * frequencyHz / processorRate;
-        Complex z1 = UnitPhasor(radians);
-        Complex delay = delayMs == 0
-            ? Complex.One
-            : UnitPhasor(radians * delayProcessorSamples);
-        Complex response = Response(z1, delay);
+        Complex response = IirResponse(frequencyHz, out Complex z1);
         return fir == null ? response : response * fir.Response(z1);
     }
 
+    /// <summary><see cref="Response(double)"/> at each frequency, the FIR stage read from <see cref="FirFilter.Responses"/>.</summary>
+    public Complex[] Responses(IReadOnlyList<double> frequenciesHz)
+    {
+        ArgumentNullException.ThrowIfNull(frequenciesHz);
+        IReadOnlyList<Complex>? firResponses = fir?.Responses(frequenciesHz, processorRate);
+        var responses = new Complex[frequenciesHz.Count];
+        for (int i = 0; i < responses.Length; i++)
+        {
+            Complex response = IirResponse(frequenciesHz[i], out _);
+            responses[i] = firResponses == null ? response : response * firResponses[i];
+        }
+
+        return responses;
+    }
+
+    // Gain, bulk delay and biquads; z1 is where the FIR stage is read.
+    private Complex IirResponse(double frequencyHz, out Complex z1)
+    {
+        double radians = -Math.Tau * frequencyHz / processorRate;
+        z1 = FirFilter.UnitCirclePoint(frequencyHz, processorRate);
+        Complex delay = delayMs == 0
+            ? Complex.One
+            : UnitPhasor(radians * delayProcessorSamples);
+        return Response(z1, delay);
+    }
+
     /// <summary>Closed-form group delay in ms (biquads + FIR + bulk delay); FIR returns NaN at a kernel null.</summary>
-    public double GroupDelayMs(double frequencyHz)
+    public double GroupDelayMs(double frequencyHz) =>
+        GroupDelayMs(
+            frequencyHz,
+            fir?.GroupDelaySamples(FirFilter.UnitCirclePoint(frequencyHz, processorRate)));
+
+    /// <summary><see cref="GroupDelayMs(double)"/> at each frequency, the FIR stage read from <see cref="FirFilter.GroupDelaysSamples"/>.</summary>
+    public double[] GroupDelaysMs(IReadOnlyList<double> frequenciesHz)
+    {
+        ArgumentNullException.ThrowIfNull(frequenciesHz);
+        IReadOnlyList<double>? firDelays = fir?.GroupDelaysSamples(frequenciesHz, processorRate);
+        var delays = new double[frequenciesHz.Count];
+        for (int i = 0; i < delays.Length; i++)
+        {
+            delays[i] = GroupDelayMs(frequenciesHz[i], firDelays?[i]);
+        }
+
+        return delays;
+    }
+
+    private double GroupDelayMs(double frequencyHz, double? firSamples)
     {
         double samples = 0;
         foreach (BiquadCoefficients section in sections)
@@ -178,10 +218,9 @@ public sealed class PreparedDspResponse
                 section, frequencyHz, processorRate);
         }
 
-        if (fir != null)
+        if (firSamples is { } kernel)
         {
-            samples += fir.GroupDelaySamples(
-                UnitPhasor(-Math.Tau * frequencyHz / processorRate));
+            samples += kernel;
         }
 
         return (samples / processorRate * 1_000.0) + delayMs;
@@ -208,7 +247,7 @@ public sealed class PreparedDspResponse
         }
         else
         {
-            Complex[]? firBins = fir == null ? null : FirSpectrumBins(fir, length, rateRatio);
+            Complex[]? firBins = fir?.RecordBins(length, rateRatio);
             Complex zStep = Complex.Exp(new Complex(0, -Math.Tau * rateRatio / length));
             Complex delayStep = GetDelayStep(length, delaySamples);
             Complex z1 = Complex.One;
@@ -245,82 +284,6 @@ public sealed class PreparedDspResponse
         }
 
         SilenceAboveProcessorNyquist(spectrum, rateRatio);
-    }
-
-    /// <summary>FIR response at every record bin: exact DFT when length/rateRatio is whole, else chirp-z; cached per kernel.
-    /// See docs/tech/dsp-chain-response.md#fir-bins.</summary>
-    private static Complex[] FirSpectrumBins(FirFilter fir, int length, double rateRatio)
-    {
-        FirBinsCache cache = FirBinsCaches.GetOrCreateValue(fir);
-        lock (cache)
-        {
-            if (cache.Find(length, rateRatio) is { } cached)
-            {
-                return cached;
-            }
-
-            Complex[] bins = ComputeFirSpectrumBins(fir, length, rateRatio);
-            cache.Add(length, rateRatio, bins);
-            return bins;
-        }
-    }
-
-    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<FirFilter, FirBinsCache>
-        FirBinsCaches = new();
-
-    // A few entries: one kernel can sit on channels with different record lengths.
-    private sealed class FirBinsCache
-    {
-        private const int Capacity = 4;
-        private readonly List<(int Length, double RateRatio, Complex[] Bins)> entries = [];
-
-        public Complex[]? Find(int length, double rateRatio)
-        {
-            foreach ((int cachedLength, double cachedRatio, Complex[] bins) in entries)
-            {
-                if (cachedLength == length && cachedRatio == rateRatio)
-                {
-                    return bins;
-                }
-            }
-
-            return null;
-        }
-
-        public void Add(int length, double rateRatio, Complex[] bins)
-        {
-            if (entries.Count == Capacity)
-            {
-                entries.RemoveAt(0);
-            }
-
-            entries.Add((length, rateRatio, bins));
-        }
-    }
-
-    private static Complex[] ComputeFirSpectrumBins(FirFilter fir, int length, double rateRatio)
-    {
-        int half = length / 2;
-        var bins = new Complex[half + 1];
-        int lastBin = Math.Min(half, (int)Math.Floor(half / rateRatio));
-
-        double grid = length / rateRatio;
-        long gridLength = (long)Math.Round(grid);
-        if (Math.Abs(grid - gridLength) < 1e-6 && gridLength >= fir.Length &&
-            gridLength <= int.MaxValue)
-        {
-            Complex[] spectrum = fir.Spectrum((int)gridLength);
-            for (int i = 0; i <= lastBin; i++)
-            {
-                bins[i] = spectrum[i];
-            }
-
-            return bins;
-        }
-
-        Complex[] chirp = fir.ChirpSpectrum(lastBin + 1, Math.Tau * rateRatio / length);
-        Array.Copy(chirp, bins, lastBin + 1);
-        return bins;
     }
 
     private static void SilenceAboveProcessorNyquist(

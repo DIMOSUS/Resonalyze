@@ -1,3 +1,4 @@
+using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -32,10 +33,12 @@ internal static class SpatialAverageHybrid
             calibration.Mode == SpatialAverageCalibrationMode.Off || swap
                 ? Uncalibrated(document)
                 : document.ToCurvePoints();
-        var prepared = PreparedDspResponse.Create(chain, chainSampleRateHz);
+        Complex[] responses =
+            PreparedDspResponse.Create(chain, chainSampleRateHz).Responses(frequenciesHz);
         var points = new List<SignalPoint>(frequenciesHz.Count);
-        foreach (double hz in frequenciesHz)
+        for (int i = 0; i < frequenciesHz.Count; i++)
         {
+            double hz = frequenciesHz[i];
             double level = Sample(document, capture, hz);
             if (double.IsNaN(level))
             {
@@ -46,7 +49,7 @@ internal static class SpatialAverageHybrid
 
             points.Add(new SignalPoint(
                 hz,
-                level + DataHelper.AmplitudeToDecibels(prepared.Response(hz).Magnitude)));
+                level + DataHelper.AmplitudeToDecibels(responses[i].Magnitude)));
         }
 
         // Smooth the finished curve after the chain, as measured curves are; power mean that passes gaps through.

@@ -17,6 +17,23 @@ public sealed class SpatialAverageHybridTests
     }
 
     [Fact]
+    public void AKernelsCurve_IsTheCapturePlusEachPointsOwnChainRead_ComputedAndCached()
+    {
+        LiveCaptureDocument document = Capture(-20);
+        double[] taps = [.. Enumerable.Range(0, 63).Select(n => Math.Sin(0.37 * n) / (1 + n))];
+        var chain = new DspChannelChain { GainDb = -2, Fir = new FirFilter(taps) };
+        List<SignalPoint> capture = Build(document, DspChannelChain.Identity);
+        PreparedDspResponse prepared = PreparedDspResponse.Create(chain, 48_000);
+        long[] expected = [.. capture.Select(point => BitConverter.DoubleToInt64Bits(
+            point.Y + DataHelper.AmplitudeToDecibels(prepared.Response(point.X).Magnitude)))];
+
+        for (int pass = 0; pass < 2; pass++)
+        {
+            Assert.Equal(expected, Build(document, chain).Select(point => BitConverter.DoubleToInt64Bits(point.Y)));
+        }
+    }
+
+    [Fact]
     public void DelayAndPolarityLeaveTheCurveAlone()
     {
         LiveCaptureDocument document = Capture(-20);

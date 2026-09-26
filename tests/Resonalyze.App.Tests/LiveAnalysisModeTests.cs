@@ -82,6 +82,53 @@ public sealed class LiveAnalysisModeTests
         Assert.Null(factory.LastRequest.Routing.LoopbackChannel);
     }
 
+    [Theory]
+    [InlineData(LiveAnalysisMode.Rta)]
+    [InlineData(LiveAnalysisMode.TransferFunction)]
+    public async Task TheAverage_HoldsItsOwnSpectra_WhileTheFrameBuffersAreReused(LiveAnalysisMode mode)
+    {
+        var factory = new FakeAudioSessionFactory(
+            streamingFactory: _ => new RecordingStreamingSession(
+                framesToRaise: 12,
+                failAfterFrames: false,
+                microphonePeaks: [0.8f, 0.2f],
+                loopbackPeaks: [0.5f, 0.25f]));
+        using var measurement = new NoiseMeasurement(factory);
+        measurement.Init(
+            44_100,
+            24,
+            0.5,
+            PlaybackChannel.Mono,
+            sequenceLength: 1024,
+            waveInputChannelOffset: 0,
+            waveLoopbackInputChannelOffset: 1,
+            liveSpectrumOptions: new LiveSpectrumOptions
+            {
+                AnalysisMode = mode,
+                NoiseColor = NoiseColor.PinkPeriodic,
+                AveragingSpeed = AveragingSpeed.Infinite
+            });
+
+        Task<bool> running = measurement.RunAsync();
+        LiveSpectrumSnapshot? snapshot = null;
+        for (int attempt = 0; attempt < 300 && snapshot is not { FrameCount: >= 6 }; attempt++)
+        {
+            await Task.Delay(10);
+            snapshot = measurement.GetAccumulatedSpectrumSnapshot();
+        }
+        await measurement.AbortAsync();
+
+        Assert.True(await running, measurement.LastError?.ToString());
+        Assert.NotNull(snapshot?.InputMagnitude);
+        // A tone on bin 8, mic 0.8 and 0.2 in turn: the mean power (0.58), not one frame's, which an aliased buffer shows.
+        Assert.InRange(snapshot!.InputMagnitude![8], 0.3, 0.7);
+        if (mode == LiveAnalysisMode.TransferFunction)
+        {
+            // Mean cross over mean reference power, 0.225 / 0.156 = 1.44; an aliased accumulator reads one frame's instead.
+            Assert.InRange(snapshot.Magnitude[8], 1.35, 1.55);
+        }
+    }
+
     [Fact]
     public async Task TransferCapture_StillRequestsTheLoopbackChannel()
     {

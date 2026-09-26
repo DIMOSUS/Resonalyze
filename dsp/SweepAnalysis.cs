@@ -30,7 +30,30 @@ public static class SweepAnalysis
             filterSpectrum[i] = new Complex(inverseFilter[i], 0.0);
         }
 
+        Fourier.Forward(filterSpectrum, FourierOptions.Matlab);
         return Deconvolve(signalSpectrum, filterSpectrum, convolutionLength, normalization);
+    }
+
+    /// <summary>Against a filter transformed once per FFT length: the runs and channels of one measurement share it.</summary>
+    public static SweepDeconvolutionResult DeconvolveWithInverseFilter(
+        IReadOnlyList<float> recorded,
+        InverseFilterSpectrum inverseFilter,
+        double normalization = 2.0)
+    {
+        ArgumentNullException.ThrowIfNull(recorded);
+        ArgumentNullException.ThrowIfNull(inverseFilter);
+        ValidateInputs(recorded.Count, inverseFilter.Samples.Length, normalization);
+
+        int convolutionLength = checked(recorded.Count + inverseFilter.Samples.Length - 1);
+        int fftLength = DspMath.NextPowerOfTwo(convolutionLength);
+
+        var signalSpectrum = new Complex[fftLength];
+        for (int i = 0; i < recorded.Count; i++)
+        {
+            signalSpectrum[i] = new Complex(recorded[i], 0.0);
+        }
+
+        return Deconvolve(signalSpectrum, inverseFilter.At(fftLength), convolutionLength, normalization);
     }
 
     public static SweepDeconvolutionResult DeconvolveWithInverseFilter(
@@ -58,6 +81,7 @@ public static class SweepAnalysis
             filterSpectrum[i] = new Complex(inverseFilter[i], 0.0);
         }
 
+        Fourier.Forward(filterSpectrum, FourierOptions.Matlab);
         return Deconvolve(signalSpectrum, filterSpectrum, convolutionLength, normalization);
     }
 
@@ -77,7 +101,7 @@ public static class SweepAnalysis
         }
     }
 
-    /// <summary>Circular convolution of two padded spectra; callers fill them from native samples, avoiding a real-valued copy.</summary>
+    /// <summary>Circular convolution with a transformed filter, which is only read; callers fill the signal from native samples.</summary>
     private static SweepDeconvolutionResult Deconvolve(
         Complex[] signalSpectrum,
         Complex[] filterSpectrum,
@@ -85,7 +109,6 @@ public static class SweepAnalysis
         double normalization)
     {
         Fourier.Forward(signalSpectrum, FourierOptions.Matlab);
-        Fourier.Forward(filterSpectrum, FourierOptions.Matlab);
 
         for (int i = 0; i < signalSpectrum.Length; i++)
         {
@@ -112,6 +135,37 @@ public static class SweepAnalysis
         }
 
         return new SweepDeconvolutionResult(impulseResponse, peakIndex);
+    }
+}
+
+/// <summary>An inverse filter's spectrum at the last FFT length asked for. 16 bytes a bin, 32–128 MB for a long sweep, so it
+/// lives no longer than the measurement that shares it. The samples are copied: a later edit of the caller's array cannot
+/// part them from their spectrum.</summary>
+public sealed class InverseFilterSpectrum(IReadOnlyList<float> samples)
+{
+    private readonly object sync = new();
+    private Complex[]? spectrum;
+
+    internal float[] Samples { get; } = [.. samples ?? throw new ArgumentNullException(nameof(samples))];
+
+    internal Complex[] At(int fftLength)
+    {
+        lock (sync)
+        {
+            if (spectrum?.Length != fftLength)
+            {
+                var transformed = new Complex[fftLength];
+                for (int i = 0; i < Samples.Length; i++)
+                {
+                    transformed[i] = new Complex(Samples[i], 0.0);
+                }
+
+                Fourier.Forward(transformed, FourierOptions.Matlab);
+                spectrum = transformed;
+            }
+
+            return spectrum;
+        }
     }
 }
 

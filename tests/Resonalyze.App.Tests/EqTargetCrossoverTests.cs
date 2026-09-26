@@ -192,6 +192,36 @@ public sealed class EqTargetCrossoverTests
     }
 
     [Fact]
+    public void TheShapeOnAGrid_IsItsPointReadsBitForBit()
+    {
+        var design = new FirCrossoverDesign(
+            CrossoverKind.HighPass,
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 24),
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 24),
+            FirCrossoverMethod.WindowedSinc,
+            FirWindow.Kaiser,
+            8,
+            1_023,
+            Rate);
+        FirFilter kernel = design.Build();
+        List<double> grid = [.. EqualizationCurve.LogFrequencyGrid(10, 24_000, 60), 0];
+
+        foreach (EqTargetSlope slope in new[] { BandPass, new EqTargetSlope(null, kernel), BandPass with { Fir = kernel } })
+        {
+            for (int pass = 0; pass < 2; pass++)
+            {
+                double[] shape = EqTargetCrossover.ShapeDb(slope, grid, Rate);
+                for (int i = 0; i < grid.Count; i++)
+                {
+                    Assert.Equal(
+                        BitConverter.DoubleToInt64Bits(EqTargetCrossover.ShapeDb(slope, grid[i], Rate)),
+                        BitConverter.DoubleToInt64Bits(shape[i]));
+                }
+            }
+        }
+    }
+
+    [Fact]
     public void AStatedAcousticCrossover_DrawsTheElectricalOneBesideTheTarget()
     {
         CrossoverSpec acoustic = new(

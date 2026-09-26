@@ -8,6 +8,7 @@ public partial class VirtualCrossoverPanel
     // Single-flight like the main redraw: stacked tasks would each burn a full sweep of inverse FFTs.
     private Task? correlationRebuildTask;
     private bool correlationRebuildPending;
+    private readonly JunctionViewCache junctionViews = new();
 
     private bool suppressCorrelationPairEvents;
 
@@ -195,11 +196,11 @@ public partial class VirtualCrossoverPanel
                 : [pair.Lower, pair.Upper];
             if (mode == DspPlotMode.Coherence)
             {
-                coherence = await Task.Run(() => JunctionViews.BuildCoherenceView(pair, scope));
+                coherence = await Task.Run(() => junctionViews.Coherence(pair, scope));
             }
             else
             {
-                correlation = await Task.Run(() => JunctionViews.BuildCorrelationView(pair, scope));
+                correlation = await Task.Run(() => junctionViews.Correlation(pair, scope));
             }
         }
         catch (Exception exception)

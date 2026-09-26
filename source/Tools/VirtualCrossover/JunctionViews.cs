@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -10,13 +11,14 @@ internal static class JunctionViews
     // Both channels PROCESSED, so lag 0 is the current alignment; the score is the surface Auto delay searches.
     // See docs/tech/virtual-dsp-panel.md#junction-views.
     public static JunctionCorrelationView BuildCorrelationView(
-        AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope)
+        AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope) =>
+        BuildCorrelationView(pair, Crop(pair, scope));
+
+    public static JunctionCorrelationView BuildCorrelationView(AdjacentPair pair, JunctionCrop crop)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.BuildCorrelationView");
-        int sampleRate = pair.Lower.SampleRate;
         (Complex[] lower, Complex[] upper,
-            ValidSampleRange lowerRange, ValidSampleRange upperRange) =
-            CropJunctionPair(pair, scope, sampleRate);
+            ValidSampleRange lowerRange, ValidSampleRange upperRange, int sampleRate) = crop;
         // No anchor: each channel windowed at its own band-limited front, as Auto delay measures junctions.
 
         // 1.5 crossover periods each side (floor 3 ms) keeps neighbouring comb lobes in view at 80 Hz.
@@ -102,13 +104,14 @@ internal static class JunctionViews
 
     // See VirtualCrossoverAnalysis.ArrivalCoherenceLadder.
     public static JunctionCoherenceView BuildCoherenceView(
-        AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope)
+        AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope) =>
+        BuildCoherenceView(pair, Crop(pair, scope));
+
+    public static JunctionCoherenceView BuildCoherenceView(AdjacentPair pair, JunctionCrop crop)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.BuildCoherenceView");
-        int sampleRate = pair.Lower.SampleRate;
         (Complex[] lower, Complex[] upper,
-            ValidSampleRange lowerRange, ValidSampleRange upperRange) =
-            CropJunctionPair(pair, scope, sampleRate);
+            ValidSampleRange lowerRange, ValidSampleRange upperRange, int sampleRate) = crop;
         return new JunctionCoherenceView(
             $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}",
             pair.Upper.Channel.Name,
@@ -122,11 +125,9 @@ internal static class JunctionViews
     }
 
     // Valid ranges are shifted into the crop frame so front detections match the search's (matters on glitch-headed records).
-    private static (Complex[] Lower, Complex[] Upper,
-        ValidSampleRange LowerRange, ValidSampleRange UpperRange)
-        CropJunctionPair(
-            AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope, int sampleRate)
+    public static JunctionCrop Crop(AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope)
     {
+        int sampleRate = pair.Lower.SampleRate;
         List<ProcessedChannel> all = scope.Contains(pair.Lower)
             ? scope.ToList()
             : [pair.Lower, pair.Upper];
@@ -151,8 +152,8 @@ internal static class JunctionViews
                         croppedIr.Length)
                 }
                 : item.ValidRange;
-        return (lower, upper,
-            Shifted(pair.Lower, lower), Shifted(pair.Upper, upper));
+        return new JunctionCrop(
+            lower, upper, Shifted(pair.Lower, lower), Shifted(pair.Upper, upper), sampleRate);
     }
 
     // A failing view is reported missing rather than failing its caller, as the lower plot's redraw does.
@@ -179,5 +180,83 @@ internal static class JunctionViews
         }
 
         return (correlation, coherence);
+    }
+}
+
+/// <summary>The pair as the junction analyses read it: both records cropped to the side's shared window, their valid ranges
+/// in the crop's frame, and the rate.</summary>
+internal sealed record JunctionCrop(
+    Complex[] Lower,
+    Complex[] Upper,
+    ValidSampleRange LowerRange,
+    ValidSampleRange UpperRange,
+    int SampleRate)
+{
+    /// <summary>Same samples bit for bit, same ranges and rate: every analysis of the pair reads the same input.</summary>
+    public bool SameAs(JunctionCrop other) =>
+        LowerRange == other.LowerRange &&
+        UpperRange == other.UpperRange &&
+        SampleRate == other.SampleRate &&
+        SameSamples(Lower, other.Lower) &&
+        SameSamples(Upper, other.Upper);
+
+    private static bool SameSamples(Complex[] left, Complex[] right) =>
+        MemoryMarshal.Cast<Complex, long>(left).SequenceEqual(MemoryMarshal.Cast<Complex, long>(right));
+}
+
+/// <summary>The last view of each kind and what it was built from, so a redraw that left the pair's cropped samples, band
+/// and names alone rebuilds nothing; the crop is a copy and a peak scan, the views hundreds of milliseconds of FFTs.</summary>
+internal sealed class JunctionViewCache
+{
+    private readonly object sync = new();
+    private Entry<JunctionCorrelationView>? correlation;
+    private Entry<JunctionCoherenceView>? coherence;
+
+    public JunctionCorrelationView Correlation(AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope) =>
+        Read(ref correlation, pair, scope, JunctionViews.BuildCorrelationView);
+
+    public JunctionCoherenceView Coherence(AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope) =>
+        Read(ref coherence, pair, scope, JunctionViews.BuildCoherenceView);
+
+    private TView Read<TView>(
+        ref Entry<TView>? slot,
+        AdjacentPair pair,
+        IReadOnlyList<ProcessedChannel> scope,
+        Func<AdjacentPair, JunctionCrop, TView> build)
+        where TView : IJunctionView
+    {
+        JunctionCrop crop = JunctionViews.Crop(pair, scope);
+        lock (sync)
+        {
+            if (slot is { } cached && cached.Matches(pair, crop))
+            {
+                return cached.View;
+            }
+        }
+
+        var entry = new Entry<TView>(pair.CrossoverHz, pair.BandLowHz, pair.BandHighHz, crop, build(pair, crop));
+        lock (sync)
+        {
+            slot = entry;
+        }
+
+        return entry.View;
+    }
+
+    // Names are read off the view itself: a rename during the build cannot key it under the other name.
+    private sealed record Entry<TView>(
+        double CrossoverHz, double BandLowHz, double BandHighHz, JunctionCrop Crop, TView View)
+        where TView : IJunctionView
+    {
+        public bool Matches(AdjacentPair pair, JunctionCrop crop) =>
+            SameBits(CrossoverHz, pair.CrossoverHz) &&
+            SameBits(BandLowHz, pair.BandLowHz) &&
+            SameBits(BandHighHz, pair.BandHighHz) &&
+            View.UpperName == pair.Upper.Channel.Name &&
+            View.PairTitle == $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}" &&
+            Crop.SameAs(crop);
+
+        private static bool SameBits(double left, double right) =>
+            BitConverter.DoubleToInt64Bits(left) == BitConverter.DoubleToInt64Bits(right);
     }
 }

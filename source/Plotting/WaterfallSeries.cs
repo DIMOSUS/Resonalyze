@@ -376,6 +376,7 @@ namespace Resonalyze
 
             if (GenerateOptions.WaterfallMode == WaterfallMode.Fourier)
             {
+                double[] paddedWindow = DataHelper.OversampledWindow(windowFunction);
                 for (int i = 0; i < sliceCount; i++)
                 {
                     RawSlices.Add(new Slice(new List<DataPoint>(), 0, 0, 0, measurement.SampleRate));
@@ -386,7 +387,8 @@ namespace Resonalyze
                 {
                     int offset = anchor - windowFuncOffset + slice * step + GenerateOptions.Offset;
                     List<DataPoint> data = OxyPlotAdapter.ToDataPoints(
-                        DataHelper.GetOversampledSpectrumData(measurement, offset, windowFunction, wrapPreRoll: true));
+                        DataHelper.GetSpectrumData(
+                            measurement, offset, paddedWindow.Length, paddedWindow, wrapPreRoll: true));
 
                     double time;
                     if (step > 0)

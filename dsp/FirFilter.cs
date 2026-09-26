@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Numerics;
 
 namespace Resonalyze.Dsp;
@@ -115,7 +116,147 @@ public sealed class FirFilter
     }
 
     public Complex Response(double frequencyHz, double sampleRateHz) =>
-        Response(Complex.Exp(new Complex(0, -Math.Tau * frequencyHz / sampleRateHz)));
+        Response(UnitCirclePoint(frequencyHz, sampleRateHz));
+
+    /// <summary><see cref="Response(double, double)"/> at each frequency, kept per rate and grid for the kernel's
+    /// lifetime and handed out read-only. See docs/tech/dsp-chain-response.md#fir-on-a-plotted-grid.</summary>
+    public IReadOnlyList<Complex> Responses(IReadOnlyList<double> frequenciesHz, double sampleRateHz) =>
+        GridEntryFor(frequenciesHz, sampleRateHz).Responses.Value;
+
+    /// <summary><see cref="GroupDelaySamples"/> at each frequency, kept like <see cref="Responses"/>.</summary>
+    public IReadOnlyList<double> GroupDelaysSamples(IReadOnlyList<double> frequenciesHz, double sampleRateHz) =>
+        GridEntryFor(frequenciesHz, sampleRateHz).GroupDelays.Value;
+
+    /// <summary>z1 = e^{-jω} for a frequency at a rate, where every per-frequency read of a chain evaluates.</summary>
+    internal static Complex UnitCirclePoint(double frequencyHz, double sampleRateHz) =>
+        Complex.Exp(new Complex(0, -Math.Tau * frequencyHz / sampleRateHz));
+
+    /// <summary>The kernel at every bin of a record <paramref name="length"/> long, on the processor's circle
+    /// (<paramref name="rateRatio"/> = record rate / processor rate); shared, read it only. See docs/tech/dsp-chain-response.md#fir-bins.</summary>
+    internal Complex[] RecordBins(int length, double rateRatio)
+    {
+        Lazy<Complex[]> bins;
+        lock (recordBins)
+        {
+            int index = recordBins.FindIndex(entry => entry.Length == length && entry.RateRatio == rateRatio);
+            if (index < 0)
+            {
+                // A few: one kernel can sit on channels with different record lengths.
+                if (recordBins.Count == RecordBinsCapacity)
+                {
+                    recordBins.RemoveAt(0);
+                }
+
+                recordBins.Add((length, rateRatio, new Lazy<Complex[]>(() => ComputeRecordBins(length, rateRatio))));
+                index = recordBins.Count - 1;
+            }
+
+            bins = recordBins[index].Bins;
+        }
+
+        return bins.Value;
+    }
+
+    // Exact DFT when length/rateRatio is whole and no shorter than the kernel, else chirp-z.
+    private Complex[] ComputeRecordBins(int length, double rateRatio)
+    {
+        int half = length / 2;
+        var bins = new Complex[half + 1];
+        int lastBin = Math.Min(half, (int)Math.Floor(half / rateRatio));
+
+        double grid = length / rateRatio;
+        long gridLength = (long)Math.Round(grid);
+        if (Math.Abs(grid - gridLength) < 1e-6 && gridLength >= taps.Length &&
+            gridLength <= int.MaxValue)
+        {
+            Complex[] spectrum = Spectrum((int)gridLength);
+            for (int i = 0; i <= lastBin; i++)
+            {
+                bins[i] = spectrum[i];
+            }
+
+            return bins;
+        }
+
+        Complex[] chirp = ChirpSpectrum(lastBin + 1, Math.Tau * rateRatio / length);
+        Array.Copy(chirp, bins, lastBin + 1);
+        return bins;
+    }
+
+    // Each entry is computed once, by its first reader, outside the lookup lock: a read of one grid never waits for another.
+    private const int RecordBinsCapacity = 4;
+    private const int GridCapacity = 16;
+    private readonly List<(int Length, double RateRatio, Lazy<Complex[]> Bins)> recordBins = [];
+    private readonly List<GridEntry> gridEntries = [];
+
+    // Least recently used goes first; grids compare bit for bit.
+    private GridEntry GridEntryFor(IReadOnlyList<double> frequenciesHz, double sampleRateHz)
+    {
+        ArgumentNullException.ThrowIfNull(frequenciesHz);
+        lock (gridEntries)
+        {
+            for (int index = 0; index < gridEntries.Count; index++)
+            {
+                GridEntry cached = gridEntries[index];
+                if (cached.Matches(frequenciesHz, sampleRateHz))
+                {
+                    gridEntries.RemoveAt(index);
+                    gridEntries.Add(cached);
+                    return cached;
+                }
+            }
+
+            if (gridEntries.Count == GridCapacity)
+            {
+                gridEntries.RemoveAt(0);
+            }
+
+            var entry = new GridEntry(this, sampleRateHz, [.. frequenciesHz]);
+            gridEntries.Add(entry);
+            return entry;
+        }
+    }
+
+    private sealed class GridEntry
+    {
+        private readonly double sampleRateHz;
+        private readonly double[] frequenciesHz;
+
+        public GridEntry(FirFilter kernel, double sampleRateHz, double[] frequenciesHz)
+        {
+            this.sampleRateHz = sampleRateHz;
+            this.frequenciesHz = frequenciesHz;
+            Responses = new Lazy<ReadOnlyCollection<Complex>>(() => Array.AsReadOnly(
+                frequenciesHz.Select(frequency => kernel.Response(frequency, sampleRateHz)).ToArray()));
+            GroupDelays = new Lazy<ReadOnlyCollection<double>>(() => Array.AsReadOnly(
+                frequenciesHz.Select(
+                    frequency => kernel.GroupDelaySamples(UnitCirclePoint(frequency, sampleRateHz))).ToArray()));
+        }
+
+        public Lazy<ReadOnlyCollection<Complex>> Responses { get; }
+
+        public Lazy<ReadOnlyCollection<double>> GroupDelays { get; }
+
+        public bool Matches(IReadOnlyList<double> frequencies, double rate)
+        {
+            if (BitConverter.DoubleToInt64Bits(rate) != BitConverter.DoubleToInt64Bits(sampleRateHz) ||
+                frequencies.Count != frequenciesHz.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < frequenciesHz.Length; i++)
+            {
+                if (BitConverter.DoubleToInt64Bits(frequencies[i]) !=
+                    BitConverter.DoubleToInt64Bits(frequenciesHz[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
 
     /// <summary>Closed-form, unwrapped group delay in samples: Re(Σ n·h[n]·z1^n / H). NaN where |H| is a true zero relative to Σ|h|.</summary>
     public double GroupDelaySamples(Complex z1)

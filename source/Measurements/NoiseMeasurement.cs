@@ -468,13 +468,15 @@ namespace Resonalyze
             {
                 UpdateAveragingParameters();
             }
-            // Warm FFT/JIT/allocations before the driver starts, or the first callbacks drop out.
-            WarmUpAnalysisPath();
+            // Warm FFT/JIT and the run's own frame buffers before the driver starts, or the first callbacks drop out.
+            var buffers = new SpectrumFrameBuffers();
+            WarmUpAnalysisPath(buffers);
 
             var reframer = new OverlapReframer(SequenceLength, hopSize);
             Task processingTask = ProcessSequencesAsync(
                 sequenceChannel.Reader,
                 reframer,
+                buffers,
                 cancellationToken);
 
             IAudioStreamingSession? session = null;
@@ -595,6 +597,7 @@ namespace Resonalyze
         private async Task ProcessSequencesAsync(
             ChannelReader<LiveSequence> reader,
             OverlapReframer reframer,
+            SpectrumFrameBuffers buffers,
             CancellationToken cancellationToken)
         {
             long? previousIndex = null;
@@ -617,11 +620,11 @@ namespace Resonalyze
                 {
                     if (IsRtaCapture)
                     {
-                        AccumulateMicOnlySequence(frame);
+                        AccumulateMicOnlySequence(frame, buffers);
                     }
                     else
                     {
-                        AccumulateTransferSequence(frame);
+                        AccumulateTransferSequence(frame, buffers);
                     }
                 }
             }
@@ -659,9 +662,9 @@ namespace Resonalyze
             appliedAveragingSpeed = averaging;
         }
 
-        private void AccumulateTransferSequence(float[][] sequence)
+        private void AccumulateTransferSequence(float[][] sequence, SpectrumFrameBuffers buffers)
         {
-            TransferSpectrumFrame frame = ComputeTransferSpectrumFrame(sequence);
+            TransferSpectrumFrame frame = ComputeTransferSpectrumFrame(sequence, buffers);
             bool clipped = MicrophoneReachedFullScale(sequence);
 
             lock (dataSync)
@@ -713,7 +716,7 @@ namespace Resonalyze
         }
 
         // Same settle/seed/EMA as the transfer path; null cross/reference power means mic-only to the snapshot.
-        private void AccumulateMicOnlySequence(float[][] sequence)
+        private void AccumulateMicOnlySequence(float[][] sequence, SpectrumFrameBuffers buffers)
         {
             int microphoneIndex = captureMicrophoneIndex;
             if ((uint)microphoneIndex >= (uint)sequence.Length)
@@ -724,7 +727,8 @@ namespace Resonalyze
 
             double[] targetPower = SpectrumAnalysis.ComputeAutoPowerSpectrumFrame(
                 sequence[microphoneIndex],
-                EffectiveWindowType);
+                EffectiveWindowType,
+                buffers);
             bool clipped = MicrophoneReachedFullScale(sequence);
 
             lock (dataSync)
@@ -743,7 +747,7 @@ namespace Resonalyze
                         return;
                     }
 
-                    accumulatedTargetPowerSpectrum = targetPower;
+                    accumulatedTargetPowerSpectrum = (double[])targetPower.Clone();
                     averagedFrameCount = 1;
                     sequencesCounter++;
                     return;
@@ -783,7 +787,7 @@ namespace Resonalyze
             return false;
         }
 
-        private TransferSpectrumFrame ComputeTransferSpectrumFrame(float[][] sequence)
+        private TransferSpectrumFrame ComputeTransferSpectrumFrame(float[][] sequence, SpectrumFrameBuffers buffers)
         {
             int microphoneIndex = captureMicrophoneIndex;
             int loopbackIndex = captureLoopbackIndex;
@@ -798,10 +802,11 @@ namespace Resonalyze
             return SpectrumAnalysis.ComputeTransferSpectrumFrame(
                 sequence[loopbackIndex],
                 sequence[microphoneIndex],
-                EffectiveWindowType);
+                EffectiveWindowType,
+                buffers);
         }
 
-        private void WarmUpAnalysisPath()
+        private void WarmUpAnalysisPath(SpectrumFrameBuffers buffers)
         {
             var reference = new float[SequenceLength];
             var target = new float[SequenceLength];
@@ -810,7 +815,8 @@ namespace Resonalyze
             TransferSpectrumFrame frame = SpectrumAnalysis.ComputeTransferSpectrumFrame(
                 reference,
                 target,
-                EffectiveWindowType);
+                EffectiveWindowType,
+                buffers);
             _ = SpectrumAnalysis.ComputeH1MagnitudeSpectrum(
                 frame.CrossSpectrum,
                 frame.ReferencePowerSpectrum);
@@ -822,7 +828,7 @@ namespace Resonalyze
                 frame.TargetPowerSpectrum,
                 EffectiveWindowType,
                 SequenceLength);
-            _ = SpectrumAnalysis.ComputeAutoPowerSpectrumFrame(target, EffectiveWindowType);
+            _ = SpectrumAnalysis.ComputeAutoPowerSpectrumFrame(target, EffectiveWindowType, buffers);
         }
 
         // Every block holds a whole periodic-pink period, so a rectangular window is leakage-free.

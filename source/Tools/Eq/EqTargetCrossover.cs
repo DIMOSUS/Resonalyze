@@ -1,3 +1,4 @@
+using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -55,6 +56,26 @@ internal static class EqTargetCrossover
     public static double ShapeDb(EqTargetSlope slope, double frequencyHz, int sampleRateHz)
     {
         ArgumentNullException.ThrowIfNull(slope);
+        return ShapeDb(slope, frequencyHz, sampleRateHz, slope.Fir?.Response(frequencyHz, sampleRateHz));
+    }
+
+    /// <summary><see cref="ShapeDb(EqTargetSlope, double, int)"/> at each frequency, the kernel read from its grid cache.</summary>
+    public static double[] ShapeDb(EqTargetSlope slope, IReadOnlyList<double> frequenciesHz, int sampleRateHz)
+    {
+        ArgumentNullException.ThrowIfNull(slope);
+        ArgumentNullException.ThrowIfNull(frequenciesHz);
+        IReadOnlyList<Complex>? kernel = slope.Fir?.Responses(frequenciesHz, sampleRateHz);
+        var shape = new double[frequenciesHz.Count];
+        for (int i = 0; i < shape.Length; i++)
+        {
+            shape[i] = ShapeDb(slope, frequenciesHz[i], sampleRateHz, kernel?[i]);
+        }
+
+        return shape;
+    }
+
+    private static double ShapeDb(EqTargetSlope slope, double frequencyHz, int sampleRateHz, Complex? firResponse)
+    {
         // In series, as the chain applies them: a channel may run a FIR crossover AND an IIR one.
         double magnitude = 1;
         if (slope.Crossover is { } crossover)
@@ -62,9 +83,9 @@ internal static class EqTargetCrossover
             magnitude *= CrossoverFilter.Response(crossover, frequencyHz, sampleRateHz).Magnitude;
         }
 
-        if (slope.Fir is { } fir)
+        if (firResponse is { } fir)
         {
-            magnitude *= fir.Response(frequencyHz, sampleRateHz).Magnitude;
+            magnitude *= fir.Magnitude;
         }
         double decibels = magnitude > 0 ? 20 * Math.Log10(magnitude) : double.NegativeInfinity;
         return Math.Min(decibels, 0);

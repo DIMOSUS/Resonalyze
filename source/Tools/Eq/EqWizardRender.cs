@@ -314,15 +314,14 @@ internal static class EqWizardRender
     {
         EqTargetCurve target = session.Target;
         double offset = (double)session.TargetOffsetDb;
-        int sampleRateHz = session.ProcessorSampleRateHz;
+        double[]? shape = slope is { } shaped
+            ? EqTargetCrossover.ShapeDb(shaped, frequencies, session.ProcessorSampleRateHz)
+            : null;
         var points = new DataPoint[frequencies.Count];
         for (int i = 0; i < frequencies.Count; i++)
         {
             double frequency = frequencies[i];
-            double shape = slope is { } shaped
-                ? EqTargetCrossover.ShapeDb(shaped, frequency, sampleRateHz)
-                : 0;
-            double level = target.Spec.Evaluate(frequency) + offset + shape;
+            double level = target.Spec.Evaluate(frequency) + offset + (shape?[i] ?? 0);
             points[i] = new DataPoint(frequency, double.IsFinite(level) ? level : double.NaN);
         }
 

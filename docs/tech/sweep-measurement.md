@@ -177,6 +177,11 @@ reaching Nyquist, so a 20 Hz–2 kHz sweep's IR (the saved sweep deconvolution, 
 and the only IR without a loopback) read 18.7 dB hot. Transfer IRs and every ratio were
 unaffected.
 
+The filter's spectrum is the same for every run and both channels, so a measurement transforms
+it once (`InverseFilterSpectrum`) and deconvolves each capture against it: one forward
+transform less per deconvolution, 0.6 s saved on two runs of a 10 s sweep at 192 kHz. It is
+16 bytes a bin (32–128 MB for a long sweep), so it lives no longer than the measurement.
+
 **Stretched sweeps.** `FillStretched` lays the same whole-cycle trajectory over
 proportionally more or fewer samples, which is exactly what an independent clock does to
 a played sweep. Because the trajectory is analytic the stretched reference is generated,
@@ -376,11 +381,11 @@ every level check passes — analog distortion does not need full scale.
 
 ## Diagnosis size bounds
 
-`MaxLoopbackDiagnosisFftLength` is 2^22: two 67 MB spectra plus a 34 MB result, about
-170 MB of transient scratch per run, reached around a 21 s sweep at 96 kHz (10 s at
-192 kHz, 43 s at 48 kHz) — several times any field sweep so far (3.2 s). That cost is
-accepted below the bound because the microphone's own deconvolution is the same size and
-always ran per run. Above it the loopback reading is skipped and a refusal falls back to
+`MaxLoopbackDiagnosisFftLength` is 2^22: a 67 MB spectrum plus a 34 MB result of transient
+scratch, beside the 67 MB filter spectrum the measurement already keeps, reached around a
+21 s sweep at 96 kHz (10 s at 192 kHz, 43 s at 48 kHz) — several times any field sweep so
+far (3.2 s). That cost is accepted below the bound because the microphone's own
+deconvolution is the same size and always ran per run. Above it the loopback reading is skipped and a refusal falls back to
 the level heuristic and the microphone reading.
 
 `RunCredibilityDiagnosisFits` applies the same ceiling to the per-run credibility check,

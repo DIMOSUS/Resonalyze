@@ -96,6 +96,43 @@ public sealed class WaterfallSeriesRenderTests
         Assert.Equal(expected.Select(point => point.Y), waterfall.RawSlices[0].Data.Select(point => point.Y));
     }
 
+    [Fact]
+    public void EverySlice_IsTheOversampledSpectrumAtItsOffset()
+    {
+        var ir = new Complex[16384];
+        for (int i = 0; i < 8000; i++)
+        {
+            ir[1500 + i] = new Complex(Math.Exp(-i / 900.0) * Math.Cos(i * 0.07) + 0.01 * Math.Sin(i * 0.9), 0);
+        }
+
+        using var measurement = new TestAnalyzer();
+        measurement.Open(TestMeasurementResults.Restored(
+            20, 20_000, 48_000, 24, 1.0, PlaybackChannel.Mono, ir, 1_500,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: ir,
+            transferPeakIndex: 1_500));
+        IImpulseMeasurement view = new MeasurementPlotContext(measurement.Document).CreatePrimaryMeasurement();
+        var options = new WaterfallGenerateOptions
+        {
+            Window = 2048, LeftTukeyWindow = 32, RightTukeyWindow = 512, Step = 37, SliceCount = 12
+        };
+        var waterfall = new WaterfallSeries { GenerateOptions = options };
+
+        waterfall.FillFourierWaterfallData(view);
+
+        double[] window = Windowing.TukeyWindow(2048, 32.0 / 2048 * 2.0, 512.0 / 2048 * 2.0);
+        int first = DataHelper.MagnitudeAnchorIndex(view) - 32;
+        for (int slice = 0; slice < options.SliceCount; slice++)
+        {
+            List<SignalPoint> expected = DataHelper.GetOversampledSpectrumData(
+                view, first + slice * 37, window, wrapPreRoll: true);
+            Assert.Equal(
+                expected.Select(point => (BitConverter.DoubleToInt64Bits(point.X), BitConverter.DoubleToInt64Bits(point.Y))),
+                waterfall.RawSlices[slice].Data.Select(
+                    point => (BitConverter.DoubleToInt64Bits(point.X), BitConverter.DoubleToInt64Bits(point.Y))));
+        }
+    }
+
     // A start less than a left fade into the record: the window reads the circular pre-roll from the record's end, as
     // Frequency Response's does, not zeros.
     [Fact]

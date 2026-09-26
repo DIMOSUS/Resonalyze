@@ -6,6 +6,13 @@ namespace Resonalyze;
 /// </summary>
 internal readonly record struct NumericFieldRange(decimal Minimum, decimal Maximum, int Decimals)
 {
+    /// <summary>The smallest difference the field shows: one unit of its last decimal.</summary>
+    public decimal Step => new(1, 0, 0, false, (byte)Decimals);
+
+    /// <summary>Whether the field shows the value without clamping it; its decimals are not asked.</summary>
+    public bool Includes(double value) =>
+        double.IsFinite(value) && value >= (double)Minimum && value <= (double)Maximum;
+
     /// <summary>A value written by code: non-finite becomes 0, clamped, rounded to the decimals (to even), clamped again.</summary>
     public decimal Clamp(double value)
     {

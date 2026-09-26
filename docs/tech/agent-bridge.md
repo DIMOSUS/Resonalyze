@@ -181,10 +181,16 @@ so what was reviewed is what is applied.
 
 Value rules:
 
-- Gain and delay are held to the channel block's dialable range, narrower than the file format's
-  (±60 dB, 1000 ms), because the block would clamp a wider value on first touch and silently move
-  the tune. Auto delay inputs and the target level are held to their dialog fields for the same
-  reason. `AgentProposalValidatorTests` pins these constants to the controls.
+- Gain, delay, crossover corners and Chebyshev ripple are held to the channel block's fields, range
+  and step (`VirtualCrossoverLimits`, which the fields and the session loader read too), so a value
+  a reply moves is one the block shows unchanged; the package states each range and step. A corner,
+  or a Chebyshev edge's ripple, that a reply restates exactly as stored is not re-checked, since a
+  file may hold a finer one that the block keeps until that field is edited
+  ([channel field ranges](virtual-dsp-session-file.md#channel-field-ranges)). A ripple on another
+  family is stored unchecked, as the protocol says nothing reads it, and is checked once a reply turns
+  that edge Chebyshev, stated or not, since that brings it into use. Auto delay inputs and the target
+  level are held to their dialog fields for the same reason. `AgentProposalValidatorTests` pins the
+  fields to the limits.
 - Expected current values are compared **exactly**: the package prints round-trip values, so a
   tolerance would admit a reply reasoned about a different value. A PEQ bank is expected by
   `AgentPeqHash` (12 hex digits of SHA-256 over bands in order, then preamp), so any edit or reorder

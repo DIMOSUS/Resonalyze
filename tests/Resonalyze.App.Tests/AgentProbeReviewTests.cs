@@ -260,6 +260,8 @@ public sealed class AgentProbeReviewTests
             Judge(new AgentProbeVariant(null, [Change(crossover: Crossover("LinkwitzRiley", 2_000, 18))])));
         Assert.Contains("below the processor's Nyquist",
             Judge(new AgentProbeVariant(null, [Change(crossover: Crossover("LinkwitzRiley", 60_000, 24))])));
+        Assert.Contains("A crossover corner must be a multiple of 1 Hz",
+            Judge(new AgentProbeVariant(null, [Change(crossover: Crossover("LinkwitzRiley", 2_000.5, 24))])));
         Assert.Contains($"at most {AgentProtocol.MaxProbeVariantsPerImport} probe variants",
             Judge(Enumerable.Range(0, AgentProtocol.MaxProbeVariantsPerImport + 1)
                 .Select(index => new AgentProbeVariant($"v{index}", [Change(gainDb: -0.1 * index)]))

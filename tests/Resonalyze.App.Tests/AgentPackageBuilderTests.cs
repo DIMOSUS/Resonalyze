@@ -518,6 +518,25 @@ public sealed class AgentPackageBuilderTests
     }
 
     [Fact]
+    public void Limits_AreTheChannelBlocksFields_RangeAndStep()
+    {
+        JsonElement limits = Json(AgentPackageBuilder.Build(Inputs(), Id, Clock).Text!).GetProperty("limits");
+
+        AssertField(limits, "gainDb", "gainStepDb", VirtualCrossoverLimits.ChannelGain);
+        AssertField(limits, "delayMs", "delayStepMs", VirtualCrossoverLimits.ChannelDelay);
+        AssertField(limits, "crossoverHz", "crossoverStepHz", VirtualCrossoverLimits.CrossoverCorner);
+        AssertField(limits, "chebyshevRippleDb", "chebyshevRippleStepDb", VirtualCrossoverLimits.ChebyshevRipple);
+    }
+
+    private static void AssertField(JsonElement limits, string range, string step, NumericFieldRange field)
+    {
+        Assert.Equal(
+            [(double)field.Minimum, (double)field.Maximum],
+            limits.GetProperty(range).EnumerateArray().Select(value => value.GetDouble()));
+        Assert.Equal((double)field.Step, limits.GetProperty(step).GetDouble());
+    }
+
+    [Fact]
     public void Sampling_GridsInterpolationThinningAndLobes()
     {
         List<double> grid = AgentCurveSampling.LogGrid(20, 20_000, 12);

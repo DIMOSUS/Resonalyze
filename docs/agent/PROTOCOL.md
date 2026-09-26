@@ -97,10 +97,10 @@ the catalog does not know it.
 
 ```json
 { "gainDb": [-60, 20], "gainStepDb": 0.1, "delayMs": [0, 100], "delayStepMs": 0.01,
-  "peqBands": 32, "peqPreampDb": 60, "crossoverHz": [10, 24000],
+  "peqBands": 32, "peqPreampDb": 60, "crossoverHz": [10, 24000], "crossoverStepHz": 1,
   "slopes": { "Butterworth": [6,12,18,24,30,36,42,48], "LinkwitzRiley": [12,24,36,48],
               "Bessel": [6,12,18,24,36,48], "Chebyshev": [6,12,18,24,30,36,42,48] },
-  "chebyshevRippleDb": [0, 3],
+  "chebyshevRippleDb": [0.1, 3], "chebyshevRippleStepDb": 0.1,
   "operations": ["setGainDb", "setDelayMs", "setPolarity", "setCrossover",
                  "replacePeqBank", "probe", "useSpatialAverage", "runAutoCrossover",
                  "tuneJunction", "runAutoDelay", "autoTunePeq"],
@@ -110,7 +110,12 @@ the catalog does not know it.
 ```
 
 These are Virtual DSP's own limits, not the device's. A reply outside them is
-rejected; a reply inside them may still exceed what the device can dial.
+rejected; a reply inside them may still exceed what the device can dial. Each
+`…Step…` is the field's resolution: a proposed value must be a whole multiple of
+it. A stored corner or ripple can be finer than its step (a hand-edited
+session); restating it exactly as the package gives it is not refused. A
+ripple stored on another family is checked once `setCrossover` turns that edge
+Chebyshev, whether or not the reply states it.
 
 `operations` is what THIS build can execute. The protocol below describes more
 than any one build runs: an operation missing from the list is still read and
@@ -538,7 +543,7 @@ below ask for one of the panel's own engines instead.
 | `setGainDb` | `expectedCurrent`, `proposed` (dB) | `limits.gainDb`, `limits.gainStepDb` |
 | `setDelayMs` | `expectedCurrent`, `proposed` (ms) | `limits.delayMs`, `limits.delayStepMs`; above `processor.maxDelayMs` is a warning |
 | `setPolarity` | `expectedCurrent`, `proposed` (booleans, true = inverted) | — |
-| `setCrossover` | `expectedCurrent`, `proposed` (a crossover object) | kind and family names exactly as in the package; slopes per family; corner in `limits.crossoverHz` and below the processor's Nyquist; ripple in `limits.chebyshevRippleDb` for Chebyshev. Writes the NAMED channel only: a stereo block's crossover is one filter for both sides, so a reply that moves it proposes both channels (`B:left` and `B:right`), each with its own `expectedCurrent`. The two facing edges of a junction — the lower block's low-pass and the upper block's high-pass — may differ; the two sides of one block should not. `tuneJunction` writes both sides itself |
+| `setCrossover` | `expectedCurrent`, `proposed` (a crossover object) | kind and family names exactly as in the package; slopes per family; corner in `limits.crossoverHz` on `limits.crossoverStepHz` and below the processor's Nyquist; ripple in `limits.chebyshevRippleDb` on `limits.chebyshevRippleStepDb` for Chebyshev (a corner, or a Chebyshev edge's ripple, restated as stored is not re-checked). Writes the NAMED channel only: a stereo block's crossover is one filter for both sides, so a reply that moves it proposes both channels (`B:left` and `B:right`), each with its own `expectedCurrent`. The two facing edges of a junction — the lower block's low-pass and the upper block's high-pass — may differ; the two sides of one block should not. `tuneJunction` writes both sides itself |
 | `replacePeqBank` | `expectedCurrentHash`, `proposed` `{ preampDb, bands[] }` | at most `limits.peqBands` bands; every band `frequencyHz > 0` and below the processor's Nyquist, `q > 0`, finite `gainDb`, `type` one of `Peaking`, `LowShelf`, `HighShelf`, `AllPassFirstOrder`, `AllPassSecondOrder`; preamp within ±`limits.peqPreampDb`; a net response rising above 0 dB is a warning naming the peak and the preamp that would absorb it; a bell with Q > 2 within an octave of one of the channel's own active crossover corners is a warning naming the corner — judged on the channel as it would end up after every applicable row on it, so a crossover row that moves a corner onto an existing bell warns too |
 
 A crossover object is `{ kind, highPass?, lowPass? }` with each edge

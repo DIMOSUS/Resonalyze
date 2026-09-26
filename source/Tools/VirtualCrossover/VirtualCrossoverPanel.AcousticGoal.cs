@@ -24,7 +24,7 @@ public partial class VirtualCrossoverPanel
         settings.AcousticHighPass = dialog.HighPassGoal;
         settings.AcousticLowPass = dialog.LowPassGoal;
         ShowAcousticGoal(channel);
-        OnChannelSettingsChanged(channel);
+        SaveAndRedraw();
     }
 
     private void ShowAcousticGoal(VirtualCrossoverChannel channel)

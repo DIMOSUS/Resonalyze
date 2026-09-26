@@ -435,6 +435,11 @@ scoring flatness of the summed magnitude on a 24-points-per-octave log grid.
 - **Psychoacoustic smoothing** is applied to the summed level before mean, RMS and dip are read. A
   coherent sum can put a single-bin notch anywhere and the ear does not hear one; the kernel is the
   same 1/3-octave-to-1/6-octave width the curves themselves carry.
+- **What a probe recomputes.** A channel's unit response (driver through its edges) is cached per edge choice
+  with its magnitudes and in-band peak, which is all the overlap term reads. Overlap, split, placement and
+  slope-deviation terms read only the edges, so `BestPolarity` scores both polarities and `OptimizeGains` its
+  whole sweep on one `EdgeTerms`; the score keeps the same terms in the same order, so it is identical to the
+  bit. On the eight archived cabins this halved `Propose`.
 
 ### Junction flatness
 
@@ -617,6 +622,10 @@ per-junction delay.
   thousands of probe deltas across short periods for nothing.
 - A junction where the search finds no candidate is scored with a flat 6 dB penalty instead of
   silently winning by absence.
+- Candidates share most channels' chains (on a 4-way pool, 136 of 200 renders repeat), so one post-check
+  renders each (channel, crossover, gain) once and the candidates read it; polarity is not rendered. The renders
+  live for the one ranking, about 1 MB each. With the optimizer's cached terms a 4-way ranking went from about 27 s
+  to 17 s of CPU on those cabins, with the same ranking to the bit.
 - Both sides' raw arrivals are read in the same shared junction band (cached per channel and band).
   Arrivals from different measuring bands are not comparable: each band carries its own driver group
   delay and envelope rise. Unreadable arrivals fall back to an unanchored search over the widest window.

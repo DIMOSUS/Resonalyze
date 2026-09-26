@@ -1093,12 +1093,14 @@ public static class CrossoverAutoSetup
             Complex[][] cropped = CropSharedDirectSoundWindow(impulseResponses.ToArray());
             var arrivalCache =
                 new ConcurrentDictionary<(int Channel, long BandKey), (double Ms, bool Valid)>();
+            var renders = new ConcurrentDictionary<PostCheckRenderKey, Lazy<Complex[]>>();
             penalties = pool
                 .AsParallel().AsOrdered()
                 .Select(candidate => AchievabilityPenaltyDb(
                     cropped,
                     candidate.Proposals.ToArray(),
                     arrivalCache,
+                    renders,
                     sampleRate,
                     processorRate))
                 .ToArray();
@@ -1136,7 +1138,7 @@ public static class CrossoverAutoSetup
         return ranked;
     }
 
-    private static Complex[][] CropSharedDirectSoundWindow(Complex[][] impulseResponses) =>
+    internal static Complex[][] CropSharedDirectSoundWindow(Complex[][] impulseResponses) =>
         VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
             impulseResponses, PostCheckCropLength, PostCheckCropPrePeakSamples);
 
@@ -1159,11 +1161,15 @@ public static class CrossoverAutoSetup
         });
     }
 
+    // A channel's chain in the post-check is its crossover and gain; polarity is not rendered. Gain keys by its bits.
+    internal readonly record struct PostCheckRenderKey(int Channel, CrossoverSpec Crossover, long GainBits);
+
     // Summed dip-penalized loss after the delay production selection would pick. See docs/tech/crossover-auto-setup.md#achievability-post-check.
-    private static double AchievabilityPenaltyDb(
+    internal static double AchievabilityPenaltyDb(
         Complex[][] croppedOrdered,
         CrossoverProposal[] orderedProposals,
         ConcurrentDictionary<(int Channel, long BandKey), (double Ms, bool Valid)> arrivalCache,
+        ConcurrentDictionary<PostCheckRenderKey, Lazy<Complex[]>> renders,
         int sampleRate,
         int processorSampleRate)
     {
@@ -1171,16 +1177,16 @@ public static class CrossoverAutoSetup
         for (int channel = 0; channel < croppedOrdered.Length; channel++)
         {
             CrossoverProposal proposal = orderedProposals[channel];
-            processed[channel] = VirtualCrossoverAnalysis.ApplyChain(
-                croppedOrdered[channel],
-                new DspChannelChain(
-                    GainDb: proposal.GainDb,
-                    Crossover: new CrossoverSpec(
-                        proposal.Kind,
-                        proposal.LowPassEdge,
-                        proposal.HighPassEdge)),
-                sampleRate,
-                processorSampleRate);
+            var crossover = new CrossoverSpec(proposal.Kind, proposal.LowPassEdge, proposal.HighPassEdge);
+            Complex[] cropped = croppedOrdered[channel];
+            // Candidates share most channels' chains; a render is read, never written, so they share it.
+            processed[channel] = renders.GetOrAdd(
+                new PostCheckRenderKey(channel, crossover, BitConverter.DoubleToInt64Bits(proposal.GainDb)),
+                _ => new Lazy<Complex[]>(() => VirtualCrossoverAnalysis.ApplyChain(
+                    cropped,
+                    new DspChannelChain(GainDb: proposal.GainDb, Crossover: crossover),
+                    sampleRate,
+                    processorSampleRate))).Value;
         }
 
         double penalty = 0;
@@ -1511,9 +1517,9 @@ public static class CrossoverAutoSetup
             new();
 
         // Keyed by edge choice; lattice-stable frequencies make it hit on almost every probe after pass one.
-        private readonly Dictionary<(int Channel, long HighPassKey, long LowPassKey), Complex[]> unitCache =
+        private readonly Dictionary<(int Channel, long HighPassKey, long LowPassKey), UnitResponse> unitCache =
             new();
-        private readonly Complex[][] scratchUnits;
+        private readonly UnitResponse[] scratchUnits;
         private readonly Complex[] scratchCombined;
         // Score() runs tens of thousands of times per fit, so the level buffers it reads through are fields: an
         // Optimizer is never shared between threads (the ranked search parallelizes over candidates, not inside one).
@@ -1602,7 +1608,7 @@ public static class CrossoverAutoSetup
             lowerSlope = new int[channelCount - 1];
             upperSlope = new int[channelCount - 1];
             invert = new bool[channelCount];
-            scratchUnits = new Complex[channelCount][];
+            scratchUnits = new UnitResponse[channelCount];
             scratchCombined = new Complex[grid.Length];
             scratchLevels = new double[grid.Length];
             scratchJunctionLevels = new double[grid.Length];
@@ -2540,9 +2546,10 @@ public static class CrossoverAutoSetup
             double split)
         {
             Set(j, family, fc, lower, upper, split, invertRelative: false);
-            double upright = Score();
+            EdgeTerms terms = LoadEdgeTerms();
+            double upright = Score(terms);
             Set(j, family, fc, lower, upper, split, invertRelative: true);
-            double flipped = Score();
+            double flipped = Score(terms);
             return flipped < upright
                 ? new JunctionOption(family, fc, lower, upper, split, true, flipped)
                 : new JunctionOption(family, fc, lower, upper, split, false, upright);
@@ -2569,16 +2576,17 @@ public static class CrossoverAutoSetup
 
         private void OptimizeGains()
         {
+            EdgeTerms terms = LoadEdgeTerms();
             for (int i = 0; i < channelCount; i++)
             {
                 double bestGain = gainDb[i];
-                double bestScore = Score();
+                double bestScore = Score(terms);
                 double start = gainDb[i] - GainSearchRangeDb;
                 double end = gainDb[i] + GainSearchRangeDb;
                 for (double gain = start; gain <= end + 1e-9; gain += GainSearchStepDb)
                 {
                     gainDb[i] = gain;
-                    double score = Score();
+                    double score = Score(terms);
                     if (score < bestScore - 1e-9)
                     {
                         bestScore = score;
@@ -2602,18 +2610,33 @@ public static class CrossoverAutoSetup
         /// <summary>Ideal complex sum: each driver contributes its measured magnitude with its own minimum phase, the
         /// crossover contributes the phase it really has, and polarity is a sign. The drivers are taken as perfectly
         /// time-aligned — what the later alignment step is for. See docs/tech/crossover-auto-setup.md#ideal-complex-sum.</summary>
-        private double Score()
+        private double Score() => Score(LoadEdgeTerms());
+
+        // Gain and polarity move none of these: the unit responses carry neither, the rest read corners and slopes.
+        private readonly record struct EdgeTerms(double Overlap, double Split, double Placement, double Slope);
+
+        private EdgeTerms LoadEdgeTerms()
         {
             for (int i = 0; i < channelCount; i++)
             {
                 scratchUnits[i] = ChannelUnitResponse(i);
             }
 
+            return new EdgeTerms(
+                OverlapPenalty(scratchUnits),
+                SplitPenalty(),
+                FrequencyPlacementPenalty(),
+                SlopeDeviationPenalty());
+        }
+
+        /// <summary>The score on the units <paramref name="terms"/> were loaded with; only gains and polarity may have moved since.</summary>
+        private double Score(EdgeTerms terms)
+        {
             Array.Clear(scratchCombined);
             for (int i = 0; i < channelCount; i++)
             {
                 double scale = DataHelper.DecibelsToAmplitude(gainDb[i]) * (invert[i] ? -1.0 : 1.0);
-                Complex[] unit = scratchUnits[i];
+                Complex[] unit = scratchUnits[i].Response;
                 for (int k = 0; k < scratchCombined.Length; k++)
                 {
                     scratchCombined[k] += scale * unit[k];
@@ -2622,10 +2645,10 @@ public static class CrossoverAutoSetup
 
             return Flatness(scratchCombined)
                 + JunctionFlatnessWeight * JunctionPenalty()
-                + OverlapPenalty(scratchUnits)
-                + SplitPenalty()
-                + FrequencyPlacementPenalty()
-                + SlopeDeviationPenalty();
+                + terms.Overlap
+                + terms.Split
+                + terms.Placement
+                + terms.Slope;
         }
 
         /// <summary>The junction term: how flat the two adjacent channels sum an octave either side of the corner,
@@ -2646,8 +2669,8 @@ public static class CrossoverAutoSetup
                     DataHelper.DecibelsToAmplitude(gainDb[j]) * (invert[j] ? -1.0 : 1.0);
                 double upperScale =
                     DataHelper.DecibelsToAmplitude(gainDb[j + 1]) * (invert[j + 1] ? -1.0 : 1.0);
-                Complex[] lowerUnit = scratchUnits[j];
-                Complex[] upperUnit = scratchUnits[j + 1];
+                Complex[] lowerUnit = scratchUnits[j].Response;
+                Complex[] upperUnit = scratchUnits[j + 1].Response;
 
                 int first = -1;
                 int last = -1;
@@ -2863,20 +2886,13 @@ public static class CrossoverAutoSetup
         }
 
         // Overlap = log-frequency integral of peak-normalized responses' product (~1 octave for LR24). See docs/tech/crossover-auto-setup.md#engineering-penalties.
-        private double OverlapPenalty(Complex[][] responses)
+        private double OverlapPenalty(UnitResponse[] responses)
         {
             double octavesPerBin = 1.0 / GridPointsPerOctave;
             var peaks = new double[channelCount];
             for (int i = 0; i < channelCount; i++)
             {
-                double peak = 0;
-                Complex[] response = responses[i];
-                for (int k = evalLow; k <= evalHigh; k++)
-                {
-                    peak = Math.Max(peak, response[k].Magnitude);
-                }
-
-                peaks[i] = peak;
+                peaks[i] = responses[i].Peak;
             }
 
             double total = 0;
@@ -2894,13 +2910,13 @@ public static class CrossoverAutoSetup
                         continue;
                     }
 
-                    Complex[] lower = responses[i];
-                    Complex[] upper = responses[m];
+                    double[] lower = responses[i].Magnitude;
+                    double[] upper = responses[m].Magnitude;
                     double overlap = 0;
                     for (int k = evalLow; k <= evalHigh; k++)
                     {
-                        overlap += lower[k].Magnitude / peaks[i]
-                            * (upper[k].Magnitude / peaks[m]);
+                        overlap += lower[k] / peaks[i]
+                            * (upper[k] / peaks[m]);
                     }
 
                     int distance = m - i;
@@ -2953,8 +2969,11 @@ public static class CrossoverAutoSetup
                 ? fcHz
                 : RoundToLattice(fcHz * Math.Pow(2.0, direction * splitOctaves / 2.0));
 
+        /// <summary>A channel's driver through its edges, with |H| and its in-band peak for the overlap term.</summary>
+        private sealed record UnitResponse(Complex[] Response, double[] Magnitude, double Peak);
+
         // Polarity is NOT folded in here: it belongs to the channel, and keeping it out leaves the cache key on the edges alone.
-        private Complex[] ChannelUnitResponse(int i)
+        private UnitResponse ChannelUnitResponse(int i)
         {
             (CrossoverFilterFamily Family, double Fc, int Slope)? highPassEdge = i > 0
                 ? (junctionFamily[i - 1], HighPassHz(i - 1), upperSlope[i - 1])
@@ -2968,7 +2987,7 @@ public static class CrossoverAutoSetup
                     : null;
 
             var key = (i, EdgeKey(highPassEdge), EdgeKey(lowPassEdge));
-            if (unitCache.TryGetValue(key, out Complex[]? cached))
+            if (unitCache.TryGetValue(key, out UnitResponse? cached))
             {
                 return cached;
             }
@@ -2997,8 +3016,17 @@ public static class CrossoverAutoSetup
                 response[k] = value;
             }
 
-            unitCache[key] = response;
-            return response;
+            var magnitude = new double[grid.Length];
+            double peak = 0;
+            for (int k = evalLow; k <= evalHigh; k++)
+            {
+                magnitude[k] = response[k].Magnitude;
+                peak = Math.Max(peak, magnitude[k]);
+            }
+
+            var unit = new UnitResponse(response, magnitude, peak);
+            unitCache[key] = unit;
+            return unit;
         }
 
         private static long EdgeKey(

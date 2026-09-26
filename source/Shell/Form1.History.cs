@@ -168,7 +168,6 @@ public partial class Form1
             {
                 analyzerDocument.Rename(dialog.FileName);
                 UpdateLastImpulseResponseDirectory(dialog.FileName);
-                RefreshCurrentModePlot();
             }
         }
         catch (Exception exception)

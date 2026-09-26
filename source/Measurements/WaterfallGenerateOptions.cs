@@ -19,4 +19,6 @@ public sealed class WaterfallGenerateOptions
     public int Offset { get; set; }
     public WaterfallMode WaterfallMode { get; set; } = WaterfallMode.Fourier;
     public double Periods { get; set; } = 30;
+
+    internal WaterfallGenerateOptions Copy() => (WaterfallGenerateOptions)MemberwiseClone();
 }

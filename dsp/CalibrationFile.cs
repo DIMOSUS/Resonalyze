@@ -298,6 +298,56 @@ namespace Resonalyze.Dsp
                 out value) &&
             double.IsFinite(value);
 
+        /// <summary>For reads in ascending frequency, as a spectrum walks its bins: <see cref="GetDecibelCorrection"/>'s
+        /// values, with the bracketing points carried from read to read. One reader per walk; it is not thread-safe.</summary>
+        public Func<double, double> AscendingCorrections()
+        {
+            if (baseCalibration != null && decibelOffset != null)
+            {
+                Func<double, double> baseCorrections = baseCalibration.AscendingCorrections();
+                return frequency => baseCorrections(frequency) + decibelOffset(frequency);
+            }
+
+            if (calibration.Count < 2)
+            {
+                return GetDecibelCorrection;
+            }
+
+            int left = -1;
+            double lowX = 0.0;
+            double highX = 0.0;
+            double lowDb = 0.0;
+            double highDb = 0.0;
+            double logSpan = 0.0;
+            return frequency =>
+            {
+                if (frequency <= calibration[0].X || frequency >= calibration[^1].X)
+                {
+                    return GetDecibelCorrection(frequency);
+                }
+
+                if (left < 0 || frequency < lowX || frequency >= highX)
+                {
+                    left = left >= 0 && frequency >= lowX ? left : 0;
+                    while (calibration[left + 1].X <= frequency)
+                    {
+                        left++;
+                    }
+
+                    lowX = calibration[left].X;
+                    highX = calibration[left + 1].X;
+                    lowDb = DataHelper.AmplitudeToDecibels(calibration[left].Y);
+                    highDb = DataHelper.AmplitudeToDecibels(calibration[left + 1].Y);
+                    logSpan = Math.Log(highX / lowX);
+                }
+
+                double position = lowX > 0
+                    ? Math.Log(frequency / lowX) / logSpan
+                    : (frequency - lowX) / (highX - lowX);
+                return lowDb + (highDb - lowDb) * position;
+            };
+        }
+
         // Exact piecewise-linear in (log f, dB): a calibration must reproduce its own points; smoothing belongs to display.
         public double GetDecibelCorrection(double frequency)
         {

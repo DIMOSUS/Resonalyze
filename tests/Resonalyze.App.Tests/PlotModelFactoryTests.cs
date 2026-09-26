@@ -96,6 +96,73 @@ public sealed class PlotModelFactoryTests
     }
 
     [Fact]
+    public void AFrozenFactory_BuildsWhatWasOpenWhenItWasFrozen()
+    {
+        using var measurement = CreateTransferMeasurement();
+        measurement.Document.Rename("first.json");
+        PlotModelFactory factory = CreateFactory(measurement);
+        var compareImpulse = new Complex[2048];
+        compareImpulse[80] = Complex.One;
+        CompareAnalysisSource? compare = new("reference", 44_100, compareImpulse, 80, Band: MeasuredBand.Everything);
+        factory.SetCompareSourceProvider(() => compare);
+
+        PlotModelFactory frozen = factory.Freeze();
+        measurement.Document.Clear();
+        Assert.NotNull(measurement.Document.TryAcquire());
+        compare = null;
+
+        PlotModel model = frozen.CreateFrequencyResponse(includeCurves: true);
+        Assert.Contains("first.json", model.Title, StringComparison.Ordinal);
+        Assert.Contains(model.Series, series => series.Tag is CurveTag { Source: CurveSource.Main });
+        Assert.Contains(model.Series, series => series.Tag is CurveTag { Source: CurveSource.Compare });
+        Assert.Empty(factory.CreateFrequencyResponse(includeCurves: true).Series);
+    }
+
+    [Fact]
+    public void AFrozenFactory_ReadsTheSettingsOfItsMoment_AndHandsBackOnlyAnAutoGateStillWanted()
+    {
+        using TestAnalyzer measurement = BandedCabin(250);
+        var phase = new FrequencyResponseOptions { PhaseGateAutoFit = true, PhaseGateOffsetMs = 0.0 };
+        var visibility = new CurveVisibilityOptions();
+        PlotModelFactory factory = CreateFactory(
+            measurement, phaseResponseOptions: phase, phaseResponseVisibility: visibility);
+        PlotModelFactory frozen = factory.Freeze();
+
+        phase.PhaseGateAutoFit = false;
+        phase.PhaseGateOffsetMs = 3.0;
+        visibility.ShowMeasuredPhase = false;
+        PlotModel model = frozen.CreatePhaseResponse(includeCurves: true);
+        factory.AdoptAutoGates(frozen);
+
+        Assert.Contains(model.Series, series => series.Tag is CurveTag { Kind: AnalysisCurveKind.Primary });
+        Assert.Equal(3.0, phase.PhaseGateOffsetMs);
+        phase.PhaseGateAutoFit = true;
+        factory.AdoptAutoGates(frozen);
+        MeasurementImpulseResponse transfer = measurement.Result.Transfer!;
+        Assert.Equal(
+            TransferIrStartCache.ResolveStartMs(transfer.ImpulseResponse, measurement.Result.SampleRate, transfer.PeakIndex),
+            phase.PhaseGateOffsetMs);
+    }
+
+    [Theory]
+    [InlineData(Mode.ImpulseResponse)]
+    [InlineData(Mode.FrequencyResponse)]
+    [InlineData(Mode.PhaseResponse)]
+    [InlineData(Mode.GroupDelay)]
+    [InlineData(Mode.CumulativeSpectrumDecay)]
+    [InlineData(Mode.BurstDecay)]
+    [InlineData(Mode.Autocorrelation)]
+    public void ACurveBuild_StopsOnACancelledToken(Mode mode)
+    {
+        using var measurement = CreateTransferMeasurement();
+        PlotModelFactory factory = CreateFactory(measurement);
+
+        Assert.ThrowsAny<OperationCanceledException>(
+            () => factory.Create(mode, includeCurves: true, new CancellationToken(true)));
+        Assert.NotNull(factory.Create(mode, includeCurves: false, new CancellationToken(true)));
+    }
+
+    [Fact]
     public void Autocorrelation_RespectsShowAutocorrelationFlag()
     {
         using var measurement = CreateTransferMeasurement();
@@ -1343,10 +1410,10 @@ public sealed class PlotModelFactoryTests
             PlotModelFactory factory =
                 CreateFactory(measurement, impulseOptions: options);
 
-            // Nothing frames an overlay before the first impulse build.
-            Assert.Null(factory.ImpulseFrame);
+            // Only an impulse model frames an overlay, with its own build's framing.
+            Assert.Null(factory.ImpulseFrameOf(factory.CreateFrequencyResponse(includeCurves: true)));
             var model = factory.CreateImpulseResponse(includeCurves: true);
-            ImpulseOverlayFrame frame = factory.ImpulseFrame!.Value;
+            ImpulseOverlayFrame frame = factory.ImpulseFrameOf(model)!.Value;
 
             Assert.Empty(model.Series);
             Assert.Equal(measurement.Result.Transfer!.PeakIndex, frame.OriginSamples, precision: 9);

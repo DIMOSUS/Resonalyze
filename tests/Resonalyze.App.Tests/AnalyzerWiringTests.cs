@@ -6,6 +6,7 @@ using OxyPlot;
 using OxyPlot.Annotations;
 using OxyPlot.WindowsForms;
 using Resonalyze.Audio;
+using Resonalyze.Dsp;
 using Resonalyze.History;
 
 namespace Resonalyze.App.Tests;
@@ -192,7 +193,86 @@ public sealed class AnalyzerWiringTests : IDisposable
         });
     }
 
-    // A save renames the open measurement; the title follows the document.
+    [Fact]
+    public void ASwitchShowsTheModesFrameAtOnce_AndItsCurvesOnceBuilt()
+    {
+        string path = WriteMeasurement("cabin left.json", peak: 240);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Open(path);
+
+            Task select = analyzer.Start("SelectModeAsync", ModeTab.Phase);
+
+            Assert.True(select.IsCompleted);
+            Assert.Contains(analyzer.Plot.Axes, axis => axis.Key == PlotModelFactory.PhaseAxisKey);
+            Assert.Empty(analyzer.Plot.Series);
+            analyzer.Pump();
+            Assert.Contains(analyzer.Plot.Series, series => IsCurveOf(series, Mode.PhaseResponse));
+        });
+    }
+
+    [Fact]
+    public void ASwitchBeforeTheLastOneLands_ShowsOnlyTheNewMode()
+    {
+        string path = WriteMeasurement("cabin left.json", peak: 240);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Open(path);
+
+            Assert.True(analyzer.Start("SelectModeAsync", ModeTab.Phase).IsCompleted);
+            Task phase = analyzer.Plotter.Drawing;
+            Assert.True(analyzer.Start("SelectModeAsync", ModeTab.GroupDelay).IsCompleted);
+            StaTest.Settle(phase);
+            analyzer.Pump();
+
+            Assert.True(phase.IsCompletedSuccessfully);
+            Assert.DoesNotContain(analyzer.Plot.Series, series => IsCurveOf(series, Mode.PhaseResponse));
+            Assert.Contains(analyzer.Plot.Series, series => IsCurveOf(series, Mode.GroupDelay));
+        });
+    }
+
+    // The build read what was open when it started; a run taking the document meanwhile cannot tear it.
+    [Fact]
+    public void ARunStartedWhileTheCurvesBuild_LeavesThemOnScreen()
+    {
+        string path = WriteMeasurement("cabin left.json", peak: 240);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Open(path);
+
+            // The harmonics read the document after the slow primary spectrum, so a live read would find it emptied.
+            Assert.True(analyzer.Start("SelectModeAsync", ModeTab.Frequency).IsCompleted);
+            analyzer.StartRun();
+            analyzer.Pump();
+
+            Assert.Contains("cabin left.json", analyzer.Plot.Title, StringComparison.Ordinal);
+            Assert.Contains(analyzer.Plot.Series, series => series.Tag is CurveTag { Kind: AnalysisCurveKind.SecondHarmonic });
+        });
+    }
+
+    [Fact]
+    public void ARunThatLandsNothing_TakesTheReadoutOffMeasuring_EvenWhenNothingElseMoved()
+    {
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Select(ModeTab.Phase);
+            string idle = analyzer.PeakInfo;
+
+            analyzer.StartRun();
+            typeof(Form1).GetMethod("EnterMeasurementRunningState", Hidden)!.Invoke(analyzer.Form, []);
+            analyzer.Pump();
+            Assert.NotEqual(idle, analyzer.PeakInfo);
+
+            analyzer.CompleteRun(null);
+            Assert.Equal(idle, analyzer.PeakInfo);
+        });
+    }
+
+    // A save renames the open measurement; the title follows the document, and nothing else is rebuilt.
     [Fact]
     public void ARenameRetitlesThePlot()
     {
@@ -201,11 +281,50 @@ public sealed class AnalyzerWiringTests : IDisposable
         {
             using var analyzer = new LiveAnalyzer();
             analyzer.Open(path);
+            PlotModel drawn = analyzer.Plot;
 
             analyzer.Document.Rename(Path.Combine(directory, "saved.json"));
             analyzer.Pump();
 
+            Assert.Same(drawn, analyzer.Plot);
             Assert.Equal("Frequency Response - saved.json", analyzer.Plot.Title);
+        });
+    }
+
+    [Fact]
+    public void AnImportThatLandsNothing_LeavesThePlotAlone()
+    {
+        string path = WriteMeasurement("cabin left.json", peak: 240);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Open(path);
+            PlotModel drawn = analyzer.Plot;
+
+            AnalyzerDocument.Request import = analyzer.Document.TryAcquire()!;
+            analyzer.Pump();
+            import.Dispose();
+            analyzer.Pump();
+
+            Assert.Same(drawn, analyzer.Plot);
+        });
+    }
+
+    [Fact]
+    public void ACompareChosenWhereTheModeDoesNotDrawIt_LeavesThePlotAlone()
+    {
+        string path = WriteMeasurement("cabin left.json", peak: 240);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Open(path);
+            analyzer.Select(ModeTab.Autocorrelation);
+            PlotModel drawn = analyzer.Plot;
+
+            analyzer.Field<CompareSelection>("compareSelection").Set("reference", null, Measurement(peak: 480));
+            analyzer.Pump();
+
+            Assert.Same(drawn, analyzer.Plot);
         });
     }
 
@@ -371,6 +490,9 @@ public sealed class AnalyzerWiringTests : IDisposable
     private static bool IsCompareCurve(OxyPlot.Series.Series series) =>
         series.Tag is CurveTag { Source: CurveSource.Compare };
 
+    private static bool IsCurveOf(OxyPlot.Series.Series series, Mode mode) =>
+        series.Tag is CurveTag tag && tag.Mode == mode;
+
     private static MeasurementResult Measurement(int peak)
     {
         var impulse = new Complex[8_192];
@@ -457,6 +579,8 @@ public sealed class AnalyzerWiringTests : IDisposable
 
         public PlotModel Plot => Field<PlotView>("plotView1").Model!;
 
+        public AnalyzerPlot Plotter => Field<AnalyzerPlot>("analyzerPlot");
+
         public string PeakInfo => Plot.Annotations
             .OfType<TextualAnnotation>()
             .Single(annotation => Equals(annotation.Tag, "PeakInfoAnnotation"))
@@ -520,7 +644,7 @@ public sealed class AnalyzerWiringTests : IDisposable
             MainWindowData.Reset();
         }
 
-        /// <summary>Lets queued UI work run: a view redraws after the input that changed it.</summary>
+        /// <summary>Lets queued UI work run: a view redraws after the input that changed it, and its curves land.</summary>
         public void Pump()
         {
             for (int i = 0; i < 20; i++)
@@ -528,6 +652,14 @@ public sealed class AnalyzerWiringTests : IDisposable
                 StaTest.Pump();
                 Thread.Sleep(5);
             }
+
+            Task drawing;
+            do
+            {
+                drawing = Plotter.Drawing;
+                StaTest.Settle(drawing);
+            }
+            while (drawing != Plotter.Drawing);
         }
     }
 }

@@ -4,25 +4,36 @@ using Resonalyze.Options;
 
 namespace Resonalyze;
 
-/// <summary>What a plot build reads of the open measurement; one build reads one result, whatever lands meanwhile.</summary>
+/// <summary>What a plot build reads of the open measurement: the document as it is, or one moment of it
+/// (<see cref="Freeze"/>) for a build off the UI thread, which whatever lands meanwhile cannot tear.</summary>
 internal sealed class MeasurementPlotContext
 {
-    private readonly AnalyzerDocument document;
+    private readonly AnalyzerDocument? document;
+    private readonly FrozenDocument frozen;
 
     public MeasurementPlotContext(AnalyzerDocument document)
     {
         this.document = document;
     }
 
-    /// <summary>The open result; builds that span several reads take it once.</summary>
-    public MeasurementResult? Result => document.Result;
+    private MeasurementPlotContext(FrozenDocument frozen)
+    {
+        this.frozen = frozen;
+    }
 
-    public int SampleRate => document.Result?.SampleRate ?? 0;
+    private FrozenDocument State => document != null ? FrozenDocument.Of(document) : frozen;
+
+    /// <summary>Taken on the UI thread, which alone writes the document.</summary>
+    public MeasurementPlotContext Freeze() => new(State);
+
+    public MeasurementResult? Result => State.Result;
+
+    public int SampleRate => State.Result?.SampleRate ?? 0;
 
     public string? ImpulseResponseFileName =>
-        string.IsNullOrWhiteSpace(document.SourceName)
+        State.SourceName is not { } sourceName || string.IsNullOrWhiteSpace(sourceName)
             ? null
-            : Path.GetFileName(document.SourceName);
+            : Path.GetFileName(sourceName);
 
     public string CreateTitle(string baseTitle) =>
         ImpulseResponseFileName is not { } fileName
@@ -31,14 +42,13 @@ internal sealed class MeasurementPlotContext
 
     public bool CanIncludeCurves(bool includeCurves) =>
         includeCurves &&
-        document.HasResult &&
-        !document.IsBusy;
+        State is { Result: not null, IsBusy: false };
 
-    public bool HasTransferImpulseResponse => document.Result?.HasTransfer == true;
+    public bool HasTransferImpulseResponse => State.Result?.HasTransfer == true;
 
     /// <summary>Estimated IR start (ms) for the Auto gate offset, memoized in <see cref="TransferIrStartCache"/>.</summary>
     public double? ResolveAutoGateOffsetMs() =>
-        document.Result is { Transfer.ImpulseResponse.Length: > 0, SampleRate: > 0 } result
+        State.Result is { Transfer.ImpulseResponse.Length: > 0, SampleRate: > 0 } result
             ? TransferIrStartCache.ResolveStartMs(
                 result.Transfer.ImpulseResponse,
                 result.SampleRate,
@@ -46,12 +56,12 @@ internal sealed class MeasurementPlotContext
             : null;
 
     /// <summary>The result's frozen anchor, so a live recalibration does not rescale what is on screen.</summary>
-    public double? SplOffsetDb => document.Result?.SplOffsetDb;
+    public double? SplOffsetDb => State.Result?.SplOffsetDb;
 
     // All analysis derives from the loopback transfer IR (callers gate on HasTransferImpulseResponse); sweep deconvolution is for harmonics/noise.
     public IImpulseMeasurement CreatePrimaryMeasurement()
     {
-        MeasurementResult result = document.Result
+        MeasurementResult result = State.Result
             ?? throw new InvalidOperationException("Transfer impulse response is not available.");
         MeasurementImpulseResponse transfer = result.Transfer
             ?? throw new InvalidOperationException(
@@ -69,7 +79,7 @@ internal sealed class MeasurementPlotContext
     }
 
     /// <summary>Band every derived curve stops at; overlays carry it past the measurement's lifetime.</summary>
-    public MeasuredBand MeasuredBand => document.Result?.MeasuredBand ?? MeasuredBand.Everything;
+    public MeasuredBand MeasuredBand => State.Result?.MeasuredBand ?? MeasuredBand.Everything;
 
     /// <summary>Uncalibrated oversampled spectrum for exact re-smoothing; calibration applies after smoothing.</summary>
     public IReadOnlyList<SignalPoint>? CreateRawPrimarySpectrum(
@@ -86,16 +96,16 @@ internal sealed class MeasurementPlotContext
     // HD curves smoothed at the primary's width so HD2..HDn read at HD1's resolution.
     private const double HarmonicSmoothingWidthFactor = 1.0;
 
-    public IReadOnlyList<string> DistortionWarnings { get; private set; } = Array.Empty<string>();
+    // The last results drawn: a decomposition and noise floor depend on nothing a build changes, but hold megabytes
+    // that the results history keeps in memory must not multiply.
+    private const int KeptDistortionAnalyses = 2;
+    private static readonly List<(MeasurementResult Result, DistortionAnalysis Analysis)> DistortionAnalyses = [];
 
-    /// <summary>Separates overlap drops (amber) from below-noise drops (neutral note).</summary>
-    public IReadOnlyList<HarmonicPacketValidity> DistortionPacketValidity
-    { get; private set; } = Array.Empty<HarmonicPacketValidity>();
-
-    public IReadOnlyList<AnalysisCurve> CreateFrequencyResponseCurves(
+    public FrequencyResponseCurves CreateFrequencyResponseCurves(
         FrequencyResponseOptions options,
         CalibrationFile? calibration,
-        SpectrumCurves curves)
+        SpectrumCurves curves,
+        CancellationToken cancellationToken = default)
     {
         var result = new List<AnalysisCurve>();
         result.AddRange(DataHelper.GetSpectrum(
@@ -103,26 +113,31 @@ internal sealed class MeasurementPlotContext
             options,
             calibration,
             curves & SpectrumCurves.Primary));
+        cancellationToken.ThrowIfCancellationRequested();
 
-        result.AddRange(CreateDistortionCurves(options, calibration, curves));
-        return result;
+        if (CreateDistortionCurves(options, calibration, curves) is not { } distortion)
+        {
+            return new FrequencyResponseCurves(result, [], []);
+        }
+
+        result.AddRange(distortion.Curves);
+        return new FrequencyResponseCurves(result, distortion.Warnings, distortion.PacketValidity);
     }
 
-    private IReadOnlyList<AnalysisCurve> CreateDistortionCurves(
+    private EssDistortion.DistortionCurveResult? CreateDistortionCurves(
         FrequencyResponseOptions options,
         CalibrationFile? calibration,
         SpectrumCurves curves)
     {
-        DistortionWarnings = Array.Empty<string>();
-        DistortionPacketValidity = Array.Empty<HarmonicPacketValidity>();
         // The result's recorded sweep geometry, not the rebuilt one (length-capped, legacy edges unreachable).
         if ((curves & SpectrumCurves.Distortion) == 0 ||
-            document.Result is not { } result ||
+            State.Result is not { } result ||
+            result.SweepDeconvolution.ImpulseResponse.Length == 0 ||
             result.SweepSampleCount <= 0 ||
             !(result.AchievedLowFrequencyHz > 0) ||
             !(result.AchievedHighFrequencyHz > result.AchievedLowFrequencyHz))
         {
-            return Array.Empty<AnalysisCurve>();
+            return null;
         }
 
         MeasurementImpulseResponse deconvolution = result.SweepDeconvolution;
@@ -135,13 +150,6 @@ internal sealed class MeasurementPlotContext
             deconvolution.PeakIndex,
             result.MeasuredHighFrequencyHz);
 
-        Complex[] impulse = deconvolution.ImpulseResponse;
-        double[] real = new double[impulse.Length];
-        for (int i = 0; i < impulse.Length; i++)
-        {
-            real[i] = impulse[i].Real;
-        }
-
         // Noise floor as its own trace (REW-style), so THD stays harmonics-only.
         var distortionOptions = new DistortionOptions(
             // The psychoacoustic dip floor applies to the fundamental's trace only.
@@ -149,15 +157,77 @@ internal sealed class MeasurementPlotContext
                 SpectrumSmoothing.SmoothingOctaves(options.SmoothingInverseOctaves),
             IncludeNoise: (curves & SpectrumCurves.NoiseFloor) != 0);
 
-        EssDistortion.DistortionCurveResult distortion =
-            EssDistortion.ComputeDistortionCurvesResult(
-                real,
-                sweepMetadata,
-                distortionOptions,
-                options.UseCalibration ? calibration : null,
-                curves & SpectrumCurves.Distortion);
-        DistortionWarnings = distortion.Warnings;
-        DistortionPacketValidity = distortion.PacketValidity;
-        return distortion.Curves;
+        DistortionAnalysis analysis = DistortionAnalysisOf(result, sweepMetadata, distortionOptions);
+        return EssDistortion.ComputeDistortionCurvesResult(
+            analysis.Decomposition,
+            distortionOptions.IncludeNoise ? analysis.Noise : null,
+            distortionOptions,
+            options.UseCalibration ? calibration : null,
+            curves & SpectrumCurves.Distortion);
+    }
+
+    private static DistortionAnalysis DistortionAnalysisOf(
+        MeasurementResult result,
+        EssSweepMetadata sweep,
+        DistortionOptions options)
+    {
+        lock (DistortionAnalyses)
+        {
+            int index = DistortionAnalyses.FindIndex(entry => ReferenceEquals(entry.Result, result));
+            DistortionAnalysis analysis = index >= 0
+                ? DistortionAnalyses[index].Analysis
+                : new DistortionAnalysis(result.SweepDeconvolution.ImpulseResponse, sweep, options);
+            if (index >= 0)
+            {
+                DistortionAnalyses.RemoveAt(index);
+            }
+
+            DistortionAnalyses.Add((result, analysis));
+            if (DistortionAnalyses.Count > KeptDistortionAnalyses)
+            {
+                DistortionAnalyses.RemoveAt(0);
+            }
+
+            return analysis;
+        }
+    }
+
+    private sealed class DistortionAnalysis
+    {
+        private readonly Lazy<EssHarmonicDecomposition> decomposition;
+        private readonly Lazy<NoiseEstimate> noise;
+
+        public DistortionAnalysis(Complex[] impulse, EssSweepMetadata sweep, DistortionOptions options)
+        {
+            decomposition = new(() => EssDistortion.Decompose(RealPart(impulse), sweep, options));
+            noise = new(() => EssNoise.EstimateNoise(RealPart(impulse), decomposition.Value, options));
+        }
+
+        public EssHarmonicDecomposition Decomposition => decomposition.Value;
+
+        public NoiseEstimate Noise => noise.Value;
+
+        private static double[] RealPart(Complex[] impulse)
+        {
+            double[] real = new double[impulse.Length];
+            for (int i = 0; i < impulse.Length; i++)
+            {
+                real[i] = impulse[i].Real;
+            }
+
+            return real;
+        }
     }
 }
+
+internal readonly record struct FrozenDocument(MeasurementResult? Result, string? SourceName, bool IsBusy)
+{
+    public static FrozenDocument Of(AnalyzerDocument document) =>
+        new(document.Result, document.SourceName, document.IsBusy);
+}
+
+/// <param name="DistortionPacketValidity">Separates overlap drops (amber) from below-noise drops (neutral note).</param>
+internal sealed record FrequencyResponseCurves(
+    IReadOnlyList<AnalysisCurve> Curves,
+    IReadOnlyList<string> DistortionWarnings,
+    IReadOnlyList<HarmonicPacketValidity> DistortionPacketValidity);

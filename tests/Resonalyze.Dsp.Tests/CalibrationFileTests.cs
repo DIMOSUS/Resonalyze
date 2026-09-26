@@ -440,6 +440,28 @@ public sealed class CalibrationFileTests
             precision: 12);
     }
 
+    [Fact]
+    public void AscendingCorrections_ReadWhatGetDecibelCorrectionReads_BitForBit()
+    {
+        CalibrationFile plain = CalibrationFile.Parse("20 -1.5\n100 0.25\n1000 0\n5000 2\n20000 -3.75\n");
+        CalibrationFile angled = CalibrationFile.CreateAngled(plain, frequency => Math.Log10(frequency) * 0.5);
+        double[] frequencies =
+        [
+            5, 20, 20.5, 99.9, 100, 100, 101, 999, 1000, 4_000, 5_000, 19_999, 20_000, 30_000,
+            // Out of order, which a reader must still answer.
+            150, 30, 12_000
+        ];
+
+        foreach (CalibrationFile calibration in new[] { plain, angled })
+        {
+            Func<double, double> corrections = calibration.AscendingCorrections();
+            foreach (double frequency in frequencies)
+            {
+                Assert.Equal(calibration.GetDecibelCorrection(frequency), corrections(frequency));
+            }
+        }
+    }
+
     private static string WriteCalibrationFile(string text)
     {
         string path = Path.Combine(

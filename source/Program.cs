@@ -55,7 +55,9 @@ internal static class Program
 
         // Before the first control exists: a designer reads the palette inside InitializeComponent.
         UiPalette.Use(AppearanceSettingsFile.LoadOrDefault().Theme);
-        Application.Run(new Form1());
+        var shell = new Form1();
+        shell.RememberWindowPlacement(WindowPlacementFile.LoadOrDefault());
+        Application.Run(shell);
 
         if (ApplicationRestart.IsRequested)
         {

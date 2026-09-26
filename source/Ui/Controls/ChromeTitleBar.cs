@@ -28,6 +28,9 @@ internal sealed class ChromeTitleBar : Panel
     // Windows "Show animations" (reduced-motion) setting.
     private const int SpiGetClientAreaAnimation = 0x1042;
 
+    // WINDOWPLACEMENT.flags: a minimized window goes back to maximized when restored.
+    private const int WpfRestoreToMaximized = 0x2;
+
     private const int UpdatePulsePeriodMs = 1_800;
     private const int UpdatePulseIntervalMs = 40;
 
@@ -59,6 +62,19 @@ internal sealed class ChromeTitleBar : Panel
     }
 
     public bool IsCustomMaximized => isCustomMaximized;
+
+    public bool IsMaximized => isCustomMaximized || form.WindowState switch
+    {
+        FormWindowState.Maximized => true,
+        FormWindowState.Minimized => RestoresToMaximized(),
+        _ => false
+    };
+
+    // A real Maximized state (Aero snap) or a minimized window keeps its normal bounds in the form's RestoreBounds.
+    public Rectangle NormalBounds =>
+        isCustomMaximized ? restoreBounds
+        : form.WindowState == FormWindowState.Normal ? form.Bounds
+        : form.RestoreBounds;
 
     public int ScaledResizeGripSize => Scale(ResizeGripSize);
 
@@ -148,6 +164,33 @@ internal sealed class ChromeTitleBar : Panel
         uint parameter,
         ref bool value,
         uint update);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeWindowPlacement
+    {
+        public int Length;
+        public int Flags;
+        public int ShowCommand;
+        public Point MinPosition;
+        public Point MaxPosition;
+        public int NormalLeft;
+        public int NormalTop;
+        public int NormalRight;
+        public int NormalBottom;
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowPlacement(IntPtr hWnd, ref NativeWindowPlacement placement);
+
+    // WindowState reads Minimized alone; Windows keeps whether an Aero-snap maximized window was minimized from there.
+    private bool RestoresToMaximized()
+    {
+        var placement = new NativeWindowPlacement { Length = Marshal.SizeOf<NativeWindowPlacement>() };
+        return form.IsHandleCreated &&
+               GetWindowPlacement(form.Handle, ref placement) &&
+               (placement.Flags & WpfRestoreToMaximized) != 0;
+    }
 
     public void SetActiveModeTab(ModeTab activeTab)
     {
@@ -592,7 +635,7 @@ internal sealed class ChromeTitleBar : Panel
         MaximizeToCurrentScreen();
     }
 
-    private void MaximizeToCurrentScreen()
+    public void MaximizeToCurrentScreen()
     {
         if (form.WindowState != FormWindowState.Normal)
         {

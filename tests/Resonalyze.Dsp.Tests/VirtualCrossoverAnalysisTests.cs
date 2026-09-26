@@ -918,6 +918,21 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void MeasureAlignedJunctionSpectrum_ALobePastTheWindowEdgeIsFoundByTheRetry()
+    {
+        // The pair lines up 50 samples (1.042 ms) out, just past the +/-1 ms window.
+        Complex[] variable = UnitImpulse(4_096, 150);
+        Complex[] fixedIr = UnitImpulse(4_096, 100);
+
+        var read = VirtualCrossoverAnalysis.MeasureAlignedJunctionSpectrum(
+            variable, [fixedIr], SampleRate, 500, 2_000, halfWindowMs: 1.0)!.Value;
+
+        Assert.False(read.Alignment.InvertPolarity);
+        Assert.InRange(read.Alignment.DelayMs, -1.06, -1.03);
+        Assert.InRange(read.Reading.LossDb, -0.05, 0.0);
+    }
+
+    [Fact]
     public void FindAlignmentCandidates_ReportsBothSidesOfTheDegeneracy()
     {
         // Both the flipped echo solution and the direct alignment are local optima; both must be exposed.
@@ -1049,6 +1064,51 @@ public sealed class VirtualCrossoverAnalysisTests
         Assert.True(bestInverted.ScoreDb > bestNormal.ScoreDb - 0.5);
     }
 
+    [Theory]
+    [InlineData(80, 3.0, 6.25)]
+    [InlineData(80, 6.0, 6.25)]
+    [InlineData(350, 1.0, 1.43)]
+    public void FindAlignmentCandidates_ThePriorRanksALobeWithoutMovingIt(
+        double crossoverHz,
+        double priorMs,
+        double halfWindowMs)
+    {
+        // One arrival through a matched LR24: the in-phase lobe sits at 0 ms wherever the prior points.
+        Complex[] woofer = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(32_768, 2_000),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.LowPass,
+                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, crossoverHz, 24))),
+            SampleRate,
+            SampleRate);
+        Complex[] upper = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(32_768, 2_000),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.HighPass,
+                HighPassEdge: new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, crossoverHz, 24))),
+            SampleRate,
+            SampleRate);
+
+        AlignmentCandidate InPhaseLobe(double? prior)
+        {
+            VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                upper, [woofer], SampleRate, crossoverHz / 2, crossoverHz * 2,
+                -halfWindowMs, halfWindowMs,
+                priorDelayMs: prior, priorSigmaMs: halfWindowMs / 2.0, forcedPolarity: null,
+                levelMatch: false, out IReadOnlyList<AlignmentCandidate> optima);
+            return optima.Where(item => !item.InvertPolarity).MinBy(item => Math.Abs(item.DelayMs))!;
+        }
+
+        AlignmentCandidate free = InPhaseLobe(null);
+        AlignmentCandidate pulled = InPhaseLobe(priorMs);
+
+        Assert.InRange(free.DelayMs, -0.05, 0.05);
+        Assert.Equal(free.DelayMs, pulled.DelayMs, 9);
+        Assert.Equal(free.LossDb, pulled.LossDb, 9);
+        Assert.Equal(free.DipDb, pulled.DipDb, 9);
+        Assert.True(pulled.ScoreDb < free.ScoreDb, "the prior still ranks: a lobe away from it scores lower");
+    }
+
     [Fact]
     public void FindAlignmentCandidates_ForcedPolarityReturnsThatSignHonestlyScored()
     {
@@ -1149,7 +1209,7 @@ public sealed class VirtualCrossoverAnalysisTests
         Assert.True(unguided.InvertPolarity);
         Assert.Equal(0.5, unguided.DelayMs, 1);
         Assert.False(guided.InvertPolarity);
-        Assert.Equal(0.0, guided.DelayMs, 1);
+        Assert.InRange(guided.DelayMs, -0.1, 0.1);
     }
 
     [Fact]

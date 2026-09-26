@@ -420,4 +420,77 @@ public sealed class AlignmentSelectionTests
 
         Assert.Equal(farLobe, gated);
     }
+
+    [Fact]
+    public void LobeContinuation_CompletesTheCutOffLobeRatherThanHoppingToAFarOne()
+    {
+        // 3RC's sub junction: the wall pick at -0.62 ms continues to -0.83 ms in the widened window, where a lobe 2.87 ms off,
+        // inverted, ties it on the prior-laden score and sits nearer the arrival.
+        var wallPick = new AlignmentCandidate(-0.618, false, -3.38);
+        var far = new AlignmentCandidate(2.872, true, -3.74);
+        var continuation = new AlignmentCandidate(-0.826, false, -3.76);
+
+        Assert.Equal(
+            continuation,
+            AlignmentSelection.LobeContinuation([far, continuation], wallPick, -1.345, 4.655));
+        Assert.Equal(far, AlignmentSelection.Select([far, continuation], baseDeltaMs: 1.655));
+    }
+
+    [Fact]
+    public void LobeContinuation_IsNullWhileTheLobeStillSitsAtTheWidenedWall()
+    {
+        var wallPick = new AlignmentCandidate(-1.0, false, -2.0);
+        var stillAtTheWall = new AlignmentCandidate(-1.95, false, -1.5);
+        var other = new AlignmentCandidate(0.5, true, -1.8);
+
+        Assert.Null(AlignmentSelection.LobeContinuation([stillAtTheWall, other], wallPick, -2.0, 2.0));
+        Assert.Null(AlignmentSelection.LobeContinuation([other], wallPick, -2.0, 2.0));
+    }
+
+    [Fact]
+    public void LobeContinuation_LooksPastTheWall_NotBackIntoTheWindow()
+    {
+        // A same-polarity lobe the original window already held sits nearer to the wall pick than the completed lobe does.
+        var wallPick = new AlignmentCandidate(-0.95, false, -2.0);
+        var inside = new AlignmentCandidate(-0.7, false, -2.4);
+        var continuation = new AlignmentCandidate(-1.3, false, -1.9);
+
+        Assert.Equal(continuation, AlignmentSelection.LobeContinuation([inside, continuation], wallPick, -2.0, 2.0));
+        Assert.Null(AlignmentSelection.LobeContinuation([inside], wallPick, -2.0, 2.0));
+    }
+
+    [Fact]
+    public void SelectWithEdgeRetry_TakesTheContinuationAndFallsBackToSelection()
+    {
+        // The far lobe wins plain selection outright (0.3 dB, same polarity), so only the continuation rule can return the near one.
+        var wallPick = new AlignmentCandidate(-0.95, false, -2.0);
+        var far = new AlignmentCandidate(1.2, false, -1.6);
+        var continuation = new AlignmentCandidate(-1.1, false, -1.9);
+        var atTheWiderWall = new AlignmentCandidate(-1.98, false, -1.9);
+
+        AlignmentCandidate? completed = AlignmentSelection.SelectWithEdgeRetry(
+            half => half > 1.0 ? ([far, continuation], [far, continuation]) : ([wallPick], [wallPick]),
+            centerMs: 0, halfWindowMs: 1.0);
+        AlignmentCandidate? reselected = AlignmentSelection.SelectWithEdgeRetry(
+            half => half > 1.0 ? ([far, atTheWiderWall], [far, atTheWiderWall]) : ([wallPick], [wallPick]),
+            centerMs: 0, halfWindowMs: 1.0);
+
+        Assert.Equal(continuation, completed);
+        Assert.Equal(far, reselected);
+    }
+
+    [Fact]
+    public void SelectWithEdgeRetry_CompletesALobeTheCandidateGapCutFromTheWidenedList()
+    {
+        // The completed lobe trails the widened best by more than the candidate gap, so it is an optimum but not a candidate.
+        var wallPick = new AlignmentCandidate(-0.95, false, -3.5);
+        var far = new AlignmentCandidate(1.2, false, -1.6);
+        var continuation = new AlignmentCandidate(-1.1, false, -3.4);
+
+        AlignmentCandidate? completed = AlignmentSelection.SelectWithEdgeRetry(
+            half => half > 1.0 ? ([far], [far, continuation]) : ([wallPick], [wallPick]),
+            centerMs: 0, halfWindowMs: 1.0);
+
+        Assert.Equal(continuation, completed);
+    }
 }

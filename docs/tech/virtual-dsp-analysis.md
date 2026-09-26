@@ -271,7 +271,11 @@ Search mechanics (`SearchBestDelay`, `SearchAlignmentCandidatesByLoss`):
 - Coarse grid (step ≤ min(0.02 ms, a quarter of 250/fmax)) then two refinement passes around
   each local optimum; the step stays well below the shortest period so refinement cannot jump
   lobes. The coarse grid is evaluated transposed (bins outer, delays inner) with an incremental
-  phasor instead of `Complex.Exp` per (bin, delay).
+  phasor instead of `Complex.Exp` per (bin, delay). Its points sit on whole multiples of the step,
+  not on the window's start, so two windows that contain one optimum refine it to the same point: a
+  stereo run rebases every delay on one channel, and a start-dependent grid (0.0002 ms apart after
+  refinement) was enough to move rebased delays across a 0.01 ms rounding step. A flat top seeds
+  once.
 - Each polarity seeds and refines its own optima. On a max-of-both envelope one polarity edging
   the other across a basin would hide the loser, leaving `AlignmentSelection`'s normal-polarity
   preference nothing to prefer. A forced polarity (inherited from the stereo counterpart) seeds
@@ -281,7 +285,26 @@ Search mechanics (`SearchBestDelay`, `SearchAlignmentCandidatesByLoss`):
   dominate the unsmoothed average.
 - Arrival prior: a quadratic penalty of `PriorPenaltyDbAtSigma` = 0.25 dB at one sigma around an
   arrival-based, polarity-blind estimate. Gentle because genuine candidates differ by tenths of
-  a dB; it only breaks near-ties and deters far lobes.
+  a dB; it only breaks near-ties and deters far lobes. It ranks and never places: seeds and
+  refinement read the loss alone, and the penalty is taken off each optimum's score afterwards, so
+  a lobe is reported, and its `LossDb`/`DipDb` read, where the acoustics put it. Found on loss − prior,
+  every lobe slid toward the prior and was read there: on a clean LR24 pair by 0.31 ms at 80 Hz with
+  the prior 3 ms off (0.63 ms at 6 ms off) and by 0.10 ms at 350 Hz, so the engine's prior-free
+  score still carried the window. A lobe the window cuts off now lands on the wall, where the prior
+  used to pull it inside, so the post-check reads (`MeasureAlignedJunctionSpectrum`,
+  `MeasureJointlyAlignedJunctionSpectra`, the junction tuner's after-delay report and `ProbeAlignment`)
+  retry a wall pick at double width, completing that lobe (`AlignmentSelection.SelectWithEdgeRetry`,
+  `LobeContinuation`; the engine's own edge retry does the same). Measured on the archive (13 sessions) against the placing prior: Auto delay's proposals,
+  judged by the panel, improve on average (mono, 36 junctions: +0.018 dB loss, +0.062 dB dip, 14
+  better / 15 worse by loss + ½ dip; stereo, 72: +0.014 / +0.16, 34 / 27). The junction tuner
+  (`AcousticTargetBattery`, 46 reads per arm) gains on every arm on its own objective, the sums read
+  re-aligned right after the tune (`RESONALYZE_ACOUSTIC_TARGET_NO_EQ=1`): plain +4.0 dB of loss + ½ dip
+  summed over the reads, the stated LR24 +0.6, the 1 dB slack +5.4, LR48 +1.7; with the old search
+  kept inside the tune and only the read changed, the decisions alone account for plain +2.7, LR24
+  +0.4, slack +6.2, LR48 +0.7. After the battery's EQ refit the same choices read plain −0.7, LR24 −5.1,
+  slack +6.9, LR48 −1.0, carried by a few keep/apply flips at the margin (one at 0.500 against 0.511
+  dB) and by the stated slope's 0.2 dB corridor admitting a different candidate; the tune cannot see
+  the EQ it is followed by, and the 1 dB corridor gains as much as the 0.2 dB one loses.
 - `DipExcessPenaltyWeight` = 0.5: penalty = weight × (DipDb − LossDb). The average cannot tell a
   smooth −0.7 dB loss from −0.7 dB hiding a −5 dB notch; penalising the excess over the average
   (not the dip) avoids punishing a uniformly lossy candidate twice. Same weight as the dip

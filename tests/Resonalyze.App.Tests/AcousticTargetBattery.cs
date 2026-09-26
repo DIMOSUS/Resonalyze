@@ -13,6 +13,9 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
 {
     public const string OutputVariable = "RESONALYZE_ACOUSTIC_TARGET_OUT";
 
+    /// <summary>"1" skips the EQ stage, so the sums judge the tune's own objective: what the tune read, re-aligned.</summary>
+    public const string NoEqVariable = "RESONALYZE_ACOUSTIC_TARGET_NO_EQ";
+
     /// <summary>lr24-tune states the slope to the tune only, which tells the two halves of the mode apart.</summary>
     private static readonly Arm[] Arms =
     [
@@ -168,7 +171,8 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
         int fitted = 0;
         int refusedFits = 0;
         var cost = new Dictionary<VirtualCrossoverChannelSettings, EqCost>();
-        foreach (VirtualCrossoverChannel channel in usable)
+        bool skipEq = Environment.GetEnvironmentVariable(NoEqVariable) == "1";
+        foreach (VirtualCrossoverChannel channel in skipEq ? [] : usable)
         {
             foreach (bool rightSide in channel.Pair.Mono ? [false] : new[] { false, true })
             {

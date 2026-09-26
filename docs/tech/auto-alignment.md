@@ -132,7 +132,9 @@ band-pass kernel's envelope was rebuilt 351 times for 16 windows; 83% of a junct
 were repeats. `AlignmentRunMemo` keeps both for one run: `Compute`, `ComputeStereo`, the tuner's
 entry points and `Propose`/`ProposeRanked` open it (an inner opening does nothing), and parallel work
 sees it. An arrival read keys on the response array itself, because a run renders each response once
-and never writes it after; outside a run nothing is kept. Results are identical.
+and never writes it after, and is held only as long as that array: a render the run has let go takes
+its reads with it, so the memo does not pin every render of the run. Outside a run nothing is kept.
+Results are identical.
 
 ## Energy onset
 

@@ -6,13 +6,15 @@ namespace Resonalyze.Dsp;
 
 /// <summary>
 /// Reads an alignment run repeats on identical input, kept for that run only. A run's responses are rendered once and
-/// never written after, so an arrival read keys on the array itself. See docs/tech/auto-alignment.md#run-memo.
+/// never written after, so an arrival read keys on the array itself, and lives only as long as it: a render the run
+/// has let go takes its reads with it. See docs/tech/auto-alignment.md#run-memo.
 /// </summary>
 internal sealed class AlignmentRunMemo
 {
     private static readonly AsyncLocal<AlignmentRunMemo?> Current = new();
 
-    private readonly ConcurrentDictionary<ArrivalKey, TimeAlignmentAnalysisResult> arrivals = new();
+    private readonly ConditionalWeakTable<Complex[], ConcurrentDictionary<ArrivalBand, TimeAlignmentAnalysisResult>>
+        arrivals = new();
     private readonly ConcurrentDictionary<KernelKey, double[]> kernelEnvelopes = new();
 
     /// <summary>Opens a run's memo, which the run's parallel work sees too; inside an open one it does nothing.</summary>
@@ -34,10 +36,10 @@ internal sealed class AlignmentRunMemo
         double highFrequencyHz,
         ValidSampleRange validRange,
         Func<TimeAlignmentAnalysisResult> read) =>
-        Current.Value is { } memo
-            ? memo.arrivals.GetOrAdd(
-                new ArrivalKey(impulseResponse, sampleRate, lowFrequencyHz, highFrequencyHz, validRange),
-                _ => read())
+        Current.Value is { } memo && impulseResponse != null
+            ? memo.arrivals
+                .GetValue(impulseResponse, _ => new ConcurrentDictionary<ArrivalBand, TimeAlignmentAnalysisResult>())
+                .GetOrAdd(new ArrivalBand(sampleRate, lowFrequencyHz, highFrequencyHz, validRange), _ => read())
             : read();
 
     /// <summary>The band-pass kernel's envelope, which depends only on the window's length, rate and band.</summary>
@@ -68,23 +70,7 @@ internal sealed class AlignmentRunMemo
         }
     }
 
-    private readonly record struct ArrivalKey(
-        Complex[] Response,
-        int SampleRate,
-        double LowHz,
-        double HighHz,
-        ValidSampleRange Range)
-    {
-        public bool Equals(ArrivalKey other) =>
-            ReferenceEquals(Response, other.Response) &&
-            SampleRate == other.SampleRate &&
-            LowHz.Equals(other.LowHz) &&
-            HighHz.Equals(other.HighHz) &&
-            Range.Equals(other.Range);
-
-        public override int GetHashCode() =>
-            HashCode.Combine(RuntimeHelpers.GetHashCode(Response), SampleRate, LowHz, HighHz, Range);
-    }
+    private readonly record struct ArrivalBand(int SampleRate, double LowHz, double HighHz, ValidSampleRange Range);
 
     private readonly record struct KernelKey(
         int Length, int SampleRate, double CenterHz, double PassOctaves, double FadeOctaves);

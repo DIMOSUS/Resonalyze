@@ -1327,8 +1327,7 @@ for the rows it is not sure about, and it says which those are.
 4. **The notes** — how each decision was reached: which neighbour a channel was timed
    against, by what margin, whether the scene offset or a wide seed had a say. **Every
    `LOW` in the confidence column has its reasoning here, under that channel's name.**
-
-Below the notes a key says what `->` and `(kept)` mean; scroll the report down to it.
+5. **The key** — what `->` and `(kept)` mean; scroll the report down to read it whole.
 
 Low confidence does not mean wrong; it means the data did not strongly favour one
 solution, so those rows are worth reading the notes for and checking by ear. Press

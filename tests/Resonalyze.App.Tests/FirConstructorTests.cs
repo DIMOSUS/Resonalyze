@@ -418,6 +418,7 @@ public sealed class FirConstructorTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Standalone_ThePanelDesignsFromItsControls_AndKeepsTheLengthOdd()
     {
         StaTest.Run(() =>
@@ -470,6 +471,7 @@ public sealed class FirConstructorTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void AHandoff_RebuildsADesignAtTheProcessorsRate_AndReturnsIt()
     {
         StaTest.Run(() =>
@@ -501,6 +503,7 @@ public sealed class FirConstructorTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void AHandoff_KeepsTheStandaloneWorkAside_AndPutsItBackWhenTheSessionEnds()
     {
         StaTest.Run(() =>

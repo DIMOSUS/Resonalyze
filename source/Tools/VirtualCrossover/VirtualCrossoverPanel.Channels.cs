@@ -188,7 +188,7 @@ public partial class VirtualCrossoverPanel
             ActiveRightProvider = () => session.ActiveSideRight
         };
         channelControls[channel] = control;
-        control.SettingsChanged += (_, _) => OnChannelSettingsChanged(channel);
+        control.SettingsChanged += (_, field) => OnChannelSettingsChanged(channel, field);
         control.SourceClicked += (_, _) => ShowSourceMenu(channel);
         control.SpatialAverageClicked += (_, _) => ShowSpatialAverageMenu(channel);
         control.PeqMenuClicked += (_, _) => ShowPeqMenu(channel);
@@ -428,7 +428,7 @@ public partial class VirtualCrossoverPanel
         ScheduleSave();
     }
 
-    private void OnChannelSettingsChanged(VirtualCrossoverChannel channel)
+    private void OnChannelSettingsChanged(VirtualCrossoverChannel channel, VirtualCrossoverChannelField field)
     {
         if (suppressProjectEvents)
         {
@@ -456,7 +456,7 @@ public partial class VirtualCrossoverPanel
         }
         else
         {
-            ReadControlIntoSettings(channel);
+            VirtualCrossoverChannelEdit.Write(field, ControlFor(channel).Shown, channel.Pair, channel.Settings);
         }
 
         if (wasMono != monoNow)
@@ -576,24 +576,5 @@ public partial class VirtualCrossoverPanel
         }
 
         channelListPanel.ResumeLayout(performLayout: true);
-    }
-
-    private void ReadControlIntoSettings(VirtualCrossoverChannel channel)
-    {
-        VirtualCrossoverChannelSettings settings = channel.Settings;
-        VirtualCrossoverChannelControl control = ControlFor(channel);
-        settings.GainDb = (double)control.GainInput.Value;
-        settings.DelayMs = (double)control.DelayInput.Value;
-        settings.InvertPolarity = control.InvertCheckBox.Checked;
-        settings.CrossoverKind = control.SelectedCrossoverKind;
-        settings.HighPassEdge = control.HighPassEdge;
-        settings.LowPassEdge = control.LowPassEdge;
-        settings.PhaseRotationDegrees = (double)control.PhaseInput.Value;
-        channel.Pair.ShowRawCurve = control.ShowRawCheckBox.Checked;
-        channel.Pair.ShowProcessedCurve = control.ShowProcessedCheckBox.Checked;
-        channel.Pair.Enabled = !control.Muted;
-        channel.Pair.Bypass = control.BypassCheckBox.Checked;
-        channel.Pair.Zone = control.SelectedZone;
-        channel.Pair.Mono = control.MonoCheckBox.Checked;
     }
 }

@@ -12,6 +12,7 @@ namespace Resonalyze.App.Tests;
 /// <summary>The FIR Constructor through its controls, file dialogs and host callbacks beside a session driven the same way:
 /// after every step the panel shows what the session's readers return, so a read-out, a field or a plot bound to
 /// anything else fails here.</summary>
+[Trait("Category", "Slow")]
 public sealed class FirConstructorPanelWiringTests
 {
     [Fact]

@@ -144,6 +144,7 @@ public sealed class EqAutoTunerShelfTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Tune_CarTarget_ShelvesFitCloserThanBellsAlone()
     {
         // A pure constant-slope tilt is a shape no shelf reproduces, so it is deliberately not asked about.
@@ -167,6 +168,7 @@ public sealed class EqAutoTunerShelfTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Tune_BothEndsSloped_TakesAShelfAtEach()
     {
         // Each direction goes to a finished fit and is ranked there; the second shelf is searched against the first's residual.
@@ -221,6 +223,7 @@ public sealed class EqAutoTunerShelfTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Tune_BumpsOnly_SpendsNoSlotOnAShelf()
     {
         // Three resonances, no trend: a shelf would move everything beside a bump.
@@ -290,6 +293,7 @@ public sealed class EqAutoTunerShelfTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Tune_ShelvesObeyTheBandBudgetAndTheGainRange()
     {
         IReadOnlyList<SignalPoint> source = Grid(f =>

@@ -88,6 +88,7 @@ public sealed class CrossoverDistortionTests
     }
 
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(false)]
     [InlineData(true)]
     public void ASplitCorner_StaysInsideTheDistortionCleanBand(bool independentSlopes)
@@ -227,6 +228,7 @@ public sealed class CrossoverDistortionTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Propose_DirtyEverywhereTweeter_IsHeldHigherThanDirtyLow()
     {
         CrossoverEdge without = MidTweeterHighPass(tweeterDistortion: null);
@@ -271,12 +273,14 @@ public sealed class CrossoverDistortionTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Propose_TweeterCrossoverProtectsItsResonance()
     {
         AssertProtectsResonance(MidTweeterHighPass(tweeterDistortion: null));
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Propose_CleanDistortionDoesNotLowerTheTweeterCrossover()
     {
         // A knee below the resonance floor is protective-only: identical result with or without it.
@@ -289,6 +293,7 @@ public sealed class CrossoverDistortionTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Propose_DistortionRaisesTheFloorForATweeterDirtyLow()
     {
         CrossoverEdge without = MidTweeterHighPass(tweeterDistortion: null);

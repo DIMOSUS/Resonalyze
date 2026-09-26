@@ -182,20 +182,22 @@ internal static class AgentPackageBuilder
             // The catalog knows no per-device PEQ count; saying so beats guessing.
             PeqBandsPerChannel: null);
 
-    // Corner range and preamp cap restate VirtualCrossoverChannelSettings.Validate, pinned by AgentPackageBuilderTests.
+    // The block fields' own ranges and steps; the preamp cap restates VirtualCrossoverChannelSettings.Validate, pinned by AgentPackageBuilderTests.
     private static AgentPackageLimits BuildLimits() =>
         new(
-            [AgentProposalValidator.MinimumGainDb, AgentProposalValidator.MaximumGainDb],
-            AgentProposalValidator.GainStepDb,
-            [AgentProposalValidator.MinimumDelayMs, AgentProposalValidator.MaximumDelayMs],
-            AgentProposalValidator.DelayStepMs,
+            Span(VirtualCrossoverLimits.ChannelGain),
+            (double)VirtualCrossoverLimits.ChannelGain.Step,
+            Span(VirtualCrossoverLimits.ChannelDelay),
+            (double)VirtualCrossoverLimits.ChannelDelay.Step,
             EqualizationCurve.MaxBandCount,
             60,
-            [10, 24_000],
+            Span(VirtualCrossoverLimits.CrossoverCorner),
+            (double)VirtualCrossoverLimits.CrossoverCorner.Step,
             Enum.GetValues<CrossoverFilterFamily>().ToDictionary(
                 family => family.ToString(),
                 family => CrossoverFilter.SupportedSlopes(family).ToArray()),
-            [0, CrossoverFilter.MaximumChebyshevRippleDb],
+            Span(VirtualCrossoverLimits.ChebyshevRipple),
+            (double)VirtualCrossoverLimits.ChebyshevRipple.Step,
             AgentProtocol.Operations,
             AgentProtocol.Probes,
             AgentProtocol.MaxProbeVariantsPerImport,
@@ -203,6 +205,8 @@ internal static class AgentPackageBuilder
             AgentSampling.MaxPointsPerOctave,
             AgentSampling.MaxRows,
             AgentProtocol.MaxSeriesProbesPerImport);
+
+    private static double[] Span(NumericFieldRange range) => [(double)range.Minimum, (double)range.Maximum];
 
     private static AgentPackageAnalysis BuildAnalysis(
         AgentAnalysisInputs analysis,

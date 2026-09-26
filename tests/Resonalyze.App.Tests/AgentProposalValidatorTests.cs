@@ -143,18 +143,18 @@ public sealed class AgentProposalValidatorTests
     }
 
     [Fact]
-    public void GainAndDelayLimits_MatchTheChannelBlocksFields()
+    public void TheChannelBlocksFields_AreTheLimitsTheReviewReads()
     {
-        // The validator restates the block's numeric fields (no control in sight); this keeps them in sync.
         StaTest.Run(() =>
         {
             using var control = new VirtualCrossoverChannelControl();
-            Assert.Equal((decimal)AgentProposalValidator.MinimumGainDb, control.GainInput.Minimum);
-            Assert.Equal((decimal)AgentProposalValidator.MaximumGainDb, control.GainInput.Maximum);
-            Assert.Equal(1, control.GainInput.DecimalPlaces);
-            Assert.Equal((decimal)AgentProposalValidator.MinimumDelayMs, control.DelayInput.Minimum);
-            Assert.Equal((decimal)AgentProposalValidator.MaximumDelayMs, control.DelayInput.Maximum);
-            Assert.Equal(2, control.DelayInput.DecimalPlaces);
+            Assert.Equal(VirtualCrossoverLimits.ChannelGain, control.GainInput.FieldRange());
+            Assert.Equal(VirtualCrossoverLimits.ChannelDelay, control.DelayInput.FieldRange());
+            Assert.Equal(VirtualCrossoverLimits.CrossoverCorner, control.HighPassFrequencyInput.FieldRange());
+            Assert.Equal(VirtualCrossoverLimits.CrossoverCorner, control.LowPassFrequencyInput.FieldRange());
+            Assert.Equal(VirtualCrossoverLimits.ChebyshevRipple, control.HighPassRippleInput.FieldRange());
+            Assert.Equal(VirtualCrossoverLimits.ChebyshevRipple, control.LowPassRippleInput.FieldRange());
+            Assert.Equal(VirtualCrossoverLimits.PhaseRotation, control.PhaseInput.FieldRange());
         });
     }
 
@@ -163,7 +163,8 @@ public sealed class AgentProposalValidatorTests
     [InlineData("BandPass", "linkwitzriley", 24, 2600, "Unknown crossover family")]
     [InlineData("BandPass", "1", 24, 2600, "Unknown crossover family")]
     [InlineData("BandPass", "LinkwitzRiley", 18, 2600, "offers slopes")]
-    [InlineData("BandPass", "LinkwitzRiley", 24, 9, "corner frequency is invalid")]
+    [InlineData("BandPass", "LinkwitzRiley", 24, 9, "A crossover corner must be between 10 and 24000 Hz.")]
+    [InlineData("BandPass", "LinkwitzRiley", 24, 2600.5, "A crossover corner must be a multiple of 1 Hz.")]
     [InlineData("BandPass", "LinkwitzRiley", 24, 23_000, "Nyquist")]
     public void Review_HoldsACrossoverToTheFamiliesSlopesCornersAndNyquist(
         string kind, string family, int slope, double lowPassHz, string words)
@@ -176,6 +177,55 @@ public sealed class AgentProposalValidatorTests
 
         Assert.Equal(AgentVerdictStatus.Rejected, verdict.Status);
         Assert.Contains(words, verdict.Message);
+    }
+
+    [Theory]
+    [InlineData(250.5, null)]
+    [InlineData(251.5, "A crossover corner must be a multiple of 1 Hz.")]
+    [InlineData(252, null)]
+    public void Review_KeepsAFinerCornerTheReplyRestatesAsStored_ButHoldsAMovedOneToTheField(
+        double highPassHz, string? refusal)
+    {
+        AgentProposal proposal = Proposal(new SetCrossoverOperation("op-1", "B:left", "",
+            Crossover("BandPass", Edge("LinkwitzRiley", 250.5, 24), Edge("LinkwitzRiley", 2800, 24)),
+            Crossover("BandPass", Edge("LinkwitzRiley", highPassHz, 24), Edge("LinkwitzRiley", 2600, 24))));
+
+        AgentOperationVerdict verdict = AgentProposalValidator.Review(proposal, Session(bHighPassHz: 250.5)).Verdicts[0];
+
+        Assert.Equal(refusal, verdict.Applicable ? null : verdict.Message);
+    }
+
+    [Theory]
+    [InlineData("LinkwitzRiley", 1.0, null)]
+    [InlineData("LinkwitzRiley", 0.25, "The Chebyshev ripple must be a multiple of 0.1 dB.")]
+    [InlineData("Chebyshev", 0.25, null)]
+    public void Review_KeepsAChebyshevRippleTheReplyLeavesAsItRuns_ButHoldsOneItBringsIntoUse(
+        string storedFamily, double storedRippleDb, string? refusal)
+    {
+        AgentProposal proposal = Proposal(new SetCrossoverOperation("op-1", "B:left", "",
+            Crossover("BandPass", Edge("LinkwitzRiley", 250, 24), Edge(storedFamily, 2800, 24)),
+            Crossover("BandPass", Edge("LinkwitzRiley", 250, 24), Edge("Chebyshev", 2600, 24))));
+        var stored = new CrossoverEdge(Enum.Parse<CrossoverFilterFamily>(storedFamily), 2800, 24, storedRippleDb);
+
+        AgentOperationVerdict verdict = AgentProposalValidator.Review(proposal, Session(bLowPass: stored)).Verdicts[0];
+
+        Assert.Equal(refusal, verdict.Applicable ? null : verdict.Message);
+    }
+
+    [Theory]
+    [InlineData(1.0, null)]
+    [InlineData(0.5, null)]
+    [InlineData(0.25, "The Chebyshev ripple must be a multiple of 0.1 dB.")]
+    [InlineData(0.05, "The Chebyshev ripple must be between 0.1 and 3.0 dB.")]
+    public void Review_HoldsAMovedChebyshevRippleToItsField(double rippleDb, string? refusal)
+    {
+        AgentProposal proposal = Proposal(new SetCrossoverOperation("op-1", "B:left", "",
+            Crossover("BandPass", Edge("LinkwitzRiley", 250, 24), Edge("LinkwitzRiley", 2800, 24)),
+            Crossover("BandPass", Edge("LinkwitzRiley", 250, 24), Edge("Chebyshev", 2800, 24, rippleDb))));
+
+        AgentOperationVerdict verdict = AgentProposalValidator.Review(proposal, Session()).Verdicts[0];
+
+        Assert.Equal(refusal, verdict.Applicable ? null : verdict.Message);
     }
 
     [Fact]
@@ -216,7 +266,7 @@ public sealed class AgentProposalValidatorTests
 
         AgentProposalReview review = AgentProposalValidator.Review(proposal, Session());
 
-        Assert.Contains("ripple is invalid", review.Verdicts[0].Message);
+        Assert.Equal("The Chebyshev ripple must be between 0.1 and 3.0 dB.", review.Verdicts[0].Message);
         // Butterworth ignores ripple, so 4.0 is stored, not refused.
         Assert.True(review.Verdicts[1].Applicable, review.Verdicts[1].Message);
     }
@@ -948,15 +998,17 @@ public sealed class AgentProposalValidatorTests
         bool adjustGains = false,
         IReadOnlyList<string>? captures = null,
         string? lastFingerprint = null,
-        string? fingerprint = null)
+        string? fingerprint = null,
+        double bHighPassHz = 250,
+        CrossoverEdge? bLowPass = null)
     {
         var aLeft = new VirtualCrossoverChannelSettings { GainDb = 0, DelayMs = 0 };
         var aRight = new VirtualCrossoverChannelSettings { GainDb = -2.0, DelayMs = 1.42 };
         var bLeft = new VirtualCrossoverChannelSettings
         {
             CrossoverKind = CrossoverKind.BandPass,
-            HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 250, 24),
-            LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2800, 24),
+            HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, bHighPassHz, 24),
+            LowPassEdge = bLowPass ?? new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2800, 24),
             PeqBands = [new PeqBand(820, 2.1, -2.4), new PeqBand(3000, 1.0, 1.5)]
         };
         var bRight = new VirtualCrossoverChannelSettings();

@@ -18,7 +18,7 @@ blocks (`VirtualCrossoverChannel`, one per L/R pair, with `VirtualCrossoverChann
 calibration policy, the Gate dialog's preview, the magnitude gate snapshot, the project generation and the last
 redraw's processed channels and hybrid offset. The project is the one owner of the target level: the Level field
 shows it and hands back the user's edit. The ranges a restored file or an AI reply can state too (the target level,
-the Auto delay fields) are `VirtualCrossoverLimits`, which the fields and the AI review both read. Whatever reads the tune takes the
+the channel blocks' fields, the Auto delay fields) are `VirtualCrossoverLimits`, which the fields and the AI review both read. Whatever reads the tune takes the
 session. `VirtualCrossoverPanel` is its only writer: it binds the controls to it and presents what the readers
 return, and only its binding methods look a block's `VirtualCrossoverChannelControl` up. Its partials are named
 for what they bind (`.Project`, `.Calibration`, `.Channels`, `.Sources`, `.Peq`, `.Fir`, `.Views`, `.DspPlot`,
@@ -150,9 +150,11 @@ changes the same way, down to the bytes a render writes.
 
 ### Channel block code map
 
-A block (`VirtualCrossoverChannelControl`) shows one side of a channel: the panel writes the session from its fields and
-pushes the session's values back. What the block shows beside its fields comes from readers that take the values it
-holds, so a field the user is typing into and a value the panel pushed read the same way.
+A block (`VirtualCrossoverChannelControl`) shows one side of a channel: the panel pushes the session's values into its
+fields, and an edit comes back naming the one field it changed, which `VirtualCrossoverChannelEdit` writes alone, since
+a field may show a stored value rounded ([channel field ranges](virtual-dsp-session-file.md#channel-field-ranges)).
+What the block shows beside its fields comes from readers that take the values it holds, so a field the user is typing
+into and a value the panel pushed read the same way.
 
 | Reader | For |
 | --- | --- |
@@ -167,6 +169,8 @@ holds, so a field the user is typing into and a value the panel pushed read the 
 The block binds them in partials (`.Readouts`, `.Crossover`, `.Layout`, `.ToolTips`).
 `VirtualCrossoverChannelControlBoundaryTests` keeps statics and nested types off it, and
 `VirtualCrossoverChannelControlWiringTests` drives its fields and setters against the readers.
+`VirtualCrossoverChannelEditWiringTests` loads a session with values finer than its fields into a live panel and edits
+through the blocks.
 
 ## Redraw scheduling
 

@@ -351,14 +351,15 @@ public sealed class VirtualCrossoverChannelSettings
     public double PhaseReferenceHz(VirtualCrossoverZone zone) =>
         PhaseRotation(zone).ReferenceHz;
 
+    /// <remarks>Held to the block fields' ranges, not their decimals: a finer value is kept and shown rounded.
+    /// See docs/tech/virtual-dsp-session-file.md#channel-field-ranges.</remarks>
     public void Validate()
     {
-        if (!double.IsFinite(GainDb) ||
-            Math.Abs(GainDb) > DspChannelChain.MaximumGainDb)
+        if (!VirtualCrossoverLimits.ChannelGain.Includes(GainDb))
         {
             throw new InvalidDataException("The channel gain is invalid.");
         }
-        if (!double.IsFinite(DelayMs) || DelayMs is < 0 or > 1_000)
+        if (!VirtualCrossoverLimits.ChannelDelay.Includes(DelayMs))
         {
             throw new InvalidDataException("The channel delay is invalid.");
         }
@@ -372,8 +373,7 @@ public sealed class VirtualCrossoverChannelSettings
         ValidateAcoustic(AcousticLowPass);
         ValidateAcoustic(AcousticHighPass);
         // Range only, not the hardware's 5.625° grid: editors snap, and a hand-written angle still builds.
-        if (!double.IsFinite(PhaseRotationDegrees) ||
-            PhaseRotationDegrees is < 0 or > PhaseRotationControl.MaximumDegrees)
+        if (!VirtualCrossoverLimits.PhaseRotation.Includes(PhaseRotationDegrees))
         {
             throw new InvalidDataException("The channel phase rotation is invalid.");
         }
@@ -452,7 +452,7 @@ public sealed class VirtualCrossoverChannelSettings
         {
             throw new InvalidDataException("The crossover family is invalid.");
         }
-        if (!double.IsFinite(edge.FrequencyHz) || edge.FrequencyHz is < 10 or > 24_000)
+        if (!VirtualCrossoverLimits.CrossoverCorner.Includes(edge.FrequencyHz))
         {
             throw new InvalidDataException("The crossover corner frequency is invalid.");
         }
@@ -460,14 +460,17 @@ public sealed class VirtualCrossoverChannelSettings
         {
             throw new InvalidDataException("The crossover slope is invalid.");
         }
-        // Ripple matters only for Chebyshev; outside (0, max] its pole math is NaN.
-        if (edge.Family == CrossoverFilterFamily.Chebyshev &&
-            (!double.IsFinite(edge.RippleDb) || edge.RippleDb <= 0 ||
-             edge.RippleDb > CrossoverFilter.MaximumChebyshevRippleDb))
+        if (!HasBuildableRipple(edge))
         {
             throw new InvalidDataException("The crossover passband ripple is invalid.");
         }
     }
+
+    /// <summary>Ripple matters only for Chebyshev, and outside (0, max] its pole math is NaN.</summary>
+    internal static bool HasBuildableRipple(CrossoverEdge edge) =>
+        edge.Family != CrossoverFilterFamily.Chebyshev ||
+        (double.IsFinite(edge.RippleDb) && edge.RippleDb > 0 &&
+         edge.RippleDb <= CrossoverFilter.MaximumChebyshevRippleDb);
 }
 
 /// <summary>One speaker as an L/R pair; a mono pair uses only <see cref="Left"/> for both sides.</summary>
@@ -1271,6 +1274,12 @@ public sealed class VirtualCrossoverProjectFile
         else if (file.StereoRightHandDrive)
         {
             file.StereoSceneOffsetMs = -file.StereoSceneOffsetMs;
+        }
+
+        // A centre has no side, as its locked Mono box shows; only a hand-edited file stores one stereo.
+        foreach (VirtualCrossoverChannelPairSettings pair in file.Pairs)
+        {
+            pair.Mono |= VirtualCrossoverZones.RequiresMono(pair.Zone);
         }
     }
 

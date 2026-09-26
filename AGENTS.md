@@ -13,8 +13,14 @@ dotnet restore source/Resonalyze.sln
 dotnet build source/Resonalyze.sln --configuration Release
 dotnet run --project source/Resonalyze.csproj
 
-# All tests
-dotnet test source/Resonalyze.sln -c Release
+# Fast tier: what to run while working
+dotnet test source/Resonalyze.sln -c Release --filter "Category!=Hardware&Category!=Slow"
+
+# Everything CI runs: once before a commit or PR, not after every edit
+dotnet test source/Resonalyze.sln -c Release --filter "Category!=Hardware"
+
+# Unmarked test methods that reached 2 s in the fast tier (exits 1 if any)
+powershell -File tools/slow-tests.ps1
 
 # One test project
 dotnet test tests/Resonalyze.Dsp.Tests/Resonalyze.Dsp.Tests.csproj
@@ -216,6 +222,19 @@ callers to pre-convert to `double[]`.
 ## Testing Conventions
 
 Tests use xUnit. DSP tests are deterministic and synthetic: `tests/Resonalyze.Dsp.Tests/SyntheticMeasurement.cs` implements `IImpulseMeasurement` so analysis code is exercised against generated impulses/filters/delays rather than recordings. App tests focus on file formats and non-UI logic (overlay files, impulse-response files, plot model construction, PDF sheets) plus the measurement layer against a fake `IAudioSessionFactory` (`tests/Resonalyze.App.Tests/Fakes/`) — sweep/averaging/retry/cancellation/device-failure/live paths with no NAudio or hardware. `tests/Resonalyze.Audio.Tests/` exercises the audio internals directly (via `InternalsVisibleTo`): PCM decoding, accumulation, session reuse, WASAPI configuration. Hardware smoke tests are marked `[Trait("Category","Hardware")]` and excluded with `--filter "Category!=Hardware"`, which every CI step now passes. They also carry `[HardwareFact]`/`[HardwareTheory]` (`tests/HardwareFact.cs`, linked into both suites), which skips them with a reason when the endpoint environment variables are unset. Both layers matter: the filter keeps them off CI, and the attribute keeps a local unfiltered run from reporting them as passed — they used to open with an early `return`, which xUnit records as a pass, so nine tests reported green having executed no assert.
+
+### Two tiers
+
+A test method whose cases take 2 s or more in all in a fast-tier run (about a second alone: contention doubles it) is `[Trait("Category", "Slow")]`, on the method, or on the class when most of its methods are or when its tests share one expensive fixture (whichever runs first pays for it). While working, run the fast tier and the classes of the area you touch; run the slow tier with them once, before a commit or PR. CI runs both. After adding tests, run `tools/slow-tests.ps1`, which lists the unmarked methods over that line. Mark a test slow only after it is as cheap as it can be made: a slow test is paid for on every CI run.
+
+### What a test asserts
+
+- **Outcomes, not wording.** Do not assert log lines, status sentences, tooltips, labels or layout. Where a message is the feature, check the fact it must carry (a number, a name), not the sentence.
+- **A pinned number has a source of truth** independent of the code: an analytical answer, a brute-force reference, a published table, the delay or filter a synthetic fixture was built with. What the code printed today is not one, and a tolerance follows from the truth, not from today's output.
+- **Do not restate the implementation.** A test that recomputes the code's formula, or walks a private threshold row by row, fails on every legitimate change and catches nothing.
+- **See it fail.** Break the code the test is about and watch it go red before trusting it; a fixture chosen away from the defect keeps it green.
+- **Small inputs.** Use the shortest signal and the fewest grid points that still decide the property, and assert only the points that land. An optimization's equivalence check (shared against own renders, cache against rebuild) runs on the smallest input that exercises it; one that needs a large input is run while making the change and not committed.
+- **One table, not copies.** Cases differing by data are one theory; a file format is covered by a full round trip plus each migration, not one test per field.
 
 The build treats warnings as errors (`Directory.Build.props`), excluding only the NuGet audit warnings `NU1901`–`NU1904`, which can appear against an unchanged dependency when an advisory is published. There are no suppressions anywhere in the tree — no `#pragma warning disable`, no `NoWarn` — and that is meant to stay true.
 

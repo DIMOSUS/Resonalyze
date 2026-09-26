@@ -109,6 +109,7 @@ public sealed class FrequencyDependentGroupDelayTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void DirectSoundWithALateReflection_FdwReadsTheDirectArrivalWhereFixedRipples()
     {
         // Window 1 + 8/f ms with left = 1 ms: the 6 ms reflection is outside it from 1.6 kHz, so from 2 kHz the curve is the direct arrival.
@@ -216,6 +217,7 @@ public sealed class FrequencyDependentGroupDelayTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void SumGatedSpectraPairs_SharedWindow_MatchesTheGateOverTheSummedImpulse()
     {
         // Linearity through one window, which the Virtual DSP Sum rests on.
@@ -287,6 +289,7 @@ public sealed class FrequencyDependentGroupDelayTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void MinimumPhaseSystem_HasNearZeroExcessUnderFdw()
     {
         // 0.9ⁿ and every truncation of it are minimum-phase, so the excess reads ≈ 0.
@@ -309,6 +312,7 @@ public sealed class FrequencyDependentGroupDelayTests
     }
 
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(2.0, 6, 0.5, 4.0, 1.5)]
     [InlineData(5.0, 6, 0.5, 4.0, 1.5)]
     [InlineData(10.0, 6, 0.5, 4.0, 1.5)]
@@ -574,6 +578,7 @@ public sealed class FrequencyDependentGroupDelayTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void MeasuredBand_BlanksTheCurveOutsideIt()
     {
         SyntheticMeasurement measurement = DelayedImpulse(ArrivalSample);

@@ -60,6 +60,7 @@ public sealed class FrequencyDependentMagnitudeTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Fdw_InvalidCyclesFallsBackToSix()
     {
         IReadOnlyList<SignalPoint> invalid = Spectrum(

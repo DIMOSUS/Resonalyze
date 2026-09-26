@@ -63,6 +63,7 @@ public sealed class VirtualCrossoverCorrelationViewTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void BuildCorrelationView_CropKeepsAPreRingLongerThanItsPrePeakBudget()
     {
         // The designer's longest kernel at a 48 kHz processor on a 96 kHz record: 171 ms of pre-ring against the crop's 85.

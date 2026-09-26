@@ -54,6 +54,7 @@ public sealed class ArrayMicrophoneTests
         microphone.LevelsDb[BandOf(1_000)];
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task EveryPositionBecomesOneCurve()
     {
         var factory = new FakeAudioSessionFactory(
@@ -116,6 +117,7 @@ public sealed class ArrayMicrophoneTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task TheProtectiveHighPassIsDividedOutOfTheArrayToo()
     {
         // The hardware filter is on every mic but not the loopback; compensated, the level above the corner is unfiltered.
@@ -175,6 +177,7 @@ public sealed class ArrayMicrophoneTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task AnArrayMicrophoneThatIsWrongOnONERunStopsTheMeasurement()
     {
         // Noise on one run of four hides in the average but scales the position by 3/4 (-2.50 dB) regardless of noise level,
@@ -235,6 +238,7 @@ public sealed class ArrayMicrophoneTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task TheMEASUREMENTMicrophoneIsJudgedOnTheRunToo()
     {
         // One noisy run of four leaves the measurement mic 2.5 dB low, the level every other channel is levelled against.

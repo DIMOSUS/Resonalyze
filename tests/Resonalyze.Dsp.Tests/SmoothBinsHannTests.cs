@@ -1,7 +1,10 @@
+using System.Collections.Concurrent;
+
 namespace Resonalyze.Dsp.Tests;
 
 /// <summary>SmoothBinsHann interpolates between log-spaced anchors, refining until the chord matches the exact midpoint; these hold
 /// that error bound against the exact convolution on hostile inputs (a seeded grid alone was 10 dB out at a band edge).</summary>
+[Trait("Category", "Slow")]
 public sealed class SmoothBinsHannTests
 {
     private const int BinCount = 16_384;              // a 32768-point gated FFT's half
@@ -48,6 +51,20 @@ public sealed class SmoothBinsHannTests
         return result;
     }
 
+    private static readonly ConcurrentDictionary<(string Shape, double Octaves),
+        Lazy<(double[] Source, double[] Actual, double[] Exact)>> Smoothings = new();
+
+    private static (double[] Source, double[] Actual, double[] Exact) Smoothed(
+        string shape, double octaves) =>
+        Smoothings.GetOrAdd((shape, octaves), key => new(() =>
+        {
+            double[] source = Build(key.Shape);
+            return (
+                source,
+                DataHelper.SmoothBinsHann(source, key.Octaves, BinWidthHz, 0.0),
+                Exact(source, key.Octaves, BinWidthHz, 0.0));
+        })).Value;
+
     public static TheoryData<string, double> HostileInputs() => new()
     {
         { "smooth broadband", EnvelopeOctaves },
@@ -70,10 +87,7 @@ public sealed class SmoothBinsHannTests
     [MemberData(nameof(HostileInputs))]
     public void Smoothing_StaysWithinItsErrorBound(string shape, double octaves)
     {
-        double[] source = Build(shape);
-
-        double[] actual = DataHelper.SmoothBinsHann(source, octaves, BinWidthHz, 0.0);
-        double[] exact = Exact(source, octaves, BinWidthHz, 0.0);
+        (_, double[] actual, double[] exact) = Smoothed(shape, octaves);
 
         double worst = 0;
         int worstBin = 0;
@@ -103,9 +117,7 @@ public sealed class SmoothBinsHannTests
     public void Smoothing_DoesNotMoveTheReliabilityGate(string shape, double octaves)
     {
         // A flipped run of bins would be a visible band of phase appearing or vanishing.
-        double[] source = Build(shape);
-        double[] actual = DataHelper.SmoothBinsHann(source, octaves, BinWidthHz, 0.0);
-        double[] exact = Exact(source, octaves, BinWidthHz, 0.0);
+        (double[] source, double[] actual, double[] exact) = Smoothed(shape, octaves);
 
         double peak = source.Max();
         double absoluteFloor = peak * Math.Pow(10.0, -60.0 / 20.0);
@@ -176,10 +188,7 @@ public sealed class SmoothBinsHannTests
     public void Smoothing_LeavesBinZeroAloneAndReachesNyquist()
     {
         // Bin 0 is excluded (DC has no phase); the last bin is an anchor and must be exact.
-        double[] source = Build("cabin response");
-
-        double[] actual = DataHelper.SmoothBinsHann(source, EnvelopeOctaves, BinWidthHz, 0.0);
-        double[] exact = Exact(source, EnvelopeOctaves, BinWidthHz, 0.0);
+        (_, double[] actual, double[] exact) = Smoothed("cabin response", EnvelopeOctaves);
 
         Assert.Equal(0.0, actual[0]);
         Assert.Equal(exact[^1], actual[^1], 9);

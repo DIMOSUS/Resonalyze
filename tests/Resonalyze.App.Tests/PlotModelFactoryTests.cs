@@ -365,6 +365,7 @@ public sealed class PlotModelFactoryTests
     }
 
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(TimingReference.SynchronizedLoopback, true)]
     [InlineData(TimingReference.RecordedSweep, false)]
     public void PhaseResponse_TheTimeReadingCompareCurvesNeedOneClock(

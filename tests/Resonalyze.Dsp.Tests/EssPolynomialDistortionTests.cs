@@ -135,6 +135,7 @@ public sealed class EssPolynomialDistortionTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Polynomial_LevelsAreInvariantToARecordingTimeShift()
     {
         // HDn is independent of absolute placement and packet phase.

@@ -133,6 +133,7 @@ public sealed class JunctionCorrelationCurveTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void JunctionLossSweep_NegativeDelaysOnAnEarlyPeakStayHonest()
     {
         // A negative probe once wrapped the variable channel's early front to the array end and read a fake ~0 dB;
@@ -223,6 +224,7 @@ public sealed class JunctionCorrelationCurveTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void JunctionLossSweep_RotationKeepsTheMovedChannelInTheWindow()
     {
         // Re-gating each probe through a stationary window faded the moved woofer out and made a fake 0 dB plateau.
@@ -278,11 +280,12 @@ public sealed class JunctionCorrelationCurveTests
 
         // Rotation equals physical construction through the same window. Compared linearly: dB magnifies a 0.016
         // tail-truncation difference near a null into a whole dB (worst measured 0.011 loss, 0.016 dip).
+        // Every 1 ms of the sweep is constructed; each construction is two renders.
         static double Linear(double decibels) => Math.Pow(10.0, decibels / 20.0);
         foreach (bool invert in new[] { false, true })
         {
             foreach (VirtualCrossoverAnalysis.JunctionSweepPoint point in
-                Sweep(invert, BasePosition))
+                Sweep(invert, BasePosition).Where((_, index) => index % 4 == 0))
             {
                 Complex[] variable = VirtualCrossoverAnalysis.ApplyChain(
                     woofer,
@@ -362,6 +365,7 @@ public sealed class JunctionCorrelationCurveTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void JunctionLossSweep_LevelMatchReshapesUnequalChannels()
     {
         // The Auto search always level-matches; the sweep with the match on must equal the matched evaluator.

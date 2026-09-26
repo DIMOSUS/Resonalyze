@@ -115,6 +115,7 @@ public sealed class SweepHarmonicGeometryTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task AStoredMeasurement_CarriesTheSweptBandForHarmonicAnalysis()
     {
         // Requested 1-20 kHz is 4.32 octaves; the sweep runs ~5.08.
@@ -154,6 +155,7 @@ public sealed class SweepHarmonicGeometryTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task ACapturedMeasurement_TakesItsSweepLengthFromTheGeneratedSweep()
     {
         (MeasurementResult result, int generatedSamples) = await MeasureAsync(20, 20_000, 2.0);

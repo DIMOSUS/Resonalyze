@@ -113,21 +113,24 @@ public partial class VirtualCrossoverChannelControl
         ThemedNumericUpDown frequencyInput,
         ThemedComboBox familyComboBox,
         ThemedComboBox slopeComboBox,
-        ThemedNumericUpDown rippleInput)
+        ThemedNumericUpDown rippleInput,
+        VirtualCrossoverChannelField corner,
+        VirtualCrossoverChannelField filter,
+        VirtualCrossoverChannelField ripple)
     {
         frequencyInput.ValueChanged += (_, _) =>
         {
             UpdatePhaseReadout();
-            RaiseSettingsChanged();
+            RaiseSettingsChanged(corner);
         };
         familyComboBox.SelectedIndexChanged += (_, _) =>
         {
             PopulateSlopes(familyComboBox, slopeComboBox);
             UpdateCrossoverAvailability();
-            RaiseSettingsChanged();
+            RaiseSettingsChanged(filter);
         };
-        slopeComboBox.SelectedIndexChanged += (_, _) => RaiseSettingsChanged();
-        rippleInput.ValueChanged += (_, _) => RaiseSettingsChanged();
+        slopeComboBox.SelectedIndexChanged += (_, _) => RaiseSettingsChanged(filter);
+        rippleInput.ValueChanged += (_, _) => RaiseSettingsChanged(ripple);
     }
 
     // Greyed out, not hidden, so the layout never shifts.

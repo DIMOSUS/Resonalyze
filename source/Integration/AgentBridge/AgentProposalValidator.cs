@@ -42,14 +42,6 @@ internal sealed record AgentProposalReview(
 /// <summary>Admissibility only: a valid proposal can still be a worse tune. Trial edits run on copies through the loader's <see cref="VirtualCrossoverChannelSettings.Validate"/>. See docs/tech/agent-bridge.md#review-rules.</summary>
 internal static class AgentProposalValidator
 {
-    // The channel block's dialable range, narrower than the file's (±60 dB, 1000 ms): the block would clamp a wider value on first touch. Pinned to the controls by AgentProposalValidatorTests.
-    public const double MinimumGainDb = -60;
-    public const double MaximumGainDb = 20;
-    public const double GainStepDb = 0.1;
-    public const double MinimumDelayMs = 0;
-    public const double MaximumDelayMs = 100;
-    public const double DelayStepMs = 0.01;
-
     public const string PointSource = "point";
     public const string SpatialAverageSource = "spatialAverage";
 
@@ -1244,14 +1236,8 @@ internal static class AgentProposalValidator
             return null;
         }
 
-        decimal places = 1m;
-        for (int place = 0; place < range.Decimals; place++)
-        {
-            places /= 10;
-        }
-
         (double minimum, double maximum, double step, int decimals) =
-            ((double)range.Minimum, (double)range.Maximum, (double)places, range.Decimals);
+            ((double)range.Minimum, (double)range.Maximum, (double)range.Step, range.Decimals);
         if (!double.IsFinite(number) || number < minimum || number > maximum)
         {
             return $"{name} must be between {Fixed(minimum, decimals)} and " +
@@ -1261,6 +1247,24 @@ internal static class AgentProposalValidator
         return OnStep(number, step)
             ? null
             : $"{name} must be a multiple of {Fixed(step, decimals)} {unit}.";
+    }
+
+    // A value a stated edge moves must be one the block's field shows unchanged; one restated as stored is kept as it is.
+    // A ripple another family stored unchecked is moved into use by turning the edge Chebyshev.
+    private static string? Showable(AgentCrossoverEdge? stated, CrossoverEdge stored, CrossoverEdge mapped)
+    {
+        if (stated == null)
+        {
+            return null;
+        }
+
+        string? corner = mapped.FrequencyHz == stored.FrequencyHz
+            ? null
+            : Bounded(mapped.FrequencyHz, VirtualCrossoverLimits.CrossoverCorner, "A crossover corner", "Hz");
+        bool rippleRunsAsStored = stored.Family == CrossoverFilterFamily.Chebyshev && mapped.RippleDb == stored.RippleDb;
+        return corner ?? (mapped.Family != CrossoverFilterFamily.Chebyshev || rippleRunsAsStored
+            ? null
+            : Bounded(mapped.RippleDb, VirtualCrossoverLimits.ChebyshevRipple, "The Chebyshev ripple", "dB"));
     }
 
     // The From/To fields' range, capped at the processor's Nyquist.
@@ -1486,26 +1490,16 @@ internal static class AgentProposalValidator
         switch (operation)
         {
             case SetGainOperation gain:
-                if (!double.IsFinite(gain.ProposedDb) ||
-                    gain.ProposedDb < MinimumGainDb || gain.ProposedDb > MaximumGainDb)
+                if (Bounded(gain.ProposedDb, VirtualCrossoverLimits.ChannelGain, "Gain", "dB") is { } gainProblem)
                 {
-                    return $"Gain must be between {Db(MinimumGainDb)} and {Db(MaximumGainDb)}.";
-                }
-                if (!OnStep(gain.ProposedDb, GainStepDb))
-                {
-                    return $"Gain must be a multiple of {GainStepDb.ToString("0.0", CultureInfo.InvariantCulture)} dB.";
+                    return gainProblem;
                 }
                 break;
 
             case SetDelayOperation delay:
-                if (!double.IsFinite(delay.ProposedMs) ||
-                    delay.ProposedMs < MinimumDelayMs || delay.ProposedMs > MaximumDelayMs)
+                if (Bounded(delay.ProposedMs, VirtualCrossoverLimits.ChannelDelay, "Delay", "ms") is { } delayProblem)
                 {
-                    return $"Delay must be between {Ms(MinimumDelayMs)} and {Ms(MaximumDelayMs)}.";
-                }
-                if (!OnStep(delay.ProposedMs, DelayStepMs))
-                {
-                    return $"Delay must be a multiple of {DelayStepMs.ToString("0.00", CultureInfo.InvariantCulture)} ms.";
+                    return delayProblem;
                 }
                 if (delay.ProposedMs > session.MaxDelayMs)
                 {
@@ -1524,6 +1518,11 @@ internal static class AgentProposalValidator
                     (kind is CrossoverKind.LowPass or CrossoverKind.BandPass && lowPass.FrequencyHz >= nyquistHz))
                 {
                     return $"A crossover corner must sit below the processor's Nyquist of {Hz(nyquistHz)}.";
+                }
+                if ((Showable(crossover.Proposed.HighPass, copy.HighPassEdge, highPass) ??
+                     Showable(crossover.Proposed.LowPass, copy.LowPassEdge, lowPass)) is { } unshowable)
+                {
+                    return unshowable;
                 }
                 // Allowed (two crossovers are a legitimate chain) but said, to explain the red FIR button.
                 if (kind != CrossoverKind.Off && copy.HasFirCrossover)

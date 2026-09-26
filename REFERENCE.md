@@ -2395,7 +2395,8 @@ Each channel runs through:
   because those three zones can play the *same* band from different places: a
   rear pair high-passed at 290 Hz overlaps the front midrange and tweeter
   entirely and has no junction with either. **Center** forces **Mono** and locks
-  it — a centre plays a signal derived from L and R, so it has no side; every
+  it — a centre plays a signal derived from L and R, so it has no side, and a
+  session file that stores a centre as stereo opens mono; every
   other zone leaves the checkbox free, since a subwoofer pair can be stereo and
   a rear pair normally is. Zone and Mono are deliberately separate fields: Mono
   is a routing fact, and one car can carry two mono subwoofers in different
@@ -4089,7 +4090,13 @@ tune is actually built in:
   **Save session... / Load session...** export and import the complete session
   JSON for sharing or archiving; a session file dragged onto the window opens
   here too, whichever mode was in front (see
-  [Dropping a file on the window](#dropping-a-file-on-the-window)).
+  [Dropping a file on the window](#dropping-a-file-on-the-window)). A session
+  is held to the ranges of the block fields — gain −60 to +20 dB, delay 0 to
+  100 ms, corners 10 Hz to 24 kHz — and one outside them is refused rather than
+  shown clamped over a value the chain would still run. A value finer than its
+  field (a corner of 83.7 Hz written into the file by hand) loads as it is: the
+  field shows it rounded, and it stays until that field itself is edited, since
+  an edit writes only the field it changed.
 
 The tool's autosaved state persists in `tools/virtual-crossover.json` and
 survives restarts. Two files can sit beside it: `virtual-crossover.json.backup`,
@@ -4234,8 +4241,10 @@ this: the clipboard is the only transport, and you are the one who pastes.
   the assistant reasoned about a value that has since moved is rejected as
   such; so is one
   outside Virtual DSP's own limits (the channel block's gain and delay ranges and
-  steps, the crossover families and slopes, the corner range and the processor's
-  Nyquist, the PEQ band count, the Auto delay dialog's own fields), one that
+  steps, the crossover families and slopes, the corner range, whole-hertz step and
+  the processor's Nyquist, the Chebyshev ripple's range and 0.1 dB step, the PEQ
+  band count, the Auto delay dialog's own fields — so a value a reply sets is one
+  the block's fields show unchanged), one that
   changes nothing, and two that contradict each other — including a
   hand-written value an engine in the same reply would write over, which is
   rejected naming the engine, since the two cannot both be meant and the engine

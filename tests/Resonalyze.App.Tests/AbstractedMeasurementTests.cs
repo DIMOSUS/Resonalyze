@@ -41,6 +41,7 @@ public sealed class AbstractedMeasurementTests
     }
 
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(1)]
     [InlineData(2)]
     public async Task ProtectiveHighPass_IsRemovedFromThePublishedTransferIrOnly(
@@ -146,6 +147,7 @@ public sealed class AbstractedMeasurementTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task AveragingReusesTheOpenSession()
     {
         RecordingDuplexSession? opened = null;
@@ -219,6 +221,7 @@ public sealed class AbstractedMeasurementTests
 
     // Field case: loopback at a normal -14.6 dBFS but an overdriven input; the refusal must name it, not generic wiring advice.
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task DistortingLoopbackFailsNamingTheReference()
     {
         var factory = new FakeAudioSessionFactory(
@@ -240,6 +243,7 @@ public sealed class AbstractedMeasurementTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task DistortionDiagnosisCountsTheAffectedRuns()
     {
         // The first bad capture stops the measurement, so it is the only one the diagnosis reads.
@@ -509,6 +513,7 @@ public sealed class AbstractedMeasurementTests
     }
 
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(1.0f, true)]
     [InlineData(0.5f, false)]
     public async Task LiveSpectrumCountsTheAveragedFramesWhoseMicrophoneReachedFullScale(

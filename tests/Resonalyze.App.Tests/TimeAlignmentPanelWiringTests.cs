@@ -58,6 +58,7 @@ public sealed class TimeAlignmentPanelWiringTests
     });
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void TheManualFields_MoveTheBandTheReadUses() => StaTest.Run(() =>
     {
         using var live = new LiveTa(new TimeAlignmentOptions { BandMode = TimeAlignmentBandMode.ManualBand });
@@ -97,6 +98,7 @@ public sealed class TimeAlignmentPanelWiringTests
     });
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void ACompareRecord_JoinsTheReportAndTheEnvelope_AndLeavesWithIt() => StaTest.Run(() =>
     {
         using var live = new LiveTa();
@@ -170,6 +172,7 @@ public sealed class TimeAlignmentPanelWiringTests
     });
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void ARunHoldingTheDocument_KeepsWhatWasRead_UntilItLands() => StaTest.Run(() =>
     {
         using var live = new LiveTa();

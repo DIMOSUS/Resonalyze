@@ -45,6 +45,7 @@ public sealed class NoiseSignalTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void PinkPeriod_IsExactlyPinkInsideItsBandAndSilentOutside()
     {
         // 5.86 Hz bins at 192 kHz put the first bin below the low edge and most of the top above the high one.

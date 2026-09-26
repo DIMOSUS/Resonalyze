@@ -533,6 +533,7 @@ public sealed class TransferIrDiagnosticsTests
 
     // The zero-phase gate makes H(f)=1 a symmetric kernel with wrapped pre-ringing; a 10 ms pre-window fails 20-50 Hz at 19.9 dB.
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(20.0, 50.0)]
     [InlineData(20.0, 80.0)]
     [InlineData(50.0, 100.0)]
@@ -692,6 +693,7 @@ public sealed class TransferIrDiagnosticsTests
 
     // The symmetric gate kernel is the one legitimate acausal-looking shape; it must stay under the report line.
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(20.0, 25.0)]
     [InlineData(20.0, 50.0)]
     [InlineData(20.0, 1000.0)]
@@ -797,6 +799,7 @@ public sealed class TransferIrDiagnosticsTests
 
     // Known blind spot: an obstructed direct path puts direct sound inside the window. Hence a report, not a refusal.
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(20.0, 25.0, 0.20)]
     [InlineData(20.0, 50.0, 0.20)]
     [InlineData(20.0, 200.0, 0.20)]

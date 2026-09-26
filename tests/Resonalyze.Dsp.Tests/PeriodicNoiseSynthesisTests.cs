@@ -29,6 +29,7 @@ public sealed class PeriodicNoiseSynthesisTests
     }
 
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(65_536, 48_000, 3.0)]
     [InlineData(16_384, 192_000, 4.5)]
     public void Synthesize_PinkPeriodHasALowCrestFactor(int length, int sampleRate, double maximumDb)
@@ -46,6 +47,7 @@ public sealed class PeriodicNoiseSynthesisTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Synthesize_SpreadsEveryFrequencyOverThePeriodRatherThanSweepingIt()
     {
         // Schroeder's phases reach a similar crest with a chirp, which is audible and reads each frequency from a different point

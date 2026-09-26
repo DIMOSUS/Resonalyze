@@ -15,6 +15,7 @@ public sealed class VirtualCrossoverAuditionDialogWiringTests
     ];
 
     [Theory]
+    [Trait("Category", "Slow")]
     [MemberData(nameof(Changes))]
     public void EachChoice_ReachesTheReportAndTheRenderButton(string change) => StaTest.Run(() =>
     {
@@ -129,6 +130,7 @@ public sealed class VirtualCrossoverAuditionDialogWiringTests
     });
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void ARender_WritesWhatTheReadersAskFor() => StaTest.Run(() =>
     {
         using var folder = new TemporaryDirectory();
@@ -189,6 +191,7 @@ public sealed class VirtualCrossoverAuditionDialogWiringTests
     });
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void ACancel_StopsTheRender_AndWritesNothing() => StaTest.Run(() =>
     {
         using var folder = new TemporaryDirectory();

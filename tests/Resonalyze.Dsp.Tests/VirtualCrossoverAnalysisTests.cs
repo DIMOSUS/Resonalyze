@@ -192,6 +192,7 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void FindAlignmentCandidates_RecoversTheSameDelayAcrossSampleRates()
     {
         // 192 kHz discriminates: a fixed 4096-sample gate (21 ms) would cut the 30 ms reflection.
@@ -832,6 +833,7 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void FindBestAlignment_DetectsAnInvertedChannel()
     {
         // The variable channel is a delayed AND inverted copy: the search must

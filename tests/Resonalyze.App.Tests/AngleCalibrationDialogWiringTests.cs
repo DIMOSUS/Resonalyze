@@ -32,6 +32,7 @@ public sealed class AngleCalibrationDialogWiringTests
         ["name", "angle", "diameter", "grid", "reference", "base", "everything"];
 
     [Theory]
+    [Trait("Category", "Slow")]
     [MemberData(nameof(Changes))]
     public void EachFieldReachesThePreviewAndOk(string change) => Run(() =>
     {

@@ -23,7 +23,8 @@ public static class WaterfallAnalysis
             throw new ArgumentOutOfRangeException(nameof(smoothingOctaves));
         }
 
-        Complex[] spectrum = DataHelper.ExtractWindow(measurement, offset, window, windowFunction);
+        // A window opening before sample 0 reads the circular pre-roll from the record's end, as the magnitude window does.
+        Complex[] spectrum = DataHelper.ExtractWindow(measurement, offset, window, windowFunction, wrapPreRoll: true);
         // A power of two: the window field takes any length, and a Bluestein transform of 4 x 5000 points costs about
         // seven times a radix-2 one of 16384. The longer pad only reduces circular wrap; what the window resolves is
         // set by the window, below.

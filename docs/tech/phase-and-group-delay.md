@@ -388,8 +388,10 @@ The Waterfall and Burst Decay open their windows at the same start
 (`DataHelper.MagnitudeAnchorIndex`), so the Waterfall's first slice is the Frequency
 Response curve; opened at the peak, a woofer's first slice misread its bass as the
 magnitude once did. Burst Decay's periods axis still counts from the peak, which sits
-that much further into its window. Neither wraps: the Waterfall's later slices would
-read the direct sound again, and its window preview shows the start without the pre-roll.
+that much further into its window. Both read the circular pre-roll as the magnitude
+window does, so a start less than a left fade into the record matches Frequency
+Response there too; only the pre-roll wraps, so the Waterfall's later slices never read
+the direct sound again. The window preview is Frequency Response's.
 
 A composite record (a sum of arrivals) must pass `anchorIndex` = the earliest of its
 parts' own starts. On the mixed record the start estimator reads the front of the

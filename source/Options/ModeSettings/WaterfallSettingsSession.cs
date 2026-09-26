@@ -34,7 +34,7 @@ internal sealed class WaterfallSettingsSession
     public ModeSettingsMeasurement Measurement { get; private set; } = new(null, 0);
 
     public SampleWindowPreview Preview =>
-        new(Measurement.Result, Fades.Window, Fades.Left, Fades.Right, Offset, IrPreviewSource.PrimaryAtStartUnwrapped);
+        new(Measurement.Result, Fades.Window, Fades.Left, Fades.Right, Offset, IrPreviewSource.PrimaryAtStart);
 
     public static WaterfallSettingsSession ForWaterfall() => new(false);
 

@@ -356,7 +356,9 @@ namespace Resonalyze
             int step = GenerateOptions.Step;
             int sliceCount = GenerateOptions.SliceCount;
             // Where Frequency Response opens its window, so the first slice is that curve: a fade ending at a peak the
-            // driver's group delay pushed milliseconds behind the onset misreads the bass by whole octaves.
+            // driver's group delay pushed milliseconds behind the onset misreads the bass by whole octaves. A window opening
+            // before sample 0 reads the circular pre-roll from the record's end, as that curve does; only the pre-roll wraps,
+            // so a later slice never reads the direct sound again.
             int anchor = DataHelper.MagnitudeAnchorIndex(measurement);
             if (step == 0)
             {
@@ -381,7 +383,7 @@ namespace Resonalyze
                 {
                     int offset = anchor - windowFuncOffset + slice * step + GenerateOptions.Offset;
                     List<DataPoint> data = OxyPlotAdapter.ToDataPoints(
-                        DataHelper.GetOversampledSpectrumData(measurement, offset, windowFunction));
+                        DataHelper.GetOversampledSpectrumData(measurement, offset, windowFunction, wrapPreRoll: true));
 
                     double time;
                     if (step > 0)

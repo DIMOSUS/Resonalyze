@@ -78,6 +78,41 @@ public sealed class WaterfallAnalysisTests
         Assert.Equal(PeakMagnitude(ClosestSlice(slices, 1_000.0)), slices.Max(PeakMagnitude), precision: 12);
     }
 
+    // A window opening before sample 0 reads the circular pre-roll: the same slices as the record rotated so it fits.
+    [Fact]
+    public void BuildBurstDecayRawSlices_AWindowBeforeTheRecord_ReadsTheCircularPreRoll()
+    {
+        SyntheticMeasurement tone = DecayingTone(1_000.0, tauSamples: 1_500.0);
+        Complex[] record = tone.ImpulseResponse!;
+        for (int n = 0; n < record.Length; n++)
+        {
+            record[n] += new Complex(0.05 * Math.Sin(n * 0.013), 0.0);
+        }
+
+        const int shift = 300;
+        var rotated = new Complex[record.Length];
+        for (int n = 0; n < record.Length; n++)
+        {
+            rotated[(n + shift) % record.Length] = record[n];
+        }
+
+        const int window = 1_024;
+        IReadOnlyList<BurstDecaySlice> wrapped = WaterfallAnalysis.BuildBurstDecayRawSlices(
+            new SyntheticMeasurement(record, SampleRate, maxMagnitudeIndex: 0),
+            offset: -200, window: window, windowFunction: Hann(window), smoothingOctaves: 1.0);
+        IReadOnlyList<BurstDecaySlice> inside = WaterfallAnalysis.BuildBurstDecayRawSlices(
+            new SyntheticMeasurement(rotated, SampleRate, maxMagnitudeIndex: 0),
+            offset: shift - 200, window: window, windowFunction: Hann(window), smoothingOctaves: 1.0);
+
+        Assert.Equal(inside.Count, wrapped.Count);
+        for (int slice = 0; slice < wrapped.Count; slice++)
+        {
+            Assert.Equal(
+                inside[slice].Data.Select(point => point.Y),
+                wrapped[slice].Data.Select(point => point.Y));
+        }
+    }
+
     [Fact]
     public void BuildBurstDecayRawSlices_EnvelopeDecaysForADecayingTone()
     {

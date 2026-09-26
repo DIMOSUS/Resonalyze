@@ -274,7 +274,7 @@ public sealed class ModeSettingsFieldsWiringTests
             Assert.Equal(burst ? (64, 4, 12.0) : (30, 32, 30.0), (options.SliceCount, options.Step, options.Periods));
             AssertPreview(docked, view =>
                 ImpulseWindowPreview.Update(
-                    view, analyzer.Result, 4800, 20, 300, -120, IrPreviewSource.PrimaryAtStartUnwrapped));
+                    view, analyzer.Result, 4800, 20, 300, -120, IrPreviewSource.PrimaryAtStart));
         });
     }
 

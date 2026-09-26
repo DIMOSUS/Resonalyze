@@ -92,8 +92,49 @@ public sealed class WaterfallSeriesRenderTests
         int anchor = DataHelper.MagnitudeAnchorIndex(view);
         Assert.InRange(anchor, onset - 64, peak - 64);
         double[] window = Windowing.TukeyWindow(4096, 64.0 / 4096 * 2.0, 1024.0 / 4096 * 2.0);
-        List<SignalPoint> expected = DataHelper.GetOversampledSpectrumData(view, anchor - 64, window);
+        List<SignalPoint> expected = DataHelper.GetOversampledSpectrumData(view, anchor - 64, window, wrapPreRoll: true);
         Assert.Equal(expected.Select(point => point.Y), waterfall.RawSlices[0].Data.Select(point => point.Y));
+    }
+
+    // A start less than a left fade into the record: the window reads the circular pre-roll from the record's end, as
+    // Frequency Response's does, not zeros.
+    [Fact]
+    public void AWaterfallOpeningBeforeTheRecord_ReadsTheCircularPreRoll_AsFrequencyResponseDoes()
+    {
+        var ir = new Complex[16384];
+        const int onset = 40;
+        const int peak = onset + 240;
+        for (int i = 0; i < ir.Length; i++)
+        {
+            ir[i] = new Complex(0.02 * Math.Sin(i * 0.013), 0);
+        }
+
+        for (int i = 0; i < 6000; i++)
+        {
+            double rise = Math.Min(1.0, i / 240.0);
+            ir[onset + i] += new Complex(rise * rise * Math.Exp(-Math.Max(0, i - 240) / 600.0) * Math.Cos(i * 0.05), 0);
+        }
+
+        using var measurement = new TestAnalyzer();
+        measurement.Open(TestMeasurementResults.Restored(
+            20, 20_000, 48_000, 24, 1.0, PlaybackChannel.Mono, ir, peak,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: ir,
+            transferPeakIndex: peak));
+        IImpulseMeasurement view = new MeasurementPlotContext(measurement.Document).CreatePrimaryMeasurement();
+        var options = new WaterfallGenerateOptions { Window = 4096, LeftTukeyWindow = 256, RightTukeyWindow = 1024 };
+        var waterfall = new WaterfallSeries { GenerateOptions = options };
+
+        waterfall.FillFourierWaterfallData(view);
+
+        int start = DataHelper.MagnitudeAnchorIndex(view) - 256;
+        Assert.True(start < 0, $"the window opens at {start}, inside the record");
+        double[] window = Windowing.TukeyWindow(4096, 256.0 / 4096 * 2.0, 1024.0 / 4096 * 2.0);
+        IEnumerable<double> shown = waterfall.RawSlices[0].Data.Select(point => point.Y);
+        Assert.Equal(
+            DataHelper.GetOversampledSpectrumData(view, start, window, wrapPreRoll: true).Select(point => point.Y),
+            shown);
+        Assert.NotEqual(DataHelper.GetOversampledSpectrumData(view, start, window).Select(point => point.Y), shown);
     }
 
     private static TestAnalyzer CreateBroadbandTransferMeasurement()

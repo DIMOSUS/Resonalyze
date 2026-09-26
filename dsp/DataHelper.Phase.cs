@@ -250,10 +250,11 @@ namespace Resonalyze.Dsp
             IReadOnlyList<double>? Coherence,
             List<SignalPoint> Phase);
 
+        // Spectrum is null where the stitch is known already and this entry's start is the reference's.
         private sealed record FdwSpectrumEntry(
             double CenterFrequencyHz,
             int EffectiveGateSamples,
-            Complex[] Spectrum,
+            Complex[]? Spectrum,
             Complex[]? TimeWeighted,
             int ExtractionStart);
 
@@ -386,7 +387,7 @@ namespace Resonalyze.Dsp
             return (entry.Spectrum, entry.TimeWeighted);
         }
 
-        // A group-delay reader replaces a phase-only entry with the pair (spectrum bit-identical), keeping its readings.
+        // A group-delay reader replaces a phase-only entry with the pair, transforming only the twin and keeping the readings.
         private static CachedPhaseSpectrum AnalysisEntry(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
@@ -405,7 +406,7 @@ namespace Resonalyze.Dsp
                 settings.ValidatedFdwCycles,
                 GatedFftLength);
             PhaseSpectrumCache cache = PhaseSpectrumCaches.GetOrCreateValue(impulse);
-            PhaseSpectrumReadings? readings = null;
+            CachedPhaseSpectrum? phaseOnly = null;
             lock (cache.Entries)
             {
                 if (cache.Entries.TryGetValue(key, out CachedPhaseSpectrum? cached))
@@ -416,7 +417,7 @@ namespace Resonalyze.Dsp
                         return cached;
                     }
 
-                    readings = cached.Readings;
+                    phaseOnly = cached;
                 }
             }
 
@@ -432,15 +433,16 @@ namespace Resonalyze.Dsp
                     settings.PlateauMs,
                     settings.RightMs,
                     timeWeighted,
-                    out extractionStart);
+                    out extractionStart,
+                    phaseOnly?.Spectrum);
             }
             else
             {
                 (spectrum, weighted) = BuildFdwSpectra(
-                    measurement, settings, timeWeighted, out extractionStart, cancellationToken);
+                    measurement, settings, timeWeighted, out extractionStart, cancellationToken, phaseOnly?.Spectrum);
             }
             var entry = new CachedPhaseSpectrum(
-                spectrum, weighted, extractionStart, readings ?? new PhaseSpectrumReadings());
+                spectrum, weighted, extractionStart, phaseOnly?.Readings ?? new PhaseSpectrumReadings());
             lock (cache.Entries)
             {
                 cache.Store(key, entry);
@@ -499,6 +501,7 @@ namespace Resonalyze.Dsp
         }
 
         // Operands of τ = Re[T·conj(H)] / |H|². See docs/tech/phase-and-group-delay.md#group-delay-identity.
+        // knownSpectrum: this gate's H, transformed before, so only the twin is.
         private static (Complex[] Spectrum, Complex[]? TimeWeighted) BuildFixedSpectra(
             IImpulseMeasurement measurement,
             double gateOffsetMs,
@@ -506,7 +509,8 @@ namespace Resonalyze.Dsp
             double plateauMs,
             double rightMs,
             bool timeWeighted,
-            out int extractionStart)
+            out int extractionStart,
+            Complex[]? knownSpectrum = null)
         {
             Complex[] windowedImpulse = ExtractGatedWindowedImpulse(
                 measurement,
@@ -519,6 +523,11 @@ namespace Resonalyze.Dsp
             Complex[]? weighted = timeWeighted
                 ? TimeWeightSpectrum(windowedImpulse, measurement.SampleRate)
                 : null;
+            if (knownSpectrum != null)
+            {
+                return (knownSpectrum, weighted);
+            }
+
             Fourier.Forward(windowedImpulse, FourierOptions.Matlab);
             return (windowedImpulse, weighted);
         }
@@ -543,7 +552,8 @@ namespace Resonalyze.Dsp
             PhaseAnalysisSettings settings,
             bool timeWeighted,
             out int extractionStart,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            Complex[]? knownSpectrum = null)
         {
             int sampleRate = measurement.SampleRate;
             FdwGateGeometry geometry = FdwGateGeometry.Resolve(settings, sampleRate);
@@ -553,7 +563,7 @@ namespace Resonalyze.Dsp
             foreach ((double center, int effectiveGate) in FdwBankPlan(geometry, sampleRate))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                Complex[] spectrum = ExtractFdwWindowedImpulse(
+                Complex[] windowed = ExtractFdwWindowedImpulse(
                     measurement,
                     settings.GateOffsetMs,
                     geometry.Left,
@@ -561,27 +571,36 @@ namespace Resonalyze.Dsp
                     effectiveGate,
                     out int start);
                 Complex[]? weighted = timeWeighted
-                    ? TimeWeightSpectrum(spectrum, sampleRate)
+                    ? TimeWeightSpectrum(windowed, sampleRate)
                     : null;
-                Fourier.Forward(spectrum, FourierOptions.Matlab);
-                entries.Add(new FdwSpectrumEntry(center, effectiveGate, spectrum, weighted, start));
+                // Re-referencing a twin reads its H, so an entry off the reference start transforms it regardless.
+                bool transformed = knownSpectrum == null || (entries.Count > 0 && start != entries[0].ExtractionStart);
+                if (transformed)
+                {
+                    Fourier.Forward(windowed, FourierOptions.Matlab);
+                }
+
+                entries.Add(new FdwSpectrumEntry(center, effectiveGate, transformed ? windowed : null, weighted, start));
             }
 
             extractionStart = entries[0].ExtractionStart;
             foreach (FdwSpectrumEntry entry in entries)
             {
-                ReReferenceSpectra(
-                    entry.Spectrum,
-                    entry.TimeWeighted,
-                    entry.ExtractionStart,
-                    extractionStart,
-                    sampleRate);
+                if (entry.ExtractionStart != extractionStart)
+                {
+                    ReReferenceSpectra(
+                        entry.Spectrum!,
+                        entry.TimeWeighted,
+                        entry.ExtractionStart,
+                        extractionStart,
+                        sampleRate);
+                }
             }
 
-            var combined = new Complex[GatedFftLength];
+            Complex[]? combined = knownSpectrum == null ? new Complex[GatedFftLength] : null;
             Complex[]? combinedWeighted = timeWeighted ? new Complex[GatedFftLength] : null;
             int upperIndex = 0;
-            for (int bin = 0; bin <= combined.Length / 2; bin++)
+            for (int bin = 0; bin <= GatedFftLength / 2; bin++)
             {
                 double frequency = bin * binWidth;
                 while (upperIndex < entries.Count - 1 &&
@@ -592,7 +611,11 @@ namespace Resonalyze.Dsp
 
                 if (upperIndex == 0)
                 {
-                    combined[bin] = entries[0].Spectrum[bin];
+                    if (combined != null)
+                    {
+                        combined[bin] = entries[0].Spectrum![bin];
+                    }
+
                     if (combinedWeighted != null)
                     {
                         combinedWeighted[bin] = entries[0].TimeWeighted![bin];
@@ -608,17 +631,25 @@ namespace Resonalyze.Dsp
                         (Math.Log(upper.CenterFrequencyHz) - Math.Log(lower.CenterFrequencyHz)),
                     0.0,
                     1.0);
-                combined[bin] = InterpolateSpectrum(
-                    lower.Spectrum[bin], upper.Spectrum[bin], t);
+                if (combined != null)
+                {
+                    combined[bin] = InterpolateSpectrum(
+                        lower.Spectrum![bin], upper.Spectrum![bin], t);
+                }
+
                 if (combinedWeighted != null)
                 {
                     combinedWeighted[bin] = InterpolateSpectrum(
                         lower.TimeWeighted![bin], upper.TimeWeighted![bin], t);
                 }
             }
-            for (int bin = 1; bin < combined.Length / 2; bin++)
+            for (int bin = 1; bin < GatedFftLength / 2; bin++)
             {
-                combined[combined.Length - bin] = Complex.Conjugate(combined[bin]);
+                if (combined != null)
+                {
+                    combined[combined.Length - bin] = Complex.Conjugate(combined[bin]);
+                }
+
                 if (combinedWeighted != null)
                 {
                     combinedWeighted[combinedWeighted.Length - bin] =
@@ -626,7 +657,7 @@ namespace Resonalyze.Dsp
                 }
             }
 
-            return (combined, combinedWeighted);
+            return (combined ?? knownSpectrum!, combinedWeighted);
         }
 
         // The twin's time weight shifts by ((s − s_ref) / fs) · H before the rotation. A no-op in today's bank; SumGatedSpectraPairs needs the general form.

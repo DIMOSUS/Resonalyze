@@ -81,9 +81,10 @@ the Fixed gate.
 The analysis cache (`CachedPhaseSpectrum`) keeps the twin null until a group-delay
 reader asks for it: phase views need only `H`, and the twin doubles FFT work and
 memory per gate. A phase reader takes the spectrum from any entry; a group-delay
-reader that finds a phase-only entry rebuilds the pair (the spectrum comes out
-bit-identical) and replaces it, so toggling between the views transforms each gate
-at most twice over the life of the impulse. Public accessors
+reader that finds a phase-only entry transforms only the twin (under FDW each window's
+twin, and a window's own `H` only where its start differs from the reference, since
+re-referencing the twin reads it) and replaces the entry, keeping its `H`. Toggling
+between the views transforms `H` and the twin once each over the life of the impulse. Public accessors
 (`GetPhaseAnalysisSpectrum`, `GetGroupDelayAnalysisSpectra`) return copies,
 because the arrays are shared cache entries.
 
@@ -94,8 +95,7 @@ measured phase per unwrap mode, with the reference sample and coherence it was r
 at. Within a Phase build without Compare the Auto detrend is computed once instead of
 twice and the minimum phase once instead of four times; a rebuild of the same gate (a curve
 toggled, the mode entered again, Compare chosen) reads all three from the entry. A
-group-delay reader that replaces the entry carries the readings over, since the
-spectrum is bit-identical. Readers racing on one entry compute the same values, so
+group-delay reader that replaces the entry carries the readings over with its `H`. Readers racing on one entry compute the same values, so
 whichever write lands is right.
 
 ## FDW bank

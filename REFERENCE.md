@@ -2782,10 +2782,43 @@ the **Hybrid** checkbox under the plot swaps the magnitude view over to it. The
 button's own text says where each channel stands: `MMM` for none, `MMM ✓` for one
 attached, `MMM ⚠` for one the session still refers to but could not read.
 
+**Response files.** **Attach capture...** also takes a frequency response averaged
+somewhere else, as text — REW's *Export measurement as text*, with or without the
+phase column, on any frequency grid, or any plain "frequency level" table. This is how
+a REW moving-microphone or array average, a manual average of positions, or a
+measurement from another system imported into REW gets under the hybrid. A text file
+records nothing about how it was measured, so before attaching it Resonalyze asks:
+
+- **Microphone calibration in the levels** — *None* when REW's input had no
+  calibration file, otherwise the one it applied (REW applies it on export): this
+  channel's measurement's file, one from the calibration list, or **Other file...**.
+  With the answer the panel's **Mic cal** choice can remove or replace it exactly, as it
+  does for a capture.
+- **Protective high-pass in the measured path** — the filter in your DSP ahead of the
+  driver while the file was measured. A sweep here divides it out; a file measured
+  through it carries it, so the same filter is divided out of the file. The answer
+  starts at whatever this channel's measurement divided out.
+
+The same window lists what the file itself gives away: no REW header, already
+smoothed (the plot's smoothing then goes on top of the file's), a span short of 20 Hz
+to 20 kHz (the hybrid curve breaks outside it), or coarser than 12 points per octave
+(interpolated in between). None of these refuses the file. Three things cannot be
+asked because nothing could correct them, and the window says so: the driver measured
+alone with its DSP in bypass (the chain is added on top), every channel's file at one
+input gain without per-channel SPL alignment (REW's *Align SPL* levels every file to
+the same target and erases the balance the hybrid is there to show), and a power (RMS)
+average rather than a dB one.
+
+An attached file shows as `File ✓`, and **Response file settings...** in the button's
+menu reopens the questions. The file is read again whenever the project opens, so
+re-exporting over it updates the channel. A set is all files or all captures, never
+both, and a set of files is levelled by one offset like a moving-microphone set; with
+no recipe or session to compare, the spread warning is the only check on it.
+
 A measurement recorded with a [microphone array](#microphone-array) brings its own
 average, so nothing has to be attached: the button reads **Array** and its menu
 chooses which average the project reads — the arrays the measurements carry, the
-moving-microphone captures attached by hand, or none at all. The choice is the
+moving-microphone captures and response files attached by hand, or none at all. The choice is the
 project's, not the channel's, because a set drawn two ways is not one set. It is
 also made **once**: a project that has never chosen keeps whatever it opened as, and
 that answer is then stored. Deciding it live from what the project currently holds

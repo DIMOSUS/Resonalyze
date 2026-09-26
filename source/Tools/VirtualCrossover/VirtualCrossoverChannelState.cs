@@ -21,7 +21,7 @@ internal sealed class VirtualCrossoverChannelState
     }
     public VirtualCrossoverSourceSnapshot? ProcessingSource { get; private set; }
 
-    /// <summary>Moving-mic average of this driver; only replaces the magnitude the hybrid view draws.</summary>
+    /// <summary>Attached average of this driver (moving-mic capture or response file); only replaces the magnitude the hybrid view draws.</summary>
     public LiveCaptureDocument? SpatialAverage { get; set; }
 
     public LiveCaptureDocument? ArrayCapture { get; set; }
@@ -41,6 +41,9 @@ internal sealed class VirtualCrossoverChannelState
 
     private VirtualCrossoverCalibrationSettings? microphoneCalibration;
     private CalibrationFile? microphoneCalibrationCurve;
+
+    /// <summary>What the measurement divided out; offered as the answer for a response file attached beside it.</summary>
+    public ProtectiveHighPassConfiguration? ProtectiveHighPass { get; set; }
 
     /// <summary>Per-band spread of the array's positions; the EQ Wizard gates boosts on it.</summary>
     public double[]? ArraySpreadDb { get; set; }
@@ -85,6 +88,7 @@ internal sealed class VirtualCrossoverChannelState
         ArraySpreadDb = null;
         MeasuredBand = MeasuredBand.Everything;
         MicrophoneCalibration = null;
+        ProtectiveHighPass = null;
         TransferPeakIndex = 0;
         SampleRate = 0;
         TransferCoherence = null;

@@ -116,7 +116,8 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
 
                 return LiveCaptureSetVerdict.No(
                     "Needs a spatial average on every channel that plays. " +
-                    "Attach one per channel with the MMM button.");
+                    "Attach one per channel with the MMM button: a moving-microphone " +
+                    "capture or a response file.");
             }
 
             captures.Add(capture);

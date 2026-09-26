@@ -398,12 +398,19 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
         HybridMagnitudes hybrid, IReadOnlyList<ProcessedChannel> processed)
     {
         bool arrays = session.SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray;
+        // One set never mixes methods, so any member says what the set is.
+        bool files = hybrid.SetDatumsDb.Any(entry =>
+            entry.Channel.SideState(entry.RightSide).SpatialAverageFor(session.SpatialAverageMode)
+                is { Method: SpatialAverageMethod.File });
         var lines = new StringBuilder();
         lines.Append(
             arrays
                 ? "Every array is referenced to the same loopback its impulse " +
                     "response is, so each should sit on it, within about a dB. " +
                     "These stand off by:\r\n\r\n"
+                : files
+                ? "Response files measured at one input gain sit the same distance " +
+                    "from their impulse responses. These do not:\r\n\r\n"
                 : "Every capture in one set is taken with one analyzer recipe at one " +
                     "input gain, so each channel should sit the same distance from " +
                     "its impulse response. These do not:\r\n\r\n");
@@ -444,6 +451,12 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
                     "different input, a different calibration, or a driver that was " +
                     "not the one being measured. The hybrid still draws each array at " +
                     "the level it measured."
+                : files
+                ? "\r\nUsually one file was measured at a different input gain, or " +
+                    "exported with REW's Align SPL, which levels every file to one " +
+                    "target. A wrong answer about its calibration or high-pass shows " +
+                    "here too. The hybrid still draws: one offset serves the whole " +
+                    "set, so a channel that disagrees is drawn at the level it claims."
                 : "\r\nUsually one capture was taken with a different input gain, a " +
                     "different frame length or window (which moves the noise-slope " +
                     "compensation), or belongs to another session. The hybrid still " +

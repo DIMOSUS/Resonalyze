@@ -22,6 +22,9 @@ internal sealed class ResolvedVirtualDspSource
     /// <summary>Calibration recorded by the file; null for older measurements, which use the panel's selection.</summary>
     public VirtualCrossoverCalibrationSettings? MicrophoneCalibration { get; init; }
 
+    /// <summary>The protective high-pass divided out of this measurement; null when the file does not say.</summary>
+    public ProtectiveHighPassConfiguration? ProtectiveHighPass { get; init; }
+
     /// <summary>Null without a loopback transfer IR, or without absolute time (an imported sweep, a non-causal loopback): summing sums arrivals.</summary>
     public static ResolvedVirtualDspSource? FromResult(MeasurementResult result)
     {
@@ -49,7 +52,8 @@ internal sealed class ResolvedVirtualDspSource
             ArrayCapture = arrayCapture,
             ArraySpreadDb = arraySpreadDb,
             MeasuredBand = result.MeasuredBand,
-            MicrophoneCalibration = result.MicrophoneCalibration
+            MicrophoneCalibration = result.MicrophoneCalibration,
+            ProtectiveHighPass = result.ProtectiveHighPass
         };
     }
 
@@ -65,6 +69,7 @@ internal sealed class ResolvedVirtualDspSource
         state.ArraySpreadDb = ArraySpreadDb;
         state.MeasuredBand = MeasuredBand;
         state.MicrophoneCalibration = MicrophoneCalibration;
+        state.ProtectiveHighPass = ProtectiveHighPass;
     }
 
     // THD (dB vs fundamental) for the crossover wizard; null without sweep deconvolution (wizard uses class-based range).

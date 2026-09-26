@@ -43,6 +43,26 @@ public sealed class SpatialAverageTests
     }
 
     [Fact]
+    public void FromLevels_PointsInsideABand_AreAPowerMean()
+    {
+        double centre = Grid[500];
+        double[] levels = SpatialAverage.FromLevels([centre * 0.999, centre * 1.001], [70.0, 80.0]);
+
+        Assert.Equal(10.0 * Math.Log10((1e7 + 1e8) / 2.0), levels[500], 9);
+    }
+
+    [Fact]
+    public void FromLevels_SparseTable_IsBridgedInLogFrequencyAndNotExtrapolated()
+    {
+        double[] levels = SpatialAverage.FromLevels([100.0, 400.0], [60.0, 80.0]);
+        int band = NearestBand(200.0);
+
+        Assert.Equal(60.0 + 20.0 * Math.Log(Grid[band] / 100.0) / Math.Log(4.0), levels[band], 9);
+        Assert.True(double.IsNaN(levels[NearestBand(50.0)]));
+        Assert.True(double.IsNaN(levels[NearestBand(1_000.0)]));
+    }
+
+    [Fact]
     public void Grid_IsTheOneTheRestOfTheApplicationDrawsOn()
     {
         Assert.Equal(SpatialAverage.GridBandCount, Grid.Count);

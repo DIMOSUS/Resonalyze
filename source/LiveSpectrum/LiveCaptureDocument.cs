@@ -10,7 +10,10 @@ public enum SpatialAverageMethod
     MovingMic,
 
     /// <summary>Several simultaneous microphones; level tethered to the measurement loopback, unlike a moving mic.</summary>
-    MicArray
+    MicArray,
+
+    /// <summary>A response averaged elsewhere and imported as text; the user vouches for what no recipe records.</summary>
+    File
 }
 
 /// <summary>Everything needed to re-render a stored spectrum and to judge set membership.</summary>
@@ -194,17 +197,23 @@ public sealed class LiveCaptureDocument
 
         LiveCaptureDocument first = captures[0];
         // One method per set: mixing would need per-channel offsets, which are the spread detector itself.
-        if (captures.Any(capture => capture.Method != first.Method))
+        if (captures.FirstOrDefault(capture => capture.Method != first.Method) is { } odd)
         {
             return LiveCaptureSetVerdict.No(
-                "Some channels carry a moving-microphone pass and some a microphone " +
-                "array. They are levelled differently, so one set cannot hold both — " +
-                "pick one method for the project.");
+                $"Some channels carry {Describe(first.Method)} and some {Describe(odd.Method)}. " +
+                "They are levelled differently, so one set cannot hold both — attach the " +
+                "same kind to every channel.");
         }
 
         if (first.Method == SpatialAverageMethod.MicArray)
         {
             return JudgeArraySet(captures, first);
+        }
+
+        // No recipe or session to compare: the spread of the datums is the only witness. See docs/tech/spatial-average.md#imported-text-files.
+        if (first.Method == SpatialAverageMethod.File)
+        {
+            return LiveCaptureSetVerdict.Ok;
         }
 
         foreach (LiveCaptureDocument capture in captures)
@@ -236,6 +245,13 @@ public sealed class LiveCaptureDocument
             "force.");
     }
 
+    private static string Describe(SpatialAverageMethod method) => method switch
+    {
+        SpatialAverageMethod.MicArray => "a microphone array",
+        SpatialAverageMethod.File => "an imported response file",
+        _ => "a moving-microphone pass"
+    };
+
     /// <summary>Array sets: no recipe or session to match (loopback-tethered); high-pass and array composition are not judged here.</summary>
     private static LiveCaptureSetVerdict JudgeArraySet(
         IReadOnlyList<LiveCaptureDocument> captures,
@@ -256,7 +272,7 @@ public sealed class LiveCaptureDocument
         LiveCaptureDocument document =
             JsonSerializer.Deserialize<LiveCaptureDocument>(stream, SerializerOptions)
             ?? throw new InvalidDataException("The capture file is empty.");
-        document.Validate();
+        document.ValidateStored();
         return document;
     }
 
@@ -290,7 +306,7 @@ public sealed class LiveCaptureDocument
             return false;
         }
 
-        parsed.Validate();
+        parsed.ValidateStored();
         document = parsed;
         return true;
     }
@@ -358,6 +374,18 @@ public sealed class LiveCaptureDocument
         return amplitude;
     }
 
+    // A file-method document is built in memory from a response file; one read from disk would skip the frame checks unearned.
+    private void ValidateStored()
+    {
+        if (Method == SpatialAverageMethod.File)
+        {
+            throw new InvalidDataException(
+                "The capture claims to be an imported response file, which is never saved as a capture.");
+        }
+
+        Validate();
+    }
+
     public void Validate()
     {
         if (!string.Equals(Format, CurrentFormat, StringComparison.Ordinal))
@@ -377,12 +405,14 @@ public sealed class LiveCaptureDocument
             throw new InvalidDataException("The capture carries no recipe.");
         }
 
-        if (Recipe.SampleRateHz < 1 || Recipe.SequenceLength < 2)
+        // An imported file has no analyzer frame and no bins; it is built in memory and never saved as a capture.
+        bool imported = Method == SpatialAverageMethod.File;
+        if (!imported && (Recipe.SampleRateHz < 1 || Recipe.SequenceLength < 2))
         {
             throw new InvalidDataException("The capture recipe has no usable frame.");
         }
 
-        if (SpectrumDb is not { Length: > 1 })
+        if (!imported && SpectrumDb is not { Length: > 1 })
         {
             throw new InvalidDataException("The capture carries no spectrum.");
         }

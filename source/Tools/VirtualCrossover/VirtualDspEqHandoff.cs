@@ -124,7 +124,12 @@ internal static class VirtualDspEqHandoff
         string side = channel.Pair.Mono ? "mono" : rightSide ? "R" : "L";
         string? average = spatialAverage == null
             ? null
-            : spatialAverage.Method == SpatialAverageMethod.MicArray ? "Array" : "MMM";
+            : spatialAverage.Method switch
+            {
+                SpatialAverageMethod.MicArray => "Array",
+                SpatialAverageMethod.File => "File",
+                _ => "MMM"
+            };
         string variant = average != null
             ? withChain ? $"DSP, {average}" : average
             : withChain ? "DSP" : "raw";

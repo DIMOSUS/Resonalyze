@@ -190,12 +190,16 @@ public sealed class VirtualCrossoverChannelSettings
     /// <summary>Source path relative to the imported session's folder; each write decides its own value. See docs/tech/virtual-dsp-session-file.md#source-paths.</summary>
     public string? SourceRelativePath { get; set; }
 
-    /// <summary>Moving-mic capture by path; not embedded (~900 kB per side through the debounced autosave).</summary>
+    /// <summary>Moving-mic capture or response file by path; not embedded (~900 kB per side through the debounced autosave).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SpatialAveragePath { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SpatialAverageRelativePath { get; set; }
+
+    /// <summary>Set when <see cref="SpatialAveragePath"/> is a response file: what the user stated about it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SpatialAverageFileSettings? SpatialAverageFile { get; set; }
 
     public Guid? HistoryEntryId { get; set; }
 
@@ -372,6 +376,7 @@ public sealed class VirtualCrossoverChannelSettings
         // A goal is held to the slopes an electrical edge of its family could have.
         ValidateAcoustic(AcousticLowPass);
         ValidateAcoustic(AcousticHighPass);
+        SpatialAverageFile?.Validate();
         // Range only, not the hardware's 5.625° grid: editors snap, and a hand-written angle still builds.
         if (!VirtualCrossoverLimits.PhaseRotation.Includes(PhaseRotationDegrees))
         {

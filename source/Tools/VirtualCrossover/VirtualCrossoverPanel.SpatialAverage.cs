@@ -1,3 +1,5 @@
+using Resonalyze.Dsp;
+
 namespace Resonalyze;
 
 // Hybrid magnitude view: spatial averages refine the drawn magnitude only; timing, polarity and loss still read the IRs.
@@ -29,7 +31,7 @@ public partial class VirtualCrossoverPanel
         foreach ((VirtualCrossoverSpatialAverageMode mode, string label) in new[]
         {
             (VirtualCrossoverSpatialAverageMode.MicArray, "Use microphone arrays"),
-            (VirtualCrossoverSpatialAverageMode.MovingMic, "Use attached MMM captures"),
+            (VirtualCrossoverSpatialAverageMode.MovingMic, "Use attached captures (MMM or file)"),
             (VirtualCrossoverSpatialAverageMode.Off, "No spatial average")
         })
         {
@@ -49,6 +51,14 @@ public partial class VirtualCrossoverPanel
         chooseItem.Click += (_, _) => ChooseSpatialAverage(channel);
         menu.Items.Add(chooseItem);
 
+        if (channel.Settings.SpatialAverageFile != null &&
+            !string.IsNullOrWhiteSpace(channel.Settings.SpatialAveragePath))
+        {
+            ToolStripMenuItem fileItem = new("Response file settings...");
+            fileItem.Click += (_, _) => EditSpatialAverageFile(channel);
+            menu.Items.Add(fileItem);
+        }
+
         if (channel.SpatialAverage != null ||
             !string.IsNullOrWhiteSpace(channel.Settings.SpatialAveragePath))
         {
@@ -58,6 +68,7 @@ public partial class VirtualCrossoverPanel
                 channel.SpatialAverage = null;
                 channel.Settings.SpatialAveragePath = null;
                 channel.Settings.SpatialAverageRelativePath = null;
+                channel.Settings.SpatialAverageFile = null;
                 OnSpatialAverageChanged(channel);
             };
             menu.Items.Add(detachItem);
@@ -71,7 +82,10 @@ public partial class VirtualCrossoverPanel
         using var dialog = new OpenFileDialog
         {
             CheckFileExists = true,
-            Filter = "Resonalyze moving-mic capture (*.json)|*.json|All files (*.*)|*.*",
+            Filter = "Moving-mic capture or response file (*.json;*.txt)|*.json;*.txt|" +
+                "Resonalyze moving-mic capture (*.json)|*.json|" +
+                "Frequency response as text, REW export (*.txt)|*.txt|" +
+                "All files (*.*)|*.*",
             Multiselect = false,
             RestoreDirectory = true,
             Title = $"Attach a spatial average to {channel.Name}"
@@ -83,18 +97,23 @@ public partial class VirtualCrossoverPanel
 
         try
         {
+            SpatialAverageFileSettings? answers = null;
             if (!LiveCaptureDocument.TryLoad(dialog.FileName, out LiveCaptureDocument document))
             {
-                MessageBox.Show(
-                    this,
-                    "That file is not a Resonalyze capture.",
-                    "Attach spatial average",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
-                return;
+                // Not a capture: a response file, attached only once the user has said what it carries.
+                FrequencyResponseTextFile file = SpatialAverageFileImport.Read(dialog.FileName);
+                answers = AskSpatialAverageFile(
+                    channel, dialog.FileName, file, DefaultSpatialAverageFileAnswers(channel));
+                if (answers == null)
+                {
+                    return;
+                }
+
+                document = SpatialAverageFileImport.Build(file, answers, dialog.FileName);
             }
 
             channel.SpatialAverage = document;
+            channel.Settings.SpatialAverageFile = answers;
             channel.Settings.SpatialAveragePath = dialog.FileName;
             // The relative path names the previously imported capture; left standing it would steer the next search to it.
             channel.Settings.SpatialAverageRelativePath = null;
@@ -110,6 +129,98 @@ public partial class VirtualCrossoverPanel
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
         }
+    }
+
+    private void EditSpatialAverageFile(VirtualCrossoverChannel channel)
+    {
+        VirtualCrossoverChannelSettings settings = channel.Settings;
+        if (settings.SpatialAverageFile is not { } stated || settings.SpatialAveragePath is not { } path)
+        {
+            return;
+        }
+
+        try
+        {
+            FrequencyResponseTextFile file = SpatialAverageFileImport.Read(path);
+            if (AskSpatialAverageFile(channel, path, file, stated) is not { } answers)
+            {
+                return;
+            }
+
+            channel.SpatialAverage = SpatialAverageFileImport.Build(file, answers, path);
+            settings.SpatialAverageFile = answers;
+            OnSpatialAverageChanged(channel);
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                this,
+                "The response file could not be read." +
+                    Environment.NewLine + Environment.NewLine + exception.Message,
+                "Response file",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+    }
+
+    // A first attach assumes the file was measured like the channel's own measurement: same microphone file, same hardware filter.
+    private static SpatialAverageFileSettings DefaultSpatialAverageFileAnswers(VirtualCrossoverChannel channel)
+    {
+        VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
+        ProtectiveHighPassConfiguration highPass =
+            ProtectiveHighPassConfiguration.Normalize(state.ProtectiveHighPass);
+        return new SpatialAverageFileSettings
+        {
+            Calibration = state.MicrophoneCalibration,
+            HighPassKind = highPass.Kind,
+            HighPassFrequencyHz = highPass.FrequencyHz,
+            HighPassSlopeDbPerOctave = highPass.SlopeDbPerOctave,
+            HighPassSampleRateHz = state.SampleRate
+        };
+    }
+
+    private SpatialAverageFileSettings? AskSpatialAverageFile(
+        VirtualCrossoverChannel channel,
+        string path,
+        FrequencyResponseTextFile file,
+        SpatialAverageFileSettings stated)
+    {
+        VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
+        var available = new List<(string Name, string? FileName, CalibrationFile Curve)>();
+        foreach (MicrophoneCalibrationEntry entry in calibrationEntries.Where(entry => entry.Available))
+        {
+            if (calibrationResolver?.Invoke(entry.Id) is { HasData: true } curve)
+            {
+                available.Add((entry.Name, entry.FileName, curve));
+            }
+        }
+
+        if (sessionCalibration is { } carried)
+        {
+            available.Add((carried.Name, carried.FileName, carried.Curve));
+        }
+
+        using var dialog = new VirtualCrossoverSpatialAverageFileDialog();
+        dialog.Init(
+            channel.Name,
+            path,
+            file,
+            stated,
+            SpatialAverageFileCalibrationChoice.Offer(stated.Calibration, state.MicrophoneCalibration, available),
+            state.ProtectiveHighPass);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return null;
+        }
+
+        SpatialAverageFileSettings answers = dialog.Answers;
+        // The rate the channel's measurement divides its high-pass at, once there is one.
+        if (answers.HighPassSampleRateHz <= 0)
+        {
+            answers.HighPassSampleRateHz = state.SampleRate;
+        }
+
+        return answers;
     }
 
     private void OnSpatialAverageChanged(VirtualCrossoverChannel channel)
@@ -135,15 +246,18 @@ public partial class VirtualCrossoverPanel
         string? path = mode == VirtualCrossoverSpatialAverageMode.MovingMic
             ? channel.Settings.SpatialAveragePath
             : null;
+        bool file = mode == VirtualCrossoverSpatialAverageMode.MovingMic &&
+            channel.Settings.SpatialAverageFile != null;
         control.SetSpatialAverage(
             document?.Title
                 ?? (string.IsNullOrWhiteSpace(path)
                     ? null
                     : Path.GetFileNameWithoutExtension(path)),
-            document?.Recipe.IntegratedSeconds,
+            file ? null : document?.Recipe.IntegratedSeconds,
             resolved: document != null,
             mode,
-            document?.SavedAtUtc);
+            document?.SavedAtUtc,
+            file);
     }
 
     /// <summary>Re-attaches a persisted capture via the same path ladder as measurements.</summary>
@@ -167,7 +281,12 @@ public partial class VirtualCrossoverPanel
 
         try
         {
-            if (LiveCaptureDocument.TryLoad(path, out LiveCaptureDocument document))
+            if (settings.SpatialAverageFile is { } answers)
+            {
+                state.SpatialAverage = SpatialAverageFileImport.Load(path, answers);
+                settings.SpatialAveragePath = path;
+            }
+            else if (LiveCaptureDocument.TryLoad(path, out LiveCaptureDocument document))
             {
                 state.SpatialAverage = document;
                 // Pin the actual read location: the autosave copy has no session file beside it to search from.
@@ -206,7 +325,8 @@ public partial class VirtualCrossoverPanel
             checkBoxHybrid,
             !hybridAvailable
                 ? verdict.Reason ?? "Needs a spatial average on every channel that " +
-                    "plays. Attach one per channel with the MMM button."
+                    "plays. Attach one per channel with the MMM button: a moving-" +
+                    "microphone capture or a response file."
                 : live && !checkBoxHybrid.Checked
                 ? "Every channel that plays has a spatial average attached and the " +
                     "plot is not using one: these curves are the response at a " +

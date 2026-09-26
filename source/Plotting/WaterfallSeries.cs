@@ -379,11 +379,13 @@ namespace Resonalyze
                     RawSlices.Add(new Slice(new List<DataPoint>(), 0, 0, 0, measurement.SampleRate));
                 }
 
+                double[] paddedWindow = DataHelper.OversampledWindow(windowFunction);
                 Parallel.For(0, sliceCount, slice =>
                 {
                     int offset = anchor - windowFuncOffset + slice * step + GenerateOptions.Offset;
                     List<DataPoint> data = OxyPlotAdapter.ToDataPoints(
-                        DataHelper.GetOversampledSpectrumData(measurement, offset, windowFunction, wrapPreRoll: true));
+                        DataHelper.GetSpectrumData(
+                            measurement, offset, paddedWindow.Length, paddedWindow, wrapPreRoll: true));
 
                     double time;
                     if (step > 0)

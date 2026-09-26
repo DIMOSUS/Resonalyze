@@ -18,7 +18,7 @@ namespace Resonalyze.Dsp
             Complex[] spectrum = ExtractWindow(measurement, start, length, window, wrapPreRoll: wrapPreRoll);
             Fourier.Forward(spectrum, FourierOptions.Matlab);
 
-            var data = new List<SignalPoint>();
+            var data = new List<SignalPoint>(Math.Max(0, length / 2 - 1));
             for (int i = 1; i < length / 2; i++)
             {
                 double frequency = i * (measurement.SampleRate / (double)length);
@@ -532,11 +532,18 @@ namespace Resonalyze.Dsp
             double[] tukeyWindow,
             bool wrapPreRoll = false)
         {
-            int length = tukeyWindow.Length;
-            int analysisLength = GetOversampledLength(length);
-            double[] window = new double[analysisLength];
-            Array.Copy(tukeyWindow, window, length);
-            return GetSpectrumData(measurement, start, analysisLength, window, wrapPreRoll);
+            double[] window = OversampledWindow(tukeyWindow);
+            return GetSpectrumData(measurement, start, window.Length, window, wrapPreRoll);
+        }
+
+        /// <summary>The window zero-padded to its oversampled length: a caller reading many slices through one window pads it
+        /// once and reads each through <see cref="GetSpectrumData"/> at <c>window.Length</c>.</summary>
+        public static double[] OversampledWindow(double[] tukeyWindow)
+        {
+            ArgumentNullException.ThrowIfNull(tukeyWindow);
+            double[] window = new double[GetOversampledLength(tukeyWindow.Length)];
+            Array.Copy(tukeyWindow, window, tukeyWindow.Length);
+            return window;
         }
     }
 }

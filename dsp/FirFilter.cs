@@ -115,7 +115,112 @@ public sealed class FirFilter
     }
 
     public Complex Response(double frequencyHz, double sampleRateHz) =>
-        Response(Complex.Exp(new Complex(0, -Math.Tau * frequencyHz / sampleRateHz)));
+        Response(UnitCirclePoint(frequencyHz, sampleRateHz));
+
+    /// <summary><see cref="Response(double, double)"/> at each frequency, kept per rate and grid for the kernel's
+    /// lifetime; the list is shared, read it only. See docs/tech/dsp-chain-response.md#fir-on-a-plotted-grid.</summary>
+    public IReadOnlyList<Complex> Responses(IReadOnlyList<double> frequenciesHz, double sampleRateHz)
+    {
+        ArgumentNullException.ThrowIfNull(frequenciesHz);
+        lock (gridEntries)
+        {
+            GridEntry entry = GridEntryFor(frequenciesHz, sampleRateHz);
+            if (entry.Responses == null)
+            {
+                var responses = new Complex[entry.FrequenciesHz.Length];
+                for (int i = 0; i < responses.Length; i++)
+                {
+                    responses[i] = Response(entry.FrequenciesHz[i], sampleRateHz);
+                }
+
+                entry.Responses = responses;
+            }
+
+            return entry.Responses;
+        }
+    }
+
+    /// <summary><see cref="GroupDelaySamples"/> at each frequency, kept like <see cref="Responses"/>.</summary>
+    public IReadOnlyList<double> GroupDelaysSamples(IReadOnlyList<double> frequenciesHz, double sampleRateHz)
+    {
+        ArgumentNullException.ThrowIfNull(frequenciesHz);
+        lock (gridEntries)
+        {
+            GridEntry entry = GridEntryFor(frequenciesHz, sampleRateHz);
+            if (entry.GroupDelays == null)
+            {
+                var delays = new double[entry.FrequenciesHz.Length];
+                for (int i = 0; i < delays.Length; i++)
+                {
+                    delays[i] = GroupDelaySamples(UnitCirclePoint(entry.FrequenciesHz[i], sampleRateHz));
+                }
+
+                entry.GroupDelays = delays;
+            }
+
+            return entry.GroupDelays;
+        }
+    }
+
+    private static Complex UnitCirclePoint(double frequencyHz, double sampleRateHz) =>
+        Complex.Exp(new Complex(0, -Math.Tau * frequencyHz / sampleRateHz));
+
+    // A few grids per kernel: a plot, the hybrid's reference grid and the level read-outs' bands.
+    private const int GridCapacity = 8;
+    private readonly List<GridEntry> gridEntries = [];
+
+    // Caller holds the lock. Least recently used goes first; grids compare bit for bit.
+    private GridEntry GridEntryFor(IReadOnlyList<double> frequenciesHz, double sampleRateHz)
+    {
+        for (int index = 0; index < gridEntries.Count; index++)
+        {
+            GridEntry cached = gridEntries[index];
+            if (cached.Matches(frequenciesHz, sampleRateHz))
+            {
+                gridEntries.RemoveAt(index);
+                gridEntries.Add(cached);
+                return cached;
+            }
+        }
+
+        if (gridEntries.Count == GridCapacity)
+        {
+            gridEntries.RemoveAt(0);
+        }
+
+        var entry = new GridEntry(sampleRateHz, [.. frequenciesHz]);
+        gridEntries.Add(entry);
+        return entry;
+    }
+
+    private sealed class GridEntry(double sampleRateHz, double[] frequenciesHz)
+    {
+        public double[] FrequenciesHz { get; } = frequenciesHz;
+
+        public Complex[]? Responses { get; set; }
+
+        public double[]? GroupDelays { get; set; }
+
+        public bool Matches(IReadOnlyList<double> frequencies, double rate)
+        {
+            if (BitConverter.DoubleToInt64Bits(rate) != BitConverter.DoubleToInt64Bits(sampleRateHz) ||
+                frequencies.Count != FrequenciesHz.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < FrequenciesHz.Length; i++)
+            {
+                if (BitConverter.DoubleToInt64Bits(frequencies[i]) !=
+                    BitConverter.DoubleToInt64Bits(FrequenciesHz[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
 
     /// <summary>Closed-form, unwrapped group delay in samples: Re(Σ n·h[n]·z1^n / H). NaN where |H| is a true zero relative to Σ|h|.</summary>
     public double GroupDelaySamples(Complex z1)

@@ -62,3 +62,19 @@ drawn as a gap.
 - **Cache:** bins depend only on kernel, record length and rate pair, so every knob turn reuses them. The table
   is weakly keyed on the kernel, locked per kernel (parallel channels wait for one computation), and holds a
   few (length, rate) entries since one kernel can sit on channels with different record lengths.
+
+## FIR on a plotted grid
+
+The chain plot, the hybrid view, the level read-outs and the EQ Wizard's corrected curve and target read a chain
+at a list of frequencies, redrawn on every knob turn. The FIR stage is a Horner sum over every tap at each point:
+22 ms for a 16,383-tap kernel on the chain plot's 512 points, 447 ms for a 131,071-tap one on a 2,000-point
+hybrid grid, per channel and frame. Only the gain, delay and biquads change with a knob, so
+`FirFilter.Responses` and `FirFilter.GroupDelaysSamples` keep the kernel's values per (rate, grid) on the kernel
+itself, and `PreparedDspResponse.Responses`/`GroupDelaysMs` multiply them into the per-point IIR read.
+
+- **Identical by construction:** a cached value is the same `Response(frequency, rate)` call a point read makes,
+  and grids match bit for bit, so a cached curve equals the point-by-point one to the last bit
+  (`FirGridResponseTests`).
+- **Bounded:** eight grids per kernel, least recently used first; a new kernel (a load, a FIR Constructor edit)
+  starts empty and the old one's values go with it.
+- **Locked per kernel:** parallel channel builds wait for one computation, as with the bins.

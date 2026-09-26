@@ -532,10 +532,11 @@ internal sealed class VirtualCrossoverDspChainPlot
         {
             PreparedDspResponse response =
                 PreparedDspResponse.Create(curve.Chain, curve.ProcessorSampleRate);
+            double[] values = Values(response, grid, mode);
             var points = new List<DataPoint>(grid.Count);
-            foreach (double frequency in grid)
+            for (int i = 0; i < grid.Count; i++)
             {
-                points.Add(new DataPoint(frequency, Value(response, frequency, mode)));
+                points.Add(new DataPoint(grid[i], values[i]));
             }
 
             AddSeries(model, curve.Title, points, curve.Color);
@@ -544,14 +545,14 @@ internal sealed class VirtualCrossoverDspChainPlot
         model.InvalidatePlot(true);
     }
 
-    private static double Value(
+    private static double[] Values(
         PreparedDspResponse response,
-        double frequency,
+        IReadOnlyList<double> grid,
         DspPlotMode mode) => mode switch
         {
-            DspPlotMode.Phase => response.Response(frequency).Phase / Math.PI * 180.0,
-            DspPlotMode.GroupDelay => response.GroupDelayMs(frequency),
-            _ => DataHelper.AmplitudeToDecibels(response.Response(frequency).Magnitude)
+            DspPlotMode.Phase => [.. response.Responses(grid).Select(value => value.Phase / Math.PI * 180.0)],
+            DspPlotMode.GroupDelay => response.GroupDelaysMs(grid),
+            _ => [.. response.Responses(grid).Select(value => DataHelper.AmplitudeToDecibels(value.Magnitude))]
         };
 
     private void ConfigureValueAxis(LinearAxis axis, DspPlotMode mode)

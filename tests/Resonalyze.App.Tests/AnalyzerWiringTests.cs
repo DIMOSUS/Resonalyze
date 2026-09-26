@@ -233,7 +233,7 @@ public sealed class AnalyzerWiringTests : IDisposable
         });
     }
 
-    // A save renames the open measurement; the title follows the document.
+    // A save renames the open measurement; the title follows the document, and nothing else is rebuilt.
     [Fact]
     public void ARenameRetitlesThePlot()
     {
@@ -242,11 +242,50 @@ public sealed class AnalyzerWiringTests : IDisposable
         {
             using var analyzer = new LiveAnalyzer();
             analyzer.Open(path);
+            PlotModel drawn = analyzer.Plot;
 
             analyzer.Document.Rename(Path.Combine(directory, "saved.json"));
             analyzer.Pump();
 
+            Assert.Same(drawn, analyzer.Plot);
             Assert.Equal("Frequency Response - saved.json", analyzer.Plot.Title);
+        });
+    }
+
+    [Fact]
+    public void AnImportThatLandsNothing_LeavesThePlotAlone()
+    {
+        string path = WriteMeasurement("cabin left.json", peak: 240);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Open(path);
+            PlotModel drawn = analyzer.Plot;
+
+            AnalyzerDocument.Request import = analyzer.Document.TryAcquire()!;
+            analyzer.Pump();
+            import.Dispose();
+            analyzer.Pump();
+
+            Assert.Same(drawn, analyzer.Plot);
+        });
+    }
+
+    [Fact]
+    public void ACompareChosenWhereTheModeDoesNotDrawIt_LeavesThePlotAlone()
+    {
+        string path = WriteMeasurement("cabin left.json", peak: 240);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Open(path);
+            analyzer.Select(ModeTab.Autocorrelation);
+            PlotModel drawn = analyzer.Plot;
+
+            analyzer.Field<CompareSelection>("compareSelection").Set("reference", null, Measurement(peak: 480));
+            analyzer.Pump();
+
+            Assert.Same(drawn, analyzer.Plot);
         });
     }
 

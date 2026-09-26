@@ -201,10 +201,23 @@ internal sealed class PlotModelFactory
         _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Not a mode this factory draws.")
     };
 
+    /// <summary>The title a build of <paramref name="mode"/> carries; a rename changes nothing else.</summary>
+    public string Title(Mode mode) => measurementContext.CreateTitle(mode switch
+    {
+        // A band-limited view is not the record; the title says so.
+        Mode.ImpulseResponse => "Impulse Response" + ImpulseBandLabel(impulseResponseOptions, AnalysisSampleRate),
+        Mode.FrequencyResponse => "Frequency Response",
+        Mode.PhaseResponse => "Phase Response",
+        Mode.GroupDelay => "Group Delay",
+        Mode.CumulativeSpectrumDecay => "Fourier Waterfall",
+        Mode.BurstDecay => "Burst Decay",
+        Mode.Autocorrelation => "Autocorrelation",
+        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Not a mode this factory draws.")
+    });
+
     public PlotModel CreateFrequencyResponse(bool includeCurves, CancellationToken cancellationToken = default)
     {
-        PlotModel model = PlotModelStyle.CreateTitledModel(
-            measurementContext.CreateTitle("Frequency Response"));
+        PlotModel model = PlotModelStyle.CreateTitledModel(Title(Mode.FrequencyResponse));
 
         // dB SPL follows the selection; without calibration and loopback level the axis is view-only: own dBr curves omitted,
         // SPL overlays and an anchored Compare stay. Starting a run drops the display back to dBr (Form1).
@@ -369,8 +382,7 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreatePhaseResponse(bool includeCurves, CancellationToken cancellationToken = default)
     {
-        PlotModel model = PlotModelStyle.CreateTitledModel(
-            measurementContext.CreateTitle("Phase Response"));
+        PlotModel model = PlotModelStyle.CreateTitledModel(Title(Mode.PhaseResponse));
 
         if (measurementContext.CanIncludeCurves(includeCurves) &&
             measurementContext.HasTransferImpulseResponse)
@@ -550,7 +562,7 @@ internal sealed class PlotModelFactory
     public PlotModel CreateWaterfall(bool includeCurves, CancellationToken cancellationToken = default)
     {
         PlotModel model = PlotModelStyle.CreateWaterfallModel(
-            measurementContext.CreateTitle("Fourier Waterfall"),
+            Title(Mode.CumulativeSpectrumDecay),
             waterfallGenOptions);
 
         if (measurementContext.CanIncludeCurves(includeCurves) &&
@@ -577,8 +589,7 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateGroupDelay(bool includeCurves, CancellationToken cancellationToken = default)
     {
-        PlotModel model = PlotModelStyle.CreateTitledModel(
-            measurementContext.CreateTitle("Group Delay"));
+        PlotModel model = PlotModelStyle.CreateTitledModel(Title(Mode.GroupDelay));
 
         double minimum = +1000;
         double maximum = -1000;
@@ -747,7 +758,7 @@ internal sealed class PlotModelFactory
     public PlotModel CreateBurstDecay(bool includeCurves, CancellationToken cancellationToken = default)
     {
         PlotModel model = PlotModelStyle.CreateWaterfallModel(
-            measurementContext.CreateTitle("Burst Decay"),
+            Title(Mode.BurstDecay),
             burstDecayGenOptions);
 
         if (measurementContext.CanIncludeCurves(includeCurves) &&
@@ -784,10 +795,7 @@ internal sealed class PlotModelFactory
         ImpulseResponseOptions opt = impulseResponseOptions;
         var frame = new ImpulseOverlayFrame(
             opt, 0.0, null, AnalysisSampleRate);
-        // A band-limited view is not the record; the title says so.
-        string band = ImpulseBandLabel(opt, AnalysisSampleRate);
-        PlotModel model = PlotModelStyle.CreateTitledModel(
-            measurementContext.CreateTitle("Impulse Response" + band));
+        PlotModel model = PlotModelStyle.CreateTitledModel(Title(Mode.ImpulseResponse));
 
         bool anyTrace = opt.ShowImpulse || opt.ShowEnvelope || opt.ShowStep;
         var drawn = new List<AnalysisCurve?>();
@@ -1182,8 +1190,7 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateAutocorrelation(bool includeCurves, CancellationToken cancellationToken = default)
     {
-        PlotModel model = PlotModelStyle.CreateTitledModel(
-            measurementContext.CreateTitle("Autocorrelation"));
+        PlotModel model = PlotModelStyle.CreateTitledModel(Title(Mode.Autocorrelation));
 
         if (measurementContext.CanIncludeCurves(includeCurves) &&
             measurementContext.HasTransferImpulseResponse &&

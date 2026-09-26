@@ -73,8 +73,9 @@ cancelled, superseded) is announced when it lets go.
   input that installs and then changes the view (a history entry applies its session, a run
   selects its own calibration) draws once, with the final state. A draw the view makes on its
   own, such as a mode switch, cancels the queued one.
-- While a run or an import holds the document the plot and Time Alignment keep what they show;
-  the end of the hold redraws them, whether a result landed or not.
+- While a run or an import holds the document the plot and Time Alignment keep what they show.
+  The end of the hold redraws Time Alignment whether a result landed or not, and the plot when
+  something it draws moved (see [Plot builds](#plot-builds)).
 - Time Alignment reads only while it is shown; showing it reads.
 - The Frequency Response panel recolours its SPL choice from the measurement it shows.
 
@@ -104,6 +105,11 @@ curves builds on the thread pool through `SupersedingBuild`:
 - The settings panels await the draw (`RedrawAsync`) and apply the edits that arrived meanwhile
   once it lands, so a held spin button redraws at the pace of the build. A failed build nobody
   awaits reaches `Application.ThreadException`, as a draw on the UI thread did.
+- A document or compare change that moves nothing drawn draws nothing (`PlotDrawInputs`): a
+  rename only retitles the model on screen, a compare selection counts only with curves in the
+  modes that draw it (Frequency Response, Phase, Group Delay, Impulse), and a producer that lets
+  go without a result leaves the plot as it was. Settings edits and mode switches always draw,
+  since the view options are not among what it compares.
 
 ## Sweep generation
 

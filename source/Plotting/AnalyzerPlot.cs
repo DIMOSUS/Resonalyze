@@ -19,6 +19,7 @@ internal sealed class AnalyzerPlot : IModeView
 
     private readonly Form owner;
     private readonly AnalyzerDocument document;
+    private readonly CompareSelection compare;
     private readonly Control overlaysPanel;
     private readonly Control showAllButton;
     private readonly Control hideAllButton;
@@ -32,6 +33,8 @@ internal sealed class AnalyzerPlot : IModeView
     private ModeTab lastAnalysisTab = ModeTab.Frequency;
     // The slot mode the overlay slots were last loaded for; entering another tab of it keeps them (null: reload).
     private Mode? preparedSlotMode;
+    // What the latest draw read; a change that moves none of it draws nothing.
+    private PlotDrawInputs? drawn;
 
     public AnalyzerPlot(
         Form owner,
@@ -51,6 +54,7 @@ internal sealed class AnalyzerPlot : IModeView
         this.showAllButton = showAllButton;
         this.hideAllButton = hideAllButton;
         this.document = document;
+        this.compare = compare;
         Factory = factory;
         Viewports = new PlotViewportMemory(view);
         labels = new PlotLabelsPanelController(view, () => Mode);
@@ -347,10 +351,27 @@ internal sealed class AnalyzerPlot : IModeView
 
     private bool IncludesCurves => descriptor.SupportsCurveDrawing && CanDrawMeasurement;
 
+    private PlotDrawInputs ReadInputs() =>
+        PlotDrawInputs.Read(Mode, document, IncludesCurves, compare.Current);
+
     // A run or an import still producing keeps what is on screen; its result redraws when it lands.
     private void RedrawChangedMeasurement()
     {
-        if (!document.IsBusy)
+        if (document.IsBusy)
+        {
+            return;
+        }
+
+        PlotDrawInputs inputs = ReadInputs();
+        PlotRedraw redraw = inputs.RedrawFrom(drawn);
+        // A build in flight may have read the old name.
+        if (redraw == PlotRedraw.Retitle && Drawing.IsCompleted && View.Model is { } model)
+        {
+            model.Title = Factory.Title(Mode);
+            model.InvalidatePlot(false);
+            drawn = inputs;
+        }
+        else if (redraw != PlotRedraw.None)
         {
             Redraw();
         }
@@ -362,6 +383,7 @@ internal sealed class AnalyzerPlot : IModeView
         using var _ = AppProfiler.Zone("AnalyzerPlot.Draw");
         // A change during the build queues a redraw, which cancels this one.
         measurementChanged.Refreshed();
+        drawn = ReadInputs();
         bool showOverlay = descriptor.ShowOverlayCurves;
         if (!IncludesCurves)
         {

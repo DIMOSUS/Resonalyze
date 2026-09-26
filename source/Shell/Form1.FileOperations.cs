@@ -221,8 +221,8 @@ public partial class Form1
         sessionTracker.MarkLoadedFile(path, file, result);
     }
 
-    // VDSP Open in analyzers: history-backed sources use full entry activation (the tab switch queues after its mode restore);
-    // file-backed sources switch first, then load like the Load button.
+    // VDSP Open in analyzers: history-backed sources use full entry activation, then Frequency Response unless the entry
+    // restored it already; file-backed sources switch first, then load like the Load button.
     private async Task OpenVirtualDspSourceInAnalyzersAsync(
         Guid? historyEntryId, string? filePath)
     {
@@ -238,7 +238,7 @@ public partial class Form1
             switch (await ActivateHistoryEntryAsync(entryId, request))
             {
                 case HistoryActivation.Landed:
-                    await SelectModeAsync(ModeTab.Frequency);
+                    await modeController.ChooseAsync(ModeTab.Frequency);
                     return;
 
                 // A newer activation is landing; falling back to the file would overwrite it.

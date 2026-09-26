@@ -297,8 +297,8 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         lock (sync)
         {
             // Between averaged runs the samples are dropped anyway, and the next run's Reset starts the pump afresh: a
-            // backlog while the last run's analysis holds the cores is not the device failing.
-            if (generation != captureGeneration || paused)
+            // backlog while the last run's analysis holds the cores is not the device failing. Any other failure is.
+            if (generation != captureGeneration || (paused && capturePump.IsOverflow(exception)))
             {
                 return;
             }

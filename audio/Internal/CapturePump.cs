@@ -99,6 +99,9 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
         }
     }
 
+    /// <summary>Whether a reported failure is the pool running out, not a block that failed to process.</summary>
+    public bool IsOverflow(Exception exception) => ReferenceEquals(exception, overflowException);
+
     public void Reset(int newGeneration)
     {
         lock (Sync)

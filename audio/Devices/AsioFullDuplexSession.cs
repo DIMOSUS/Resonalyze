@@ -354,8 +354,9 @@ internal sealed class AsioFullDuplexSession : IDisposable
         lock (sync)
         {
             // Paused between averaged runs (no accumulator): the samples are dropped anyway, and the next run's reset starts
-            // the pump afresh, so a backlog while the last run's analysis holds the cores is not the device failing.
-            if (generation != captureGeneration || accumulator == null)
+            // the pump afresh, so a backlog while the last run's analysis holds the cores is not the device failing. Any
+            // other failure is.
+            if (generation != captureGeneration || (accumulator == null && capturePump.IsOverflow(exception)))
             {
                 return;
             }

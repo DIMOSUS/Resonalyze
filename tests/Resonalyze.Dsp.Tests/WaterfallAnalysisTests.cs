@@ -74,6 +74,7 @@ public sealed class WaterfallAnalysisTests
             smoothingOctaves: 1.0);
 
         Assert.All(slices, slice => Assert.Equal(window, slice.Data.Count));
+        Assert.True(slices[0].Frequency >= (double)SampleRate / window);
         Assert.Equal(PeakMagnitude(ClosestSlice(slices, 1_000.0)), slices.Max(PeakMagnitude), precision: 12);
     }
 

@@ -25,7 +25,8 @@ public static class WaterfallAnalysis
 
         Complex[] spectrum = DataHelper.ExtractWindow(measurement, offset, window, windowFunction);
         // A power of two: the window field takes any length, and a Bluestein transform of 4 x 5000 points costs about
-        // seven times a radix-2 one of 16384. The longer pad only reduces circular wrap.
+        // seven times a radix-2 one of 16384. The longer pad only reduces circular wrap; what the window resolves is
+        // set by the window, below.
         Array.Resize(ref spectrum, DspMath.NextPowerOfTwo(checked(window * 4)));
         Fourier.Forward(spectrum, FourierOptions.Matlab);
 
@@ -34,8 +35,10 @@ public static class WaterfallAnalysis
 
         // Below 40 kHz sample rate a fixed 20 kHz start would exceed Nyquist.
         double initFrequency = Math.Min(20_000.0, measurement.SampleRate * 0.49);
+        // One cycle within the window: below it the slice has nothing to resolve.
+        double lowestFrequency = (double)measurement.SampleRate / window;
         var frequencies = new List<double>(100);
-        while (initFrequency >= frequencyStep * 4 && initFrequency >= 20)
+        while (initFrequency >= lowestFrequency && initFrequency >= 20)
         {
             frequencies.Add(initFrequency);
             initFrequency /= frequencyRatio;

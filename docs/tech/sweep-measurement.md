@@ -99,10 +99,12 @@ curves builds on the thread pool through `SupersedingBuild`:
   from (`PlotViewportMemory.ShowPlaceholder`), so its own ranges cannot pass for the user's; a zoom
   made on the frame is lost when the curves land. Any other redraw keeps the model on screen until
   the new one lands.
-- A build reads one moment of the document and the compare selection, frozen on the UI thread
-  with the Frequency Response calibration (`PlotModelFactory.Freeze`; Own is the open result's).
-  A run or an import that takes the document meanwhile cannot tear it: the build lands what was
-  open when it started, and the plot keeps showing that until the hold ends.
+- A build reads one moment of the document, the compare selection and the view settings, frozen
+  on the UI thread with the Frequency Response calibration (`PlotModelFactory.Freeze`; Own is the
+  open result's). A run or an import that takes the document meanwhile cannot tear it, and a
+  setting edited meanwhile reaches only the next build. The Auto gate offsets a Phase or Group
+  Delay build resolves go back into the live settings only when its model lands, and only where
+  Auto is still on (`AdoptAutoGates`), so an older build cannot overwrite a gate set by hand.
 - A build keeps what it computes to itself: the distortion warnings travel with the Frequency
   Response curves, and the impulse framing that stored overlays redraw under is looked up per
   model (`ImpulseFrameOf`), so two builds in flight cannot mix them.

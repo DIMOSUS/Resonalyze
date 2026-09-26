@@ -118,6 +118,32 @@ public sealed class PlotModelFactoryTests
         Assert.Empty(factory.CreateFrequencyResponse(includeCurves: true).Series);
     }
 
+    [Fact]
+    public void AFrozenFactory_ReadsTheSettingsOfItsMoment_AndHandsBackOnlyAnAutoGateStillWanted()
+    {
+        using TestAnalyzer measurement = BandedCabin(250);
+        var phase = new FrequencyResponseOptions { PhaseGateAutoFit = true, PhaseGateOffsetMs = 0.0 };
+        var visibility = new CurveVisibilityOptions();
+        PlotModelFactory factory = CreateFactory(
+            measurement, phaseResponseOptions: phase, phaseResponseVisibility: visibility);
+        PlotModelFactory frozen = factory.Freeze();
+
+        phase.PhaseGateAutoFit = false;
+        phase.PhaseGateOffsetMs = 3.0;
+        visibility.ShowMeasuredPhase = false;
+        PlotModel model = frozen.CreatePhaseResponse(includeCurves: true);
+        factory.AdoptAutoGates(frozen);
+
+        Assert.Contains(model.Series, series => series.Tag is CurveTag { Kind: AnalysisCurveKind.Primary });
+        Assert.Equal(3.0, phase.PhaseGateOffsetMs);
+        phase.PhaseGateAutoFit = true;
+        factory.AdoptAutoGates(frozen);
+        MeasurementImpulseResponse transfer = measurement.Result.Transfer!;
+        Assert.Equal(
+            TransferIrStartCache.ResolveStartMs(transfer.ImpulseResponse, measurement.Result.SampleRate, transfer.PeakIndex),
+            phase.PhaseGateOffsetMs);
+    }
+
     [Theory]
     [InlineData(Mode.ImpulseResponse)]
     [InlineData(Mode.FrequencyResponse)]

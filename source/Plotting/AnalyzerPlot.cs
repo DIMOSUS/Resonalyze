@@ -418,6 +418,7 @@ internal sealed class AnalyzerPlot : IModeView
             {
                 if (!owner.IsDisposed && Mode == mode)
                 {
+                    Factory.AdoptAutoGates(frozen);
                     Show(model, includeCurves: true, showOverlay);
                 }
             });

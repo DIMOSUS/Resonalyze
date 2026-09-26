@@ -113,10 +113,12 @@ namespace Resonalyze.Dsp
 
         public FrequencyResponseOptions WithSmoothing(double smoothingInverseOctaves)
         {
-            var copy = (FrequencyResponseOptions)MemberwiseClone();
+            FrequencyResponseOptions copy = Copy();
             copy.SmoothingInverseOctaves = smoothingInverseOctaves;
             return copy;
         }
+
+        public FrequencyResponseOptions Copy() => (FrequencyResponseOptions)MemberwiseClone();
 
         public PhaseAnalysisSettings CreatePhaseAnalysisSettings() => new(
             PhaseWindowMode,
@@ -220,6 +222,8 @@ namespace Resonalyze.Dsp
         public double BandFilterOctaves { get; set; }
 
         public double BandCenterHz { get; set; } = 1000.0;
+
+        public ImpulseResponseOptions Copy() => (ImpulseResponseOptions)MemberwiseClone();
 
         /// <summary>The whole octave-symmetric passband must fit under Nyquist (1 oct at 16 kHz needs 22.6 kHz); only the fade skirt may clip.</summary>
         public bool HasBandFilter(int sampleRate)

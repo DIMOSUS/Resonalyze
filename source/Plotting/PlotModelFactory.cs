@@ -70,20 +70,21 @@ internal sealed class PlotModelFactory
         expSweepMeasurement = live.expSweepMeasurement;
         getCalibration = calibrations;
         measurementContext = measurement;
-        frequencyResponseOptions = live.frequencyResponseOptions;
-        phaseResponseOptions = live.phaseResponseOptions;
-        groupDelayOptions = live.groupDelayOptions;
-        frequencyResponseVisibility = live.frequencyResponseVisibility;
-        phaseResponseVisibility = live.phaseResponseVisibility;
-        groupDelayVisibility = live.groupDelayVisibility;
-        impulseResponseOptions = live.impulseResponseOptions;
-        waterfallGenOptions = live.waterfallGenOptions;
-        burstDecayGenOptions = live.burstDecayGenOptions;
+        frequencyResponseOptions = live.frequencyResponseOptions.Copy();
+        phaseResponseOptions = live.phaseResponseOptions.Copy();
+        groupDelayOptions = live.groupDelayOptions.Copy();
+        frequencyResponseVisibility = live.frequencyResponseVisibility.Copy();
+        phaseResponseVisibility = live.phaseResponseVisibility.Copy();
+        groupDelayVisibility = live.groupDelayVisibility.Copy();
+        impulseResponseOptions = live.impulseResponseOptions.Copy();
+        waterfallGenOptions = live.waterfallGenOptions.Copy();
+        burstDecayGenOptions = live.burstDecayGenOptions.Copy();
         impulseFrames = live.impulseFrames;
         getCompareSource = () => compare;
     }
 
-    /// <summary>This moment of the open measurement, compare selection and calibration, for a build off the UI thread.</summary>
+    /// <summary>This moment of the open measurement, compare selection, calibration and view settings, for a build off
+    /// the UI thread: edits made meanwhile reach only the next build.</summary>
     public PlotModelFactory Freeze()
     {
         // The Own calibration is the open result's; resolved here, it cannot come from another result.
@@ -94,6 +95,21 @@ internal sealed class PlotModelFactory
             measurementContext.Freeze(),
             id => id == calibrationId ? calibration : getCalibration(id),
             getCompareSource?.Invoke());
+    }
+
+    /// <summary>On the UI thread, once <paramref name="built"/>'s model lands: the Auto gates it resolved, into the settings
+    /// the file and the panels keep, where Auto is still on. A gate set by hand meanwhile stays.</summary>
+    public void AdoptAutoGates(PlotModelFactory built)
+    {
+        if (phaseResponseOptions.PhaseGateAutoFit && built.phaseResponseOptions.PhaseGateAutoFit)
+        {
+            phaseResponseOptions.PhaseGateOffsetMs = built.phaseResponseOptions.PhaseGateOffsetMs;
+        }
+
+        if (groupDelayOptions.GroupDelayGateAutoFit && built.groupDelayOptions.GroupDelayGateAutoFit)
+        {
+            groupDelayOptions.GroupDelayGateOffsetMs = built.groupDelayOptions.GroupDelayGateOffsetMs;
+        }
     }
 
     public string? ImpulseResponseFileName => measurementContext.ImpulseResponseFileName;

@@ -1949,7 +1949,8 @@ public static class AutoAlignmentEngine
             }
 
             double? subPrecedenceBehindDb = null;
-            // Set where sub precedence rules: a later vote may only choose among picks it would let stand.
+            // Set where sub precedence rules and the pick stands by it: a later vote may only choose among picks it would
+            // let stand. A trailing pick it found no lead for leaves the vote free.
             Func<AlignmentCandidate, bool>? subPrecedenceAdmits = null;
             // Sub precedence (see SubPrecedenceMarginDb): pool spans fine and wide sets on the prior-free score; bounded to one period past the anchor.
             if (monoChannels != null &&
@@ -1961,7 +1962,7 @@ public static class AutoAlignmentEngine
                 double leadSign = subNeighbor ? 1.0 : -1.0;
                 if (subSearched ^ subNeighbor)
                 {
-                    subPrecedenceAdmits = item =>
+                    Func<AlignmentCandidate, bool> leadsTheStack = item =>
                         leadSign * (item.DelayMs - anchorMs) >= -SubPrecedenceSlackMs;
                     AlignmentCandidate leading = AlignmentSelection.PreferSubLeading(
                         candidates.Concat(wide),
@@ -1984,6 +1985,11 @@ public static class AutoAlignmentEngine
                             $"{subPrecedenceBehindDb:0.00} dB, " +
                             $"within the {SubPrecedenceMarginDb:0.00} dB precedence margin.");
                         chosen = leading;
+                    }
+
+                    if (leadsTheStack(chosen))
+                    {
+                        subPrecedenceAdmits = leadsTheStack;
                     }
                 }
             }

@@ -1264,8 +1264,9 @@ public static class CrossoverAutoSetup
             bool? forcedFlip = AutoAlignmentEngine.SettledRelativeInversion(
                 orderedProposals[j].LowPassEdge, orderedProposals[j + 1].HighPassEdge, processorSampleRate);
 
-            IReadOnlyList<AlignmentCandidate> Search(double half) =>
-                VirtualCrossoverAnalysis.FindAlignmentCandidates(
+            (IReadOnlyList<AlignmentCandidate>, IReadOnlyList<AlignmentCandidate>) Search(double half)
+            {
+                IReadOnlyList<AlignmentCandidate> found = VirtualCrossoverAnalysis.FindAlignmentCandidates(
                     processed[j + 1],
                     [processed[j]],
                     sampleRate,
@@ -1275,24 +1276,16 @@ public static class CrossoverAutoSetup
                     center + half,
                     priorDelayMs: anchored ? center : null,
                     priorSigmaMs: half / 2.0,
-                    forcedPolarity: forcedFlip);
+                    forcedPolarity: forcedFlip,
+                    levelMatch: false,
+                    out IReadOnlyList<AlignmentCandidate> optima);
+                return (found, optima);
+            }
 
-            IReadOnlyList<AlignmentCandidate> found = Search(halfWindow);
-            if (found.Count == 0)
+            if (AlignmentSelection.SelectWithEdgeRetry(Search, center, halfWindow) is not { } chosen)
             {
                 penalty += PostCheckMissingJunctionPenaltyDb;
                 continue;
-            }
-
-            AlignmentCandidate chosen = AlignmentSelection.Select(found, center);
-            // Retry re-selected through the same rules: the raw best of a widened window is exactly the impostor selection rejects.
-            if (Math.Abs(chosen.DelayMs - center) >= halfWindow * 0.9)
-            {
-                IReadOnlyList<AlignmentCandidate> retried = Search(halfWindow * 2);
-                if (retried.Count > 0)
-                {
-                    chosen = AlignmentSelection.Select(retried, center);
-                }
             }
 
             penalty += -(chosen.LossDb + DipPenaltyWeight * (chosen.DipDb - chosen.LossDb));

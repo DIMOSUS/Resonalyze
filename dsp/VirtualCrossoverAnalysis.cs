@@ -5,8 +5,8 @@ namespace Resonalyze.Dsp;
 
 public readonly record struct AlignmentResult(double DelayMs, bool InvertPolarity);
 
-/// <summary>A local optimum of the penalized loss search; near a steep crossover the true alignment and a flip + half-period
-/// impostor can tie. <see cref="LossDb"/> is the raw in-band average, <see cref="DipDb"/> the deepest 1/6-octave notch.</summary>
+/// <summary>A local optimum of the loss, ranked by <see cref="ScoreDb"/> (loss, prior, dip excess); a steep crossover can tie it with a flip +
+/// half-period impostor. <see cref="LossDb"/> (in-band average) and <see cref="DipDb"/> (deepest 1/6-octave notch) are read at the optimum.</summary>
 public sealed record AlignmentCandidate(
     double DelayMs,
     bool InvertPolarity,
@@ -2199,15 +2199,17 @@ public static class VirtualCrossoverAnalysis
             return 0;
         }
 
-        AlignmentCandidate Scored(double delayMs, bool invert) => new(
-            delayMs,
-            invert,
-            EvaluatePolarity(delayMs, invert) - PriorPenaltyDb(delayMs));
-
         double coarseStep = Math.Min(0.02, 250.0 / maxFrequencyHz / 4.0);
+        // On whole multiples of the step, so where a window starts cannot move an optimum it contains.
+        double gridStartMs = Math.Ceiling(minDelayMs / coarseStep - 1e-9) * coarseStep;
+        if (gridStartMs > maxDelayMs)
+        {
+            gridStartMs = minDelayMs;
+        }
+
         int gridCount = Math.Max(
             1,
-            (int)Math.Floor((maxDelayMs - minDelayMs) / coarseStep + 1e-9) + 1);
+            (int)Math.Floor((maxDelayMs - gridStartMs) / coarseStep + 1e-9) + 1);
         var normalDb = new double[gridCount];
         var invertedDb = new double[gridCount];
         for (int side = 0; side < sides.Count; side++)
@@ -2217,7 +2219,7 @@ public static class VirtualCrossoverAnalysis
             foreach (AlignmentBin bin in sides[side])
             {
                 Complex rotated = bin.Variable * Complex.Exp(
-                    new Complex(0, -bin.OmegaMs * minDelayMs));
+                    new Complex(0, -bin.OmegaMs * gridStartMs));
                 Complex stepPhasor = Complex.Exp(new Complex(0, -bin.OmegaMs * coarseStep));
                 for (int i = 0; i < gridCount; i++)
                 {
@@ -2245,7 +2247,8 @@ public static class VirtualCrossoverAnalysis
         }
 
         // A forced polarity seeds only its own grid, so every candidate is evaluated for the final sign.
-        var seeds = new List<AlignmentCandidate>();
+        // Seeds and refinement read the loss alone: the prior ranks lobes and must not slide one off its optimum.
+        var seeds = new List<(double DelayMs, bool Invert, double LossDb)>();
         (double[] Accumulated, bool Invert)[] grids = forcedPolarity switch
         {
             false => [(normalDb, false)],
@@ -2254,47 +2257,42 @@ public static class VirtualCrossoverAnalysis
         };
         foreach ((double[] accumulated, bool invert) in grids)
         {
-            var scores = new double[gridCount];
             for (int i = 0; i < gridCount; i++)
             {
-                scores[i] = accumulated[i]
-                    - PriorPenaltyDb(minDelayMs + i * coarseStep);
-            }
-
-            for (int i = 0; i < gridCount; i++)
-            {
-                bool risesBefore = i == 0 || scores[i] >= scores[i - 1];
-                bool fallsAfter = i == gridCount - 1 || scores[i] >= scores[i + 1];
+                // Strict on one side: a flat top seeds once, not at every grid point.
+                bool risesBefore = i == 0 || accumulated[i] > accumulated[i - 1];
+                bool fallsAfter = i == gridCount - 1 || accumulated[i] >= accumulated[i + 1];
                 if (risesBefore && fallsAfter)
                 {
-                    seeds.Add(new AlignmentCandidate(
-                        minDelayMs + i * coarseStep, invert, scores[i]));
+                    seeds.Add((gridStartMs + i * coarseStep, invert, accumulated[i]));
                 }
             }
         }
 
         var refined = new List<AlignmentCandidate>();
-        foreach (AlignmentCandidate seed in seeds)
+        foreach ((double seedMs, bool invert, double seedLossDb) in seeds)
         {
-            AlignmentCandidate best = seed;
+            double bestMs = seedMs;
+            double bestLossDb = seedLossDb;
             double step = coarseStep;
             for (int pass = 0; pass < 2; pass++)
             {
                 // Clamped to the window; the polarity stays the seed's.
-                double from = Math.Max(minDelayMs, best.DelayMs - step);
-                double to = Math.Min(maxDelayMs, best.DelayMs + step);
+                double from = Math.Max(minDelayMs, bestMs - step);
+                double to = Math.Min(maxDelayMs, bestMs + step);
                 step /= 10.0;
                 for (double delay = from; delay <= to; delay += step)
                 {
-                    AlignmentCandidate candidate = Scored(delay, seed.InvertPolarity);
-                    if (candidate.ScoreDb > best.ScoreDb)
+                    double lossDb = EvaluatePolarity(delay, invert);
+                    if (lossDb > bestLossDb)
                     {
-                        best = candidate;
+                        bestMs = delay;
+                        bestLossDb = lossDb;
                     }
                 }
             }
 
-            refined.Add(best);
+            refined.Add(new AlignmentCandidate(bestMs, invert, bestLossDb - PriorPenaltyDb(bestMs)));
         }
 
         // Dip excess folded in before ranking, so a notched optimum cannot tie a smooth one.
@@ -2583,22 +2581,18 @@ public static class VirtualCrossoverAnalysis
             return null;
         }
 
-        IReadOnlyList<AlignmentCandidate> found = SearchAlignmentCandidatesByLoss(
-            bins,
-            -halfWindowMs,
-            halfWindowMs,
-            maxFrequencyHz,
-            priorDelayMs: 0,
-            priorSigmaMs: halfWindowMs / 2.0,
-            forcedPolarity: forcedFlip,
-            out _);
-        if (found.Count == 0)
+        // The window only bounds the search, so a widened retry reads the same bins.
+        (IReadOnlyList<AlignmentCandidate>, IReadOnlyList<AlignmentCandidate>) Search(double half)
         {
-            return null;
+            IReadOnlyList<AlignmentCandidate> found = SearchAlignmentCandidatesByLoss(
+                bins, -half, half, maxFrequencyHz, priorDelayMs: 0, priorSigmaMs: half / 2.0, forcedFlip,
+                out IReadOnlyList<AlignmentCandidate> optima);
+            return (found, optima);
         }
 
-        AlignmentCandidate chosen = AlignmentSelection.Select(found, 0);
-        return (ReadAt(bins, chosen.DelayMs, chosen.InvertPolarity), chosen);
+        return AlignmentSelection.SelectWithEdgeRetry(Search, 0, halfWindowMs) is { } chosen
+            ? (ReadAt(bins, chosen.DelayMs, chosen.InvertPolarity), chosen)
+            : null;
     }
 
     /// <summary>Every side read at one timing of the variable side, chosen on the mean of the sides' objectives, as a
@@ -2637,21 +2631,19 @@ public static class VirtualCrossoverAnalysis
             return null;
         }
 
-        IReadOnlyList<AlignmentCandidate> found = SearchAlignmentCandidatesByLoss(
-            voters,
-            -halfWindowMs,
-            halfWindowMs,
-            maxFrequencyHz,
-            priorDelayMs: 0,
-            priorSigmaMs: halfWindowMs / 2.0,
-            forcedPolarity: forcedFlip,
-            out _);
-        if (found.Count == 0)
+        (IReadOnlyList<AlignmentCandidate>, IReadOnlyList<AlignmentCandidate>) Search(double half)
+        {
+            IReadOnlyList<AlignmentCandidate> found = SearchAlignmentCandidatesByLoss(
+                voters, -half, half, maxFrequencyHz, priorDelayMs: 0, priorSigmaMs: half / 2.0, forcedFlip,
+                out IReadOnlyList<AlignmentCandidate> optima);
+            return (found, optima);
+        }
+
+        if (AlignmentSelection.SelectWithEdgeRetry(Search, 0, halfWindowMs) is not { } chosen)
         {
             return null;
         }
 
-        AlignmentCandidate chosen = AlignmentSelection.Select(found, 0);
         return (
             bins.Select(side => side.Count == 0
                     ? null

@@ -821,18 +821,30 @@ public static class CrossoverJunctionTuner
                 pair[1], side.UpperChain, side.SampleRate, processorSampleRateHz,
                 out ValidSampleRange upperRange);
             bool? forcedFlip = PostCheckPolarity.ForcedFlip(side.LowerChain, side.UpperChain, processorSampleRateHz);
-            IReadOnlyList<AlignmentCandidate> found = VirtualCrossoverAnalysis.FindAlignmentCandidates(
-                upper, [lower], side.SampleRate, bandLowHz, bandHighHz,
-                -halfWindowMs, halfWindowMs,
-                priorDelayMs: 0,
-                priorSigmaMs: halfWindowMs / 2.0,
-                forcedPolarity: forcedFlip,
-                levelMatch: false,
-                out IReadOnlyList<AlignmentCandidate> allOptima,
-                gateAnchorSample: null,
-                variableValidRange: upperRange,
-                fixedValidRanges: [lowerRange]);
-            if (found.Count == 0)
+            IReadOnlyList<AlignmentCandidate> allOptima = [];
+            (IReadOnlyList<AlignmentCandidate>, IReadOnlyList<AlignmentCandidate>) Search(double half)
+            {
+                IReadOnlyList<AlignmentCandidate> found = VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                    upper, [lower], side.SampleRate, bandLowHz, bandHighHz,
+                    -half, half,
+                    priorDelayMs: 0,
+                    priorSigmaMs: half / 2.0,
+                    forcedPolarity: forcedFlip,
+                    levelMatch: false,
+                    out IReadOnlyList<AlignmentCandidate> optima,
+                    gateAnchorSample: null,
+                    variableValidRange: upperRange,
+                    fixedValidRanges: [lowerRange]);
+                // The rivals listed are the stated window's; a retry only completes the chosen lobe.
+                if (half == halfWindowMs)
+                {
+                    allOptima = optima;
+                }
+
+                return (found, optima);
+            }
+
+            if (AlignmentSelection.SelectWithEdgeRetry(Search, 0, halfWindowMs) is not { } chosen)
             {
                 result.Add(new JunctionDelayProbeSide(
                     side.Name, bandLowHz, bandHighHz, halfWindowMs, [],
@@ -840,8 +852,7 @@ public static class CrossoverJunctionTuner
                 continue;
             }
 
-            AlignmentCandidate chosen = AlignmentSelection.Select(found, 0);
-            List<JunctionDelayProbeCandidate> reported = (allOptima.Count > 0 ? allOptima : found)
+            List<JunctionDelayProbeCandidate> reported = allOptima
                 .OrderByDescending(candidate => candidate.ScoreDb)
                 .Take(maxCandidates)
                 .Select(candidate => new JunctionDelayProbeCandidate(
@@ -1596,23 +1607,28 @@ public static class CrossoverJunctionTuner
             double halfWindowMs = CrossoverAutoSetup.PostCheckHalfWindowMs(cornerHz);
             (Complex[] lower, ValidSampleRange lowerRange) = Processed(side, upper: false, lowerChain);
             (Complex[] upper, ValidSampleRange upperRange) = Processed(side, upper: true, upperChain);
-            IReadOnlyList<AlignmentCandidate> found = VirtualCrossoverAnalysis.FindAlignmentCandidates(
-                upper, [lower], sides[side].SampleRate, bandLowHz, bandHighHz,
-                -halfWindowMs, halfWindowMs,
-                priorDelayMs: 0,
-                priorSigmaMs: halfWindowMs / 2.0,
-                forcedPolarity: ForcedFlip(lowerChain, upperChain),
-                variableValidRange: upperRange,
-                fixedValidRanges: [lowerRange]);
-            if (found.Count == 0)
+            bool? forcedFlip = ForcedFlip(lowerChain, upperChain);
+            (IReadOnlyList<AlignmentCandidate>, IReadOnlyList<AlignmentCandidate>) Search(double half)
             {
-                return null;
+                IReadOnlyList<AlignmentCandidate> found = VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                    upper, [lower], sides[side].SampleRate, bandLowHz, bandHighHz,
+                    -half, half,
+                    priorDelayMs: 0,
+                    priorSigmaMs: half / 2.0,
+                    forcedPolarity: forcedFlip,
+                    levelMatch: false,
+                    out IReadOnlyList<AlignmentCandidate> optima,
+                    gateAnchorSample: null,
+                    variableValidRange: upperRange,
+                    fixedValidRanges: [lowerRange]);
+                return (found, optima);
             }
 
-            AlignmentCandidate chosen = AlignmentSelection.Select(found, 0);
-            return new JunctionTuneAlignment(
-                sides[side].Name, chosen.DelayMs, ResultingPolarity(upperChain, chosen),
-                chosen.LossDb, chosen.DipDb);
+            return AlignmentSelection.SelectWithEdgeRetry(Search, 0, halfWindowMs) is { } chosen
+                ? new JunctionTuneAlignment(
+                    sides[side].Name, chosen.DelayMs, ResultingPolarity(upperChain, chosen),
+                    chosen.LossDb, chosen.DipDb)
+                : null;
         }
 
         private bool? ForcedFlip(DspChannelChain lowerChain, DspChannelChain upperChain) =>

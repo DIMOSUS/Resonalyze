@@ -331,6 +331,36 @@ public sealed class CrossoverJunctionTunerTests
     }
 
     [Fact]
+    public void ProbeAlignment_CompletesALobeJustPastTheWindow()
+    {
+        // At 1 kHz the window is +/-2 ms; the pair lines up at -2.1 ms, so the first pass pins the lobe to the wall.
+        CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        JunctionTuneSide side = Side("left", LowPassChain(lr), HighPassChain(lr, delayMs: 2.1));
+
+        JunctionDelayProbeSide left = Assert.Single(CrossoverJunctionTuner.ProbeAlignment([side], SampleRate));
+
+        Assert.Equal(2.0, left.SearchHalfWindowMs);
+        JunctionDelayProbeCandidate chosen = Assert.Single(left.Candidates, candidate => candidate.Chosen);
+        Assert.InRange(chosen.ExtraDelayMs, -2.2, -2.05);
+        Assert.InRange(chosen.LossDb, -0.2, 0.0);
+    }
+
+    [Fact]
+    [Trait("Category", "Slow")]
+    public void Tune_ReportsTheAfterDelayOfALobeJustPastTheWindow_WhereItsFiguresWereRead()
+    {
+        CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        JunctionTuneResult result = CrossoverJunctionTuner.Tune(
+            [Side("left", LowPassChain(lr), HighPassChain(lr, delayMs: 2.1))],
+            Options(700, 1_400));
+
+        JunctionTuneAlignment after = Assert.Single(result.CurrentAfterDelay);
+        Assert.InRange(after.ExtraDelayMs, -2.2, -2.05);
+        Assert.InRange(after.LossDb, -0.2, 0.0);
+        Assert.InRange(result.Current.Sides[0].LossDb, -0.2, 0.0);
+    }
+
+    [Fact]
     public void ProbeAlignment_ReportsTheUpperChannelsRESULTINGPolarity()
     {
         // The report states what the CHANNEL ends up as, not 'flip the response', or a reply proposes the opposite polarity.

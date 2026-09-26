@@ -64,6 +64,65 @@ public static class AlignmentSelection
         return best;
     }
 
+    /// <summary>A post-check's pick; one within 10 % of the window edge is searched again at double width, where the
+    /// truncated lobe is completed (<see cref="LobeContinuation"/>) or, failing that, the pick is re-selected by the same
+    /// rules (the raw best of a wider window is the impostor they reject). Null where nothing is found.</summary>
+    /// <param name="search">Within +/- the given half window (ms) of <paramref name="centerMs"/>: the candidates (capped to the
+    /// best's gap) and every optimum found, uncapped.</param>
+    public static AlignmentCandidate? SelectWithEdgeRetry(
+        Func<double, (IReadOnlyList<AlignmentCandidate> Candidates, IReadOnlyList<AlignmentCandidate> AllOptima)> search,
+        double centerMs,
+        double halfWindowMs)
+    {
+        ArgumentNullException.ThrowIfNull(search);
+        (IReadOnlyList<AlignmentCandidate> found, _) = search(halfWindowMs);
+        if (found.Count == 0)
+        {
+            return null;
+        }
+
+        AlignmentCandidate chosen = Select(found, centerMs);
+        if (Math.Abs(chosen.DelayMs - centerMs) >= halfWindowMs * 0.9 &&
+            search(2 * halfWindowMs) is { Candidates.Count: > 0 } retried)
+        {
+            chosen = LobeContinuation(
+                    retried.AllOptima, chosen, centerMs - 2 * halfWindowMs, centerMs + 2 * halfWindowMs)
+                ?? Select(retried.Candidates, centerMs);
+        }
+
+        return chosen;
+    }
+
+    /// <summary>The lobe a window cut off, completed in the widened search: of the widened window's optima (uncapped: a
+    /// completed lobe may trail the widened best by more than the candidate gap), the one of the wall pick's polarity nearest
+    /// to it on the far side of the wall. Null when it sits at the widened window's own wall (within 5 % of its width), so the
+    /// lobe is still not found and the caller re-selects instead. Lobe choice stays with the original window's rules.</summary>
+    /// <param name="widenedLowMs">The widened window, centred where the original was.</param>
+    public static AlignmentCandidate? LobeContinuation(
+        IReadOnlyList<AlignmentCandidate> widenedOptima,
+        AlignmentCandidate wallPick,
+        double widenedLowMs,
+        double widenedHighMs)
+    {
+        ArgumentNullException.ThrowIfNull(widenedOptima);
+        ArgumentNullException.ThrowIfNull(wallPick);
+        // The loss was still rising at the wall, so the completed optimum lies at or past it, never back inside the window.
+        double outward = Math.Sign(wallPick.DelayMs - (widenedLowMs + widenedHighMs) / 2);
+        AlignmentCandidate? nearest = widenedOptima
+            .Where(item => item.InvertPolarity == wallPick.InvertPolarity &&
+                (item.DelayMs - wallPick.DelayMs) * outward >= -ContinuationInwardToleranceMs)
+            .MinBy(item => Math.Abs(item.DelayMs - wallPick.DelayMs));
+        double margin = 0.05 * (widenedHighMs - widenedLowMs);
+        return nearest != null &&
+            nearest.DelayMs > widenedLowMs + margin &&
+            nearest.DelayMs < widenedHighMs - margin
+                ? nearest
+                : null;
+    }
+
+    /// <summary>A completed lobe may refine a grid step inside the wall pick's own position.</summary>
+    private const double ContinuationInwardToleranceMs = 0.05;
+
     /// <summary>Diagnostic: the rescue the reach gate declined, or null.</summary>
     public static AlignmentCandidate? DeclinedInvertRescue(
         IReadOnlyList<AlignmentCandidate> candidates,

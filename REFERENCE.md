@@ -1010,16 +1010,29 @@ while you tune the analysis window.
 
 ## Impulse Response
 
-The **Impulse Response** mode draws the **loopback transfer IR** from the record
-start through the peak and on into the tail, so the arrival, the reflections and
+The **Impulse Response** mode draws the **loopback transfer IR** from before the
+loopback reference through the peak and on into the tail, so the arrival, the reflections and
 the decay are one picture — and so two records can be read against one clock.
 
 The traces are built over the whole record, so navigating it is a gesture and not
 a trip to the settings panel: zoom out to the end of the tail, in to a single
 sample, with the usual [graph controls](#graph-zoom-and-limits). **Length** only
-frames the view the mode OPENS on — that much tail past the peak — because a
-deconvolved record is mostly silence and opening on all of it would draw the
-response as one vertical line.
+frames the view the mode OPENS on — from the record start to that much tail past
+the peak — because a deconvolved record is mostly silence and opening on all of it
+would draw the response as one vertical line.
+
+**Before zero.** A deconvolved record is one period of a loop: whatever happens
+before the loopback reference — a linear-phase crossover's pre-ringing, or a sound
+that leads the reference — wraps around to the record's end. The view therefore
+draws the record's second half before zero, so pan or zoom left of zero to see
+pre-ringing where it happens in time. Nothing is moved: zero is still the loopback
+reference and every arrival keeps its place. The split is the middle of the record,
+so decay older than half the record (noise, in a record of seconds) appears on the
+left instead of the right. If the strongest sample itself sits in that half, the
+peak marker stands before zero and the view opens from it. The step response is
+zero just before time zero and integrates in both directions from there, so right
+of zero it is the running sum from the record start; pre-ringing appears as ripple
+before the step, not as a shift in its level.
 
 Three traces share that timeline, each switched on under **Curves:**
 
@@ -1070,7 +1083,7 @@ length that time corresponds to in air. **Invert polarity** flips the displayed
 impulse and step the same view-only way.
 
 An [overlay](#plot-overlays) captured here stores the record's own coordinates —
-absolute sample indices and raw levels — and is redrawn under whatever framing the
+absolute sample indices, negative before zero, and raw levels — and is redrawn under whatever framing the
 view has later, so it follows the time unit, the time zero, the amplitude scale and
 the polarity flip instead of staying frozen in the ones it was taken under. Levels
 are re-normalized against the LIVE record's peak, so how far the snapshot sits below
@@ -1078,6 +1091,8 @@ what is being measured now stays readable. Two things cannot be undone that way 
 travel baked in: the band filter and the ETC smoothing are part of the values. A very
 long record is stored thinned to its extremes, so zooming an overlay to sample level
 shows the thinned outline where the live trace shows samples.
+A snapshot saved by a version that drew the record from sample 0 is moved the same way
+when it loads, its second half before zero.
 
 Two markers name the instants the rest of the app acts on: the estimated
 **arrival** — the same shared figure the Auto gate offsets are anchored on — and

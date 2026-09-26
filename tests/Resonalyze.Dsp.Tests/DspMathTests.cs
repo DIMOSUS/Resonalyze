@@ -34,6 +34,18 @@ public sealed class DspMathTests
         Assert.Equal(expected, DspMath.WrapIndex(index, length));
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(7)]
+    [InlineData(8)]
+    public void NegativeLagCount_CountsThePositionsToSignedLagPutsBeforeZero(int length)
+    {
+        int negative = Enumerable.Range(0, length).Count(i => DspMath.ToSignedLag(i, length) < 0);
+
+        Assert.Equal(negative, DspMath.NegativeLagCount(length));
+    }
+
     [Fact]
     public void LanczosKernel_IsUnityAtTheCentre()
     {

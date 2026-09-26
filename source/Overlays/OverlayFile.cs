@@ -90,6 +90,9 @@ public sealed class OverlayFile
     // time unit, origin, amplitude scale and polarity. Legacy files keep the frozen Points.
     public OverlayPoint[] RawImpulse { get; set; } = Array.Empty<OverlayPoint>();
 
+    // False in files whose RawImpulse runs 0..N-1 from record start; loading moves their second half before zero.
+    public bool RawImpulseSignedLags { get; set; }
+
     // Record peak at capture, used only when no live measurement is available to normalize against.
     public double? RawImpulsePeakReference { get; set; }
 

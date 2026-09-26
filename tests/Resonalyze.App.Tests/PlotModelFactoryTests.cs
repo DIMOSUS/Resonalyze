@@ -1172,7 +1172,8 @@ public sealed class PlotModelFactoryTests
     public void ImpulseResponse_FramesTheTimeAxisAndOnlyTheDecibelFloor(
         ImpulseAmplitudeScale scale)
     {
-        var ir = new Complex[8192];
+        // Long enough that peak + Length stays in the record's first (positive-time) half.
+        var ir = new Complex[16384];
         int peak = 1024;
         for (int i = 0; i < 2000 && peak + i < ir.Length; i++)
         {
@@ -1216,9 +1217,10 @@ public sealed class PlotModelFactoryTests
         double expectedMaxX = series.Points.Max(point => point.X);
         Assert.Equal(expectedMinX, timeAxis.AbsoluteMinimum, precision: 9);
         Assert.Equal(expectedMaxX, timeAxis.AbsoluteMaximum, precision: 9);
-        // The view opens on peak + Length: a deconvolved record is mostly silence.
+        // The view opens from record start to peak + Length: a deconvolved record is mostly silence, and its second half is negative time.
         double expectedVisibleMaxX = (peak + options.Length) * 1000.0 / 44_100.0;
-        Assert.Equal(expectedMinX, timeAxis.Minimum, precision: 9);
+        Assert.True(timeAxis.AbsoluteMinimum < 0.0);
+        Assert.Equal(0.0, timeAxis.Minimum, precision: 9);
         Assert.Equal(expectedVisibleMaxX, timeAxis.Maximum, precision: 9);
         Assert.True(timeAxis.Maximum < timeAxis.AbsoluteMaximum);
     }
@@ -1482,9 +1484,78 @@ public sealed class PlotModelFactoryTests
             axis.Position == OxyPlot.Axes.AxisPosition.Bottom);
 
         Assert.Equal(8192, series.Points.Count);
-        Assert.Equal(0.2, series.Points[7000].Y, precision: 9);
+        Assert.Equal(0.2, series.Points.Single(point => point.X == 7000 - 8192).Y, precision: 9);
         Assert.Equal(peak + options.Length, timeAxis.Maximum, precision: 9);
-        Assert.Equal(8191, timeAxis.AbsoluteMaximum, precision: 9);
+        Assert.Equal(-4095, timeAxis.AbsoluteMinimum, precision: 9);
+        Assert.Equal(4096, timeAxis.AbsoluteMaximum, precision: 9);
+    }
+
+    [Theory]
+    [InlineData(ImpulseTimeOrigin.RecordStart, -192.0)]
+    [InlineData(ImpulseTimeOrigin.Peak, 0.0)]
+    public void ImpulseResponse_PlacesAPeakInTheRecordsSecondHalfBeforeZero(
+        ImpulseTimeOrigin origin, double expectedPeakX)
+    {
+        // An acausal record: the strongest sample wrapped to the end, 192 samples before zero.
+        var ir = new Complex[8192];
+        int peak = 8000;
+        ir[peak] = Complex.One;
+        ir[100] = new Complex(0.3, 0);
+
+        using var measurement = new TestAnalyzer();
+        measurement.Open(TestMeasurementResults.Restored(
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000, sampleRate: 44_100, bits: 24, sweepDurationSeconds: 1.0,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: ir, sweepDeconvolutionPeakIndex: peak,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: ir, transferPeakIndex: peak));
+        var options = new ImpulseResponseOptions
+        {
+            TimeUnit = ImpulseTimeUnit.Samples,
+            TimeOrigin = origin,
+            ShowImpulse = true
+        };
+        PlotModelFactory factory =
+            CreateFactory(measurement, impulseOptions: options);
+
+        var model = factory.CreateImpulseResponse(includeCurves: true);
+        var series = (OxyPlot.Series.LineSeries)model.Series[0];
+        var timeAxis = model.Axes.First(axis =>
+            axis.Position == OxyPlot.Axes.AxisPosition.Bottom);
+        var peakMarker = model.Annotations
+            .OfType<OxyPlot.Annotations.LineAnnotation>()
+            .Single(annotation => (annotation.Text ?? string.Empty).Contains("peak"));
+
+        Assert.Equal(expectedPeakX, series.Points.MaxBy(point => point.Y).X, precision: 9);
+        Assert.Equal(expectedPeakX, peakMarker.X, precision: 9);
+        Assert.InRange(expectedPeakX, timeAxis.Minimum, timeAxis.Maximum);
+    }
+
+    [Fact]
+    public void ImpulseResponse_MarksAnArrivalInTheRecordsSecondHalfBeforeZero()
+    {
+        var ir = new Complex[8192];
+        int peak = 8000;
+        ir[peak] = Complex.One;
+
+        using var measurement = new TestAnalyzer();
+        measurement.Open(TestMeasurementResults.Restored(
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000, sampleRate: 44_100, bits: 24, sweepDurationSeconds: 1.0,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: ir, sweepDeconvolutionPeakIndex: peak,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: ir, transferPeakIndex: peak));
+        var options = new ImpulseResponseOptions { TimeUnit = ImpulseTimeUnit.Samples, ShowImpulse = true };
+        PlotModelFactory factory =
+            CreateFactory(measurement, impulseOptions: options);
+
+        var arrival = factory.CreateImpulseResponse(includeCurves: true).Annotations
+            .OfType<OxyPlot.Annotations.LineAnnotation>()
+            .Single(annotation => annotation.Text == "arrival");
+
+        Assert.InRange(arrival.X, -200.0, -192.0);
     }
 
     [Fact]

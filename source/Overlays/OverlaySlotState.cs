@@ -39,7 +39,7 @@ internal sealed record CapturedCurve(
     // Smoothing baked into Points (0 = none, null = unknown); the display smoothing is applied on top.
     int? BakedSmoothingCode = null,
     int? SampleRateHz = null,
-    // Absolute samples and raw linear values, so the trace re-draws under the view's current framing.
+    // Signed samples (negative before time zero) and raw linear values, so the trace re-draws under the view's current framing.
     ImpulseOverlayCapture? Impulse = null)
 {
     public bool HasData => Points.Length > 1;
@@ -214,11 +214,20 @@ internal sealed record OverlaySlotState(
         file.SampleRateHz,
         file.RawImpulse.Length >= 2
             ? new ImpulseOverlayCapture(
-                file.RawImpulse.Select(point => new SignalPoint(point.X, point.Y)).ToArray(),
+                RawImpulseSamples(file),
                 file.CapturedCurveKind ?? AnalysisCurveKind.Primary,
                 file.RawImpulsePeakReference ?? 0.0,
                 file.SampleRateHz ?? 0)
             : null);
+
+    private static IReadOnlyList<SignalPoint> RawImpulseSamples(OverlayFile file)
+    {
+        SignalPoint[] samples = file.RawImpulse.Select(point => new SignalPoint(point.X, point.Y)).ToArray();
+        return file.RawImpulseSignedLags
+            ? samples
+            : ImpulseOverlayLegacy.FromRecordStartIndices(
+                samples, file.CapturedCurveKind ?? AnalysisCurveKind.Primary);
+    }
 
     private static string? CapturedYAxisKey(OverlayFile file)
     {
@@ -304,6 +313,7 @@ internal sealed record OverlaySlotState(
             file.RawImpulse = captured.Impulse is { } impulse
                 ? impulse.Samples.Select(point => new OverlayPoint(point.X, point.Y)).ToArray()
                 : Array.Empty<OverlayPoint>();
+            file.RawImpulseSignedLags = captured.Impulse != null;
             file.RawImpulsePeakReference = captured.Impulse?.PeakReference;
             file.CapturedYAxisKey = captured.YAxisKey;
         }

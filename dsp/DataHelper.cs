@@ -244,7 +244,8 @@ namespace Resonalyze.Dsp
         double OriginSamples = 0.0,
         double? ReferencePeak = null);
 
-    /// <summary><c>SnrDb</c> is present only when the envelope was computed: it is read off the envelope.</summary>
+    /// <summary><c>SnrDb</c> is present only when the envelope was computed: it is read off the envelope. <c>PeakSample</c> is a signed lag,
+    /// negative in the record's second half, as the traces draw it.</summary>
     public sealed record ImpulseCurveSet(
         AnalysisCurve? Impulse,
         AnalysisCurve? Envelope,

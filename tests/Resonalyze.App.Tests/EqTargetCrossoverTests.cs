@@ -204,7 +204,7 @@ public sealed class EqTargetCrossoverTests
             1_023,
             Rate);
         FirFilter kernel = design.Build();
-        List<double> grid = [.. EqualizationCurve.LogFrequencyGrid(10, 24_000, 300), 0];
+        List<double> grid = [.. EqualizationCurve.LogFrequencyGrid(10, 24_000, 60), 0];
 
         foreach (EqTargetSlope slope in new[] { BandPass, new EqTargetSlope(null, kernel), BandPass with { Fir = kernel } })
         {

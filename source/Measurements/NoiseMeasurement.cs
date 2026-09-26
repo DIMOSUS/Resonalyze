@@ -468,14 +468,15 @@ namespace Resonalyze
             {
                 UpdateAveragingParameters();
             }
-            // Warm FFT/JIT/allocations before the driver starts, or the first callbacks drop out.
-            WarmUpAnalysisPath();
+            // Warm FFT/JIT and the run's own frame buffers before the driver starts, or the first callbacks drop out.
+            var buffers = new SpectrumFrameBuffers();
+            WarmUpAnalysisPath(buffers);
 
             var reframer = new OverlapReframer(SequenceLength, hopSize);
             Task processingTask = ProcessSequencesAsync(
                 sequenceChannel.Reader,
                 reframer,
-                new SpectrumFrameBuffers(),
+                buffers,
                 cancellationToken);
 
             IAudioStreamingSession? session = null;
@@ -805,7 +806,7 @@ namespace Resonalyze
                 buffers);
         }
 
-        private void WarmUpAnalysisPath()
+        private void WarmUpAnalysisPath(SpectrumFrameBuffers buffers)
         {
             var reference = new float[SequenceLength];
             var target = new float[SequenceLength];
@@ -814,7 +815,8 @@ namespace Resonalyze
             TransferSpectrumFrame frame = SpectrumAnalysis.ComputeTransferSpectrumFrame(
                 reference,
                 target,
-                EffectiveWindowType);
+                EffectiveWindowType,
+                buffers);
             _ = SpectrumAnalysis.ComputeH1MagnitudeSpectrum(
                 frame.CrossSpectrum,
                 frame.ReferencePowerSpectrum);
@@ -826,7 +828,7 @@ namespace Resonalyze
                 frame.TargetPowerSpectrum,
                 EffectiveWindowType,
                 SequenceLength);
-            _ = SpectrumAnalysis.ComputeAutoPowerSpectrumFrame(target, EffectiveWindowType);
+            _ = SpectrumAnalysis.ComputeAutoPowerSpectrumFrame(target, EffectiveWindowType, buffers);
         }
 
         // Every block holds a whole periodic-pink period, so a rectangular window is leakage-free.

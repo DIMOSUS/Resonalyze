@@ -400,8 +400,7 @@ public partial class VirtualCrossoverPanel : UserControl
             try
             {
                 await RedrawMainPlotAsync();
-                // A pending pass draws the chain plot anyway; drawing it now would be thrown away.
-                if (!redrawPending && !mainPlotView.IsDisposed)
+                if (!mainPlotView.IsDisposed)
                 {
                     RedrawDspPlot();
                 }

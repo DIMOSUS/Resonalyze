@@ -119,100 +119,135 @@ public sealed class FirFilter
 
     /// <summary><see cref="Response(double, double)"/> at each frequency, kept per rate and grid for the kernel's
     /// lifetime; the list is shared, read it only. See docs/tech/dsp-chain-response.md#fir-on-a-plotted-grid.</summary>
-    public IReadOnlyList<Complex> Responses(IReadOnlyList<double> frequenciesHz, double sampleRateHz)
-    {
-        ArgumentNullException.ThrowIfNull(frequenciesHz);
-        lock (gridEntries)
-        {
-            GridEntry entry = GridEntryFor(frequenciesHz, sampleRateHz);
-            if (entry.Responses == null)
-            {
-                var responses = new Complex[entry.FrequenciesHz.Length];
-                for (int i = 0; i < responses.Length; i++)
-                {
-                    responses[i] = Response(entry.FrequenciesHz[i], sampleRateHz);
-                }
-
-                entry.Responses = responses;
-            }
-
-            return entry.Responses;
-        }
-    }
+    public IReadOnlyList<Complex> Responses(IReadOnlyList<double> frequenciesHz, double sampleRateHz) =>
+        GridEntryFor(frequenciesHz, sampleRateHz).Responses.Value;
 
     /// <summary><see cref="GroupDelaySamples"/> at each frequency, kept like <see cref="Responses"/>.</summary>
-    public IReadOnlyList<double> GroupDelaysSamples(IReadOnlyList<double> frequenciesHz, double sampleRateHz)
+    public IReadOnlyList<double> GroupDelaysSamples(IReadOnlyList<double> frequenciesHz, double sampleRateHz) =>
+        GridEntryFor(frequenciesHz, sampleRateHz).GroupDelays.Value;
+
+    /// <summary>z1 = e^{-jω} for a frequency at a rate, where every per-frequency read of a chain evaluates.</summary>
+    internal static Complex UnitCirclePoint(double frequencyHz, double sampleRateHz) =>
+        Complex.Exp(new Complex(0, -Math.Tau * frequencyHz / sampleRateHz));
+
+    /// <summary>The kernel at every bin of a record <paramref name="length"/> long, on the processor's circle
+    /// (<paramref name="rateRatio"/> = record rate / processor rate); shared, read it only. See docs/tech/dsp-chain-response.md#fir-bins.</summary>
+    internal Complex[] RecordBins(int length, double rateRatio)
+    {
+        Lazy<Complex[]> bins;
+        lock (recordBins)
+        {
+            int index = recordBins.FindIndex(entry => entry.Length == length && entry.RateRatio == rateRatio);
+            if (index < 0)
+            {
+                // A few: one kernel can sit on channels with different record lengths.
+                if (recordBins.Count == RecordBinsCapacity)
+                {
+                    recordBins.RemoveAt(0);
+                }
+
+                recordBins.Add((length, rateRatio, new Lazy<Complex[]>(() => ComputeRecordBins(length, rateRatio))));
+                index = recordBins.Count - 1;
+            }
+
+            bins = recordBins[index].Bins;
+        }
+
+        return bins.Value;
+    }
+
+    // Exact DFT when length/rateRatio is whole and no shorter than the kernel, else chirp-z.
+    private Complex[] ComputeRecordBins(int length, double rateRatio)
+    {
+        int half = length / 2;
+        var bins = new Complex[half + 1];
+        int lastBin = Math.Min(half, (int)Math.Floor(half / rateRatio));
+
+        double grid = length / rateRatio;
+        long gridLength = (long)Math.Round(grid);
+        if (Math.Abs(grid - gridLength) < 1e-6 && gridLength >= taps.Length &&
+            gridLength <= int.MaxValue)
+        {
+            Complex[] spectrum = Spectrum((int)gridLength);
+            for (int i = 0; i <= lastBin; i++)
+            {
+                bins[i] = spectrum[i];
+            }
+
+            return bins;
+        }
+
+        Complex[] chirp = ChirpSpectrum(lastBin + 1, Math.Tau * rateRatio / length);
+        Array.Copy(chirp, bins, lastBin + 1);
+        return bins;
+    }
+
+    // Each entry is computed once, by its first reader, outside the lookup lock: a read of one grid never waits for another.
+    private const int RecordBinsCapacity = 4;
+    private const int GridCapacity = 16;
+    private readonly List<(int Length, double RateRatio, Lazy<Complex[]> Bins)> recordBins = [];
+    private readonly List<GridEntry> gridEntries = [];
+
+    // Least recently used goes first; grids compare bit for bit.
+    private GridEntry GridEntryFor(IReadOnlyList<double> frequenciesHz, double sampleRateHz)
     {
         ArgumentNullException.ThrowIfNull(frequenciesHz);
         lock (gridEntries)
         {
-            GridEntry entry = GridEntryFor(frequenciesHz, sampleRateHz);
-            if (entry.GroupDelays == null)
+            for (int index = 0; index < gridEntries.Count; index++)
             {
-                var delays = new double[entry.FrequenciesHz.Length];
-                for (int i = 0; i < delays.Length; i++)
+                GridEntry cached = gridEntries[index];
+                if (cached.Matches(frequenciesHz, sampleRateHz))
                 {
-                    delays[i] = GroupDelaySamples(UnitCirclePoint(entry.FrequenciesHz[i], sampleRateHz));
+                    gridEntries.RemoveAt(index);
+                    gridEntries.Add(cached);
+                    return cached;
                 }
-
-                entry.GroupDelays = delays;
             }
 
-            return entry.GroupDelays;
-        }
-    }
-
-    private static Complex UnitCirclePoint(double frequencyHz, double sampleRateHz) =>
-        Complex.Exp(new Complex(0, -Math.Tau * frequencyHz / sampleRateHz));
-
-    // A few grids per kernel: a plot, the hybrid's reference grid and the level read-outs' bands.
-    private const int GridCapacity = 8;
-    private readonly List<GridEntry> gridEntries = [];
-
-    // Caller holds the lock. Least recently used goes first; grids compare bit for bit.
-    private GridEntry GridEntryFor(IReadOnlyList<double> frequenciesHz, double sampleRateHz)
-    {
-        for (int index = 0; index < gridEntries.Count; index++)
-        {
-            GridEntry cached = gridEntries[index];
-            if (cached.Matches(frequenciesHz, sampleRateHz))
+            if (gridEntries.Count == GridCapacity)
             {
-                gridEntries.RemoveAt(index);
-                gridEntries.Add(cached);
-                return cached;
+                gridEntries.RemoveAt(0);
             }
-        }
 
-        if (gridEntries.Count == GridCapacity)
-        {
-            gridEntries.RemoveAt(0);
+            var entry = new GridEntry(this, sampleRateHz, [.. frequenciesHz]);
+            gridEntries.Add(entry);
+            return entry;
         }
-
-        var entry = new GridEntry(sampleRateHz, [.. frequenciesHz]);
-        gridEntries.Add(entry);
-        return entry;
     }
 
-    private sealed class GridEntry(double sampleRateHz, double[] frequenciesHz)
+    private sealed class GridEntry
     {
-        public double[] FrequenciesHz { get; } = frequenciesHz;
+        private readonly double sampleRateHz;
+        private readonly double[] frequenciesHz;
 
-        public Complex[]? Responses { get; set; }
+        public GridEntry(FirFilter kernel, double sampleRateHz, double[] frequenciesHz)
+        {
+            this.sampleRateHz = sampleRateHz;
+            this.frequenciesHz = frequenciesHz;
+            Responses = new Lazy<Complex[]>(
+                () => [.. frequenciesHz.Select(frequency => kernel.Response(frequency, sampleRateHz))]);
+            GroupDelays = new Lazy<double[]>(
+                () => [.. frequenciesHz.Select(
+                    frequency => kernel.GroupDelaySamples(UnitCirclePoint(frequency, sampleRateHz)))]);
+        }
 
-        public double[]? GroupDelays { get; set; }
+        public Lazy<Complex[]> Responses { get; }
+
+        public Lazy<double[]> GroupDelays { get; }
 
         public bool Matches(IReadOnlyList<double> frequencies, double rate)
         {
             if (BitConverter.DoubleToInt64Bits(rate) != BitConverter.DoubleToInt64Bits(sampleRateHz) ||
-                frequencies.Count != FrequenciesHz.Length)
+                frequencies.Count != frequenciesHz.Length)
             {
                 return false;
             }
 
-            for (int i = 0; i < FrequenciesHz.Length; i++)
+            for (int i = 0; i < frequenciesHz.Length; i++)
             {
                 if (BitConverter.DoubleToInt64Bits(frequencies[i]) !=
-                    BitConverter.DoubleToInt64Bits(FrequenciesHz[i]))
+                    BitConverter.DoubleToInt64Bits(frequenciesHz[i]))
                 {
                     return false;
                 }

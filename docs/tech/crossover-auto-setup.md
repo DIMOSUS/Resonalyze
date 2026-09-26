@@ -623,9 +623,11 @@ per-junction delay.
 - A junction where the search finds no candidate is scored with a flat 6 dB penalty instead of
   silently winning by absence.
 - Candidates share most channels' chains (on a 4-way pool, 136 of 200 renders repeat), so one post-check
-  renders each (channel, crossover, gain) once and the candidates read it; polarity is not rendered. The renders
-  live for the one ranking, about 1 MB each. With the optimizer's cached terms a 4-way ranking went from about 27 s
-  to 17 s of CPU on those cabins, with the same ranking to the bit.
+  renders each (channel, crossover, gain) once and the candidates read it; polarity is not rendered. The readers
+  of each chain are counted before the search, and a render (about 1 MB) is let go when its last reader has it:
+  one only a single candidate reads is never held, only chains some candidate still has to read.
+  With the optimizer's cached terms a 4-way ranking went from about 27 s to 17 s of CPU on those cabins, with the
+  same ranking to the bit.
 - Both sides' raw arrivals are read in the same shared junction band (cached per channel and band).
   Arrivals from different measuring bands are not comparable: each band carries its own driver group
   delay and envelope rise. Unreadable arrivals fall back to an unanchored search over the widest window.

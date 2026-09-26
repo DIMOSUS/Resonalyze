@@ -27,10 +27,11 @@ public sealed class CrossoverPostCheckRenderTests
             candidates.Add([new(CrossoverKind.LowPass, null, Edge(lowHz), gainDb), shared]);
         }
 
-        var renders = new ConcurrentDictionary<CrossoverAutoSetup.PostCheckRenderKey, Lazy<Complex[]>>();
+        var renders = new CrossoverAutoSetup.PostCheckRenders(candidates);
         // Arrivals are read off the unprocessed crops, so both paths may share them.
         var arrivals = new ConcurrentDictionary<(int Channel, long BandKey), (double Ms, bool Valid)>();
-        double[] sharing = [.. candidates.AsParallel().AsOrdered().Select(proposals =>
+        // In order: a render let go before its last reader has it is then made twice.
+        double[] sharing = [.. candidates.Select(proposals =>
             CrossoverAutoSetup.AchievabilityPenaltyDb(
                 cropped, proposals, arrivals, renders, SampleRate, SampleRate))];
         double[] own = [.. candidates.AsParallel().AsOrdered().Select(proposals =>
@@ -38,14 +39,14 @@ public sealed class CrossoverPostCheckRenderTests
                 cropped,
                 proposals,
                 arrivals,
-                new ConcurrentDictionary<CrossoverAutoSetup.PostCheckRenderKey, Lazy<Complex[]>>(),
+                new CrossoverAutoSetup.PostCheckRenders([proposals]),
                 SampleRate,
                 SampleRate))];
 
-        Assert.True(
-            renders.Count < candidates.Count * 2,
-            $"{renders.Count} renders for {candidates.Count} candidates: nothing was shared.");
         Assert.Equal(own.Select(BitConverter.DoubleToInt64Bits), sharing.Select(BitConverter.DoubleToInt64Bits));
+        // Eight reads of six distinct chains: channel 1's band-pass three times, each other chain once.
+        Assert.Equal(6, renders.Rendered);
+        Assert.Equal(0, renders.Held);
     }
 
     private static CrossoverEdge Edge(double frequencyHz) =>

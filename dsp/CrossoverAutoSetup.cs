@@ -1093,7 +1093,7 @@ public static class CrossoverAutoSetup
             Complex[][] cropped = CropSharedDirectSoundWindow(impulseResponses.ToArray());
             var arrivalCache =
                 new ConcurrentDictionary<(int Channel, long BandKey), (double Ms, bool Valid)>();
-            var renders = new ConcurrentDictionary<PostCheckRenderKey, Lazy<Complex[]>>();
+            var renders = new PostCheckRenders(pool.Select(candidate => candidate.Proposals));
             penalties = pool
                 .AsParallel().AsOrdered()
                 .Select(candidate => AchievabilityPenaltyDb(
@@ -1162,14 +1162,62 @@ public static class CrossoverAutoSetup
     }
 
     // A channel's chain in the post-check is its crossover and gain; polarity is not rendered. Gain keys by its bits.
-    internal readonly record struct PostCheckRenderKey(int Channel, CrossoverSpec Crossover, long GainBits);
+    internal readonly record struct PostCheckRenderKey(int Channel, CrossoverSpec Crossover, long GainBits)
+    {
+        public static PostCheckRenderKey Of(int channel, CrossoverProposal proposal) =>
+            new(
+                channel,
+                new CrossoverSpec(proposal.Kind, proposal.LowPassEdge, proposal.HighPassEdge),
+                BitConverter.DoubleToInt64Bits(proposal.GainDb));
+    }
+
+    /// <summary>One ranking's post-check renders: each made once and let go when the last candidate reading it has it,
+    /// so a render only one candidate reads is never held.</summary>
+    internal sealed class PostCheckRenders
+    {
+        private readonly ConcurrentDictionary<PostCheckRenderKey, Lazy<Complex[]>> renders = new();
+        private readonly ConcurrentDictionary<PostCheckRenderKey, int> readersLeft = new();
+        private int rendered;
+
+        public PostCheckRenders(IEnumerable<IReadOnlyList<CrossoverProposal>> candidates)
+        {
+            foreach (IReadOnlyList<CrossoverProposal> proposals in candidates)
+            {
+                for (int channel = 0; channel < proposals.Count; channel++)
+                {
+                    readersLeft.AddOrUpdate(PostCheckRenderKey.Of(channel, proposals[channel]), 1, (_, count) => count + 1);
+                }
+            }
+        }
+
+        public int Rendered => Volatile.Read(ref rendered);
+
+        public int Held => renders.Count;
+
+        public Complex[] Read(PostCheckRenderKey key, Func<Complex[]> render)
+        {
+            Complex[] result = renders
+                .GetOrAdd(key, _ => new Lazy<Complex[]>(() =>
+                {
+                    Interlocked.Increment(ref rendered);
+                    return render();
+                }))
+                .Value;
+            if (readersLeft.AddOrUpdate(key, 0, (_, left) => left - 1) <= 0)
+            {
+                renders.TryRemove(key, out _);
+            }
+
+            return result;
+        }
+    }
 
     // Summed dip-penalized loss after the delay production selection would pick. See docs/tech/crossover-auto-setup.md#achievability-post-check.
     internal static double AchievabilityPenaltyDb(
         Complex[][] croppedOrdered,
         CrossoverProposal[] orderedProposals,
         ConcurrentDictionary<(int Channel, long BandKey), (double Ms, bool Valid)> arrivalCache,
-        ConcurrentDictionary<PostCheckRenderKey, Lazy<Complex[]>> renders,
+        PostCheckRenders renders,
         int sampleRate,
         int processorSampleRate)
     {
@@ -1177,16 +1225,16 @@ public static class CrossoverAutoSetup
         for (int channel = 0; channel < croppedOrdered.Length; channel++)
         {
             CrossoverProposal proposal = orderedProposals[channel];
-            var crossover = new CrossoverSpec(proposal.Kind, proposal.LowPassEdge, proposal.HighPassEdge);
+            var key = PostCheckRenderKey.Of(channel, proposal);
             Complex[] cropped = croppedOrdered[channel];
             // Candidates share most channels' chains; a render is read, never written, so they share it.
-            processed[channel] = renders.GetOrAdd(
-                new PostCheckRenderKey(channel, crossover, BitConverter.DoubleToInt64Bits(proposal.GainDb)),
-                _ => new Lazy<Complex[]>(() => VirtualCrossoverAnalysis.ApplyChain(
-                    cropped,
-                    new DspChannelChain(GainDb: proposal.GainDb, Crossover: crossover),
-                    sampleRate,
-                    processorSampleRate))).Value;
+            processed[channel] = renders.Read(key, () => VirtualCrossoverAnalysis.ApplyChain(
+                cropped,
+                new DspChannelChain(
+                    GainDb: proposal.GainDb,
+                    Crossover: new CrossoverSpec(proposal.Kind, proposal.LowPassEdge, proposal.HighPassEdge)),
+                sampleRate,
+                processorSampleRate));
         }
 
         double penalty = 0;

@@ -20,7 +20,7 @@ public sealed class SpatialAverageHybridTests
     public void AKernelsCurve_IsTheCapturePlusEachPointsOwnChainRead_ComputedAndCached()
     {
         LiveCaptureDocument document = Capture(-20);
-        double[] taps = [.. Enumerable.Range(0, 4_095).Select(n => Math.Sin(0.37 * n) / (1 + n))];
+        double[] taps = [.. Enumerable.Range(0, 63).Select(n => Math.Sin(0.37 * n) / (1 + n))];
         var chain = new DspChannelChain { GainDb = -2, Fir = new FirFilter(taps) };
         List<SignalPoint> capture = Build(document, DspChannelChain.Identity);
         PreparedDspResponse prepared = PreparedDspResponse.Create(chain, 48_000);

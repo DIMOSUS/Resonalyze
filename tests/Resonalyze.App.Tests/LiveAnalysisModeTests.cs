@@ -82,14 +82,17 @@ public sealed class LiveAnalysisModeTests
         Assert.Null(factory.LastRequest.Routing.LoopbackChannel);
     }
 
-    [Fact]
-    public async Task TheRtaAverage_HoldsItsOwnSpectrum_WhileTheFrameBuffersAreReused()
+    [Theory]
+    [InlineData(LiveAnalysisMode.Rta)]
+    [InlineData(LiveAnalysisMode.TransferFunction)]
+    public async Task TheAverage_HoldsItsOwnSpectra_WhileTheFrameBuffersAreReused(LiveAnalysisMode mode)
     {
         var factory = new FakeAudioSessionFactory(
             streamingFactory: _ => new RecordingStreamingSession(
                 framesToRaise: 12,
                 failAfterFrames: false,
-                microphonePeaks: [0.8f, 0.2f]));
+                microphonePeaks: [0.8f, 0.2f],
+                loopbackPeaks: [0.5f, 0.25f]));
         using var measurement = new NoiseMeasurement(factory);
         measurement.Init(
             44_100,
@@ -101,7 +104,7 @@ public sealed class LiveAnalysisModeTests
             waveLoopbackInputChannelOffset: 1,
             liveSpectrumOptions: new LiveSpectrumOptions
             {
-                AnalysisMode = LiveAnalysisMode.Rta,
+                AnalysisMode = mode,
                 NoiseColor = NoiseColor.PinkPeriodic,
                 AveragingSpeed = AveragingSpeed.Infinite
             });
@@ -117,8 +120,13 @@ public sealed class LiveAnalysisModeTests
 
         Assert.True(await running, measurement.LastError?.ToString());
         Assert.NotNull(snapshot?.InputMagnitude);
-        // A tone on bin 8 at 0.8 and 0.2 in turn: the mean power, not the last frame's, which an aliased buffer would show.
+        // A tone on bin 8, mic 0.8 and 0.2 in turn: the mean power (0.58), not one frame's, which an aliased buffer shows.
         Assert.InRange(snapshot!.InputMagnitude![8], 0.3, 0.7);
+        if (mode == LiveAnalysisMode.TransferFunction)
+        {
+            // Mean cross over mean reference power, 0.225 / 0.156 = 1.44; an aliased accumulator reads one frame's instead.
+            Assert.InRange(snapshot.Magnitude[8], 1.35, 1.55);
+        }
     }
 
     [Fact]

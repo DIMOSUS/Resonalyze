@@ -403,19 +403,22 @@ internal sealed class RecordingStreamingSession : IAudioStreamingSession
     private readonly bool failAfterFrames;
     private readonly float microphonePeak;
     private readonly IReadOnlyList<float>? microphonePeaks;
+    private readonly IReadOnlyList<float>? loopbackPeaks;
 
     /// <param name="microphonePeak">The microphone tone's peak; the default 1.0 reaches full scale in every frame.</param>
-    /// <param name="microphonePeaks">Per-frame peaks, cycled, in place of <paramref name="microphonePeak"/>.</param>
+    /// <param name="microphonePeaks">Per-frame peaks, cycled, in place of <paramref name="microphonePeak"/>; <paramref name="loopbackPeaks"/> likewise for the loopback's 0.5.</param>
     public RecordingStreamingSession(
         int framesToRaise,
         bool failAfterFrames,
         float microphonePeak = 1.0f,
-        IReadOnlyList<float>? microphonePeaks = null)
+        IReadOnlyList<float>? microphonePeaks = null,
+        IReadOnlyList<float>? loopbackPeaks = null)
     {
         this.framesToRaise = framesToRaise;
         this.failAfterFrames = failAfterFrames;
         this.microphonePeak = microphonePeak;
         this.microphonePeaks = microphonePeaks;
+        this.loopbackPeaks = loopbackPeaks;
     }
 
     public event Action<AudioCaptureFrame>? FrameAvailable;
@@ -436,11 +439,12 @@ internal sealed class RecordingStreamingSession : IAudioStreamingSession
             var mic = new float[sequenceLength];
             var loop = new float[sequenceLength];
             float peak = microphonePeaks is { Count: > 0 } peaks ? peaks[f % peaks.Count] : microphonePeak;
+            float loopPeak = loopbackPeaks is { Count: > 0 } loops ? loops[f % loops.Count] : 0.5f;
             for (int i = 0; i < sequenceLength; i++)
             {
                 double phase = 2.0 * Math.PI * 8.0 * i / sequenceLength;
                 mic[i] = peak * (float)Math.Sin(phase);
-                loop[i] = (float)(0.5 * Math.Sin(phase));
+                loop[i] = loopPeak * (float)Math.Sin(phase);
             }
             FrameAvailable?.Invoke(new AudioCaptureFrame([mic, loop], 0, 1));
             InputLevelsAvailable?.Invoke(new AudioInputLevels(

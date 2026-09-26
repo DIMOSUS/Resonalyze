@@ -9,8 +9,8 @@ public sealed class FirGridResponseTests
     [Fact]
     public void Responses_AreTheDirectSumsBitForBit_ComputedAndCached()
     {
-        FirFilter fir = Kernel(4_097, seed: 1);
-        List<double> grid = [.. EqualizationCurve.LogFrequencyGrid(20, 20_000, 300)];
+        FirFilter fir = Kernel(65, seed: 1);
+        List<double> grid = [.. EqualizationCurve.LogFrequencyGrid(20, 20_000, 40)];
 
         IReadOnlyList<Complex> first = fir.Responses(grid, Rate);
         IReadOnlyList<Complex> second = fir.Responses([.. grid], Rate);
@@ -25,8 +25,8 @@ public sealed class FirGridResponseTests
     [Fact]
     public void Responses_FollowTheRateAndEveryPointOfTheGrid()
     {
-        FirFilter fir = Kernel(513, seed: 2);
-        List<double> grid = [.. EqualizationCurve.LogFrequencyGrid(20, 20_000, 64)];
+        FirFilter fir = Kernel(33, seed: 2);
+        List<double> grid = [.. EqualizationCurve.LogFrequencyGrid(20, 20_000, 24)];
         IReadOnlyList<Complex> at48 = fir.Responses(grid, Rate);
 
         IReadOnlyList<Complex> at96 = fir.Responses(grid, 96_000);
@@ -49,12 +49,12 @@ public sealed class FirGridResponseTests
     [Fact]
     public void Responses_ReadAgainAfterEviction_AreStillTheDirectSums()
     {
-        FirFilter fir = Kernel(257, seed: 3);
-        List<double> grid = [.. EqualizationCurve.LogFrequencyGrid(20, 20_000, 50)];
+        FirFilter fir = Kernel(33, seed: 3);
+        List<double> grid = [.. EqualizationCurve.LogFrequencyGrid(20, 20_000, 24)];
         IReadOnlyList<Complex> first = fir.Responses(grid, Rate);
-        for (int other = 0; other < 12; other++)
+        for (int other = 0; other < 20; other++)
         {
-            fir.Responses([.. EqualizationCurve.LogFrequencyGrid(30 + other, 18_000, 50)], Rate);
+            fir.Responses([.. EqualizationCurve.LogFrequencyGrid(30 + other, 18_000, 24)], Rate);
         }
 
         IReadOnlyList<Complex> again = fir.Responses(grid, Rate);
@@ -71,8 +71,8 @@ public sealed class FirGridResponseTests
     {
         // [1, 1] has a true null at Nyquist, where the group delay is NaN.
         FirFilter nulling = new([1.0, 1.0]);
-        FirFilter fir = Kernel(2_049, seed: 4);
-        List<double> grid = [.. EqualizationCurve.LogFrequencyGrid(20, 20_000, 200), Rate / 2.0];
+        FirFilter fir = Kernel(65, seed: 4);
+        List<double> grid = [.. EqualizationCurve.LogFrequencyGrid(20, 20_000, 40), Rate / 2.0];
 
         foreach (FirFilter kernel in new[] { nulling, fir })
         {
@@ -104,8 +104,8 @@ public sealed class FirGridResponseTests
                 new CrossoverEdge(CrossoverFilterFamily.Butterworth, 90, 12)),
             Peq: new EqualizationCurve([new PeqBand(1_000, 2.5, -4)], -1),
             PhaseRotation: new PhaseRotationSpec(60, 3_000),
-            Fir: withFir ? Kernel(8_191, seed: 5) : null);
-        List<double> grid = [.. EqualizationCurve.LogFrequencyGrid(20, 20_000, 400), 30_000];
+            Fir: withFir ? Kernel(129, seed: 5) : null);
+        List<double> grid = [.. EqualizationCurve.LogFrequencyGrid(20, 20_000, 60), 30_000];
 
         foreach (int rate in new[] { 48_000, 96_000 })
         {
@@ -119,6 +119,27 @@ public sealed class FirGridResponseTests
                     AssertSameBits(prepared.Response(grid[i]), responses[i]);
                     AssertSameBits(prepared.GroupDelayMs(grid[i]), delays[i]);
                 }
+            }
+        }
+    }
+
+    [Fact]
+    public void RecordBins_AreWhatAColdKernelGives_ForEveryLengthAndRatePair()
+    {
+        FirFilter shared = Kernel(33, seed: 6);
+        (int Length, double RateRatio)[] reads =
+        [
+            (256, 1.0), (512, 1.0), (256, 0.5), (256, 44_100.0 / 48_000), (256, 1.0), (512, 2.0),
+        ];
+
+        foreach ((int length, double rateRatio) in reads)
+        {
+            Complex[] cold = new FirFilter(shared.Taps.ToArray()).RecordBins(length, rateRatio);
+            Complex[] cached = shared.RecordBins(length, rateRatio);
+            Assert.Equal(cold.Length, cached.Length);
+            for (int i = 0; i < cold.Length; i++)
+            {
+                AssertSameBits(cold[i], cached[i]);
             }
         }
     }

@@ -343,6 +343,7 @@ public sealed class CrossoverRankedProposalTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void ProposeRanked_AlwaysContainsTheConventional24Candidate()
     {
         var sources = new List<AutoSetupSource>
@@ -452,6 +453,7 @@ public sealed class CrossoverRankedProposalTests
 
     // Matched slopes tie each driver's two shoulders, not the whole system.
     [Fact]
+    [Trait("Category", "Slow")]
     public void ProposeRanked_MatchedSlopes_TieEachDriversTwoShoulders()
     {
         var sources = new List<AutoSetupSource>
@@ -548,6 +550,7 @@ public sealed class CrossoverRankedProposalTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void ApplyTargetCurveGains_LevelsMidTweeterKeepsBassCutsOnlyDownward()
     {
         List<AutoSetupSource> sources = TargetCurveSources();
@@ -639,6 +642,7 @@ public sealed class CrossoverRankedProposalTests
 
     // Ideal impulses make matched LR24 losslessly alignable: the conventional candidate wins with ~zero penalty.
     [Fact]
+    [Trait("Category", "Slow")]
     public void ProposeRanked_WithImpulseResponsesPrefersAnAchievableHandover()
     {
         var sources = new List<AutoSetupSource>

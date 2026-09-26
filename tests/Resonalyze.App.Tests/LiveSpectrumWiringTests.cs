@@ -19,6 +19,7 @@ namespace Resonalyze.App.Tests;
 /// something else fails here.
 /// </summary>
 [Collection(MainWindowData.Name)]
+[Trait("Category", "Slow")]
 public sealed class LiveSpectrumWiringTests : IDisposable
 {
     private const BindingFlags Hidden = BindingFlags.Instance | BindingFlags.NonPublic;

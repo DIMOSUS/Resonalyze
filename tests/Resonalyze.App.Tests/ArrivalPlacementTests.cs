@@ -114,6 +114,7 @@ public sealed class ArrivalPlacementTests
 
     // A REW import states no levels: its buffer is REW's, so a delay past half of it is no evidence.
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task AStoredResultWithoutALoopbackLevel_KeepsItsTimeAndItsArrival()
     {
         string path = Path.Combine(Path.GetTempPath(), $"resonalyze-rew-{Guid.NewGuid():N}.json");

@@ -12,6 +12,7 @@ public sealed class VirtualCrossoverGroupDelayViewTests
     private const double SecondAmplitude = 0.5;
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void TwoDelays_ReadTheirArrivals_AndTheSumSitsBetweenThemByEnergy()
     {
         VirtualCrossoverSession session = new();

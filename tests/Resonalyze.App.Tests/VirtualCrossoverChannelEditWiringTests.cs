@@ -7,6 +7,7 @@ namespace Resonalyze.App.Tests;
 /// A block edit through a live panel writes only the field it changed: a loaded value finer than its field shows
 /// survives an edit of another field, and the side Lock, which reads moves by difference, sees nothing to carry.
 /// </summary>
+[Trait("Category", "Slow")]
 public sealed class VirtualCrossoverChannelEditWiringTests
 {
     [Fact]

@@ -11,6 +11,7 @@ public sealed class SplCalibrationDialogWiringTests
     private static readonly double[] Clean = Enumerable.Repeat(0.1, 8).ToArray();
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void AListenThatHearsTheToneOffersSave() => Run(() =>
     {
         var streams = new Queue<ToneStream>([new ToneStream(1_000, Clean)]);
@@ -36,6 +37,7 @@ public sealed class SplCalibrationDialogWiringTests
     });
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void StopCancelsTheListenAndKeepsNoResult() => Run(() =>
     {
         var stream = new ToneStream(1_000, Clean);

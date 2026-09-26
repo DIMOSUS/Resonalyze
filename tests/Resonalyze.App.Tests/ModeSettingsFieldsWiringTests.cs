@@ -8,6 +8,7 @@ namespace Resonalyze.App.Tests;
 
 /// <summary>Every field of each mode settings panel, edited through its control, reaches what Apply writes; the previews
 /// draw what the fields say.</summary>
+[Trait("Category", "Slow")]
 public sealed class ModeSettingsFieldsWiringTests
 {
     [Fact]

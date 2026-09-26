@@ -15,11 +15,18 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
     /// <summary>Lines the pane shows without scrolling at the designed size.</summary>
     private const int PaneLines = 16;
 
+    // Each tuner run is shared by the class; every test only reads its plan and result.
+    private static readonly Lazy<(JunctionTunePlan Plan, JunctionTuneResult Result)> NoGoal =
+        new(() => Tune(acoustic: null));
+
+    private static readonly Lazy<(JunctionTunePlan Plan, JunctionTuneResult Result)> LinkwitzRiley24Goal =
+        new(() => Tune(new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24)));
+
     [Fact]
+    [Trait("Category", "Slow")]
     public void TheReportReadsAsColumns_AndFitsThePane()
     {
-        (JunctionTunePlan plan, JunctionTuneResult result) = Tune(
-            new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24));
+        (JunctionTunePlan plan, JunctionTuneResult result) = LinkwitzRiley24Goal.Value;
 
         List<string> report = VirtualCrossoverJunctionTuneReport.Build(plan, result)
             .Select(line => line.Text)
@@ -52,7 +59,7 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
     [Fact]
     public void WithNoGoalStated_TheAcousticBlockIsAbsent()
     {
-        (JunctionTunePlan plan, JunctionTuneResult result) = Tune(acoustic: null);
+        (JunctionTunePlan plan, JunctionTuneResult result) = NoGoal.Value;
 
         List<string> report = VirtualCrossoverJunctionTuneReport.Build(plan, result)
             .Select(line => line.Text)
@@ -65,8 +72,7 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
     [Fact]
     public void AReadingThatGotWorse_IsToldApartFromOneThatGotBetter()
     {
-        (JunctionTunePlan plan, JunctionTuneResult result) = Tune(
-            new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24));
+        (JunctionTunePlan plan, JunctionTuneResult result) = LinkwitzRiley24Goal.Value;
 
         List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
         int header = report.FindIndex(line => line.Text.Contains("sum loss", StringComparison.Ordinal));
@@ -87,7 +93,7 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
     [Fact]
     public void AChangeTheGoalPaidForInSum_IsCalledNearerTheGoal_NotBetter()
     {
-        (JunctionTunePlan plain, _) = Tune(acoustic: null);
+        (JunctionTunePlan plain, _) = NoGoal.Value;
         JunctionTunePlan plan = plain with
         {
             Options = plain.Options with
@@ -117,7 +123,7 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
     [Fact]
     public void AFoundCrossoverShortOfTheMargin_IsAdvisedAgainst_NotCalledUnapplied()
     {
-        (JunctionTunePlan plan, _) = Tune(acoustic: null);
+        (JunctionTunePlan plan, _) = NoGoal.Value;
         CrossoverEdge now = new(CrossoverFilterFamily.Butterworth, 180, 36);
         CrossoverEdge foundLow = new(CrossoverFilterFamily.Butterworth, 175, 36);
         CrossoverEdge foundHigh = new(CrossoverFilterFamily.Butterworth, 185, 24);
@@ -142,7 +148,7 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
     [Fact]
     public void AGoalTheCrossoverMisses_IsStillWritten_AndTheReportSaysWhatThatMeans()
     {
-        (JunctionTunePlan plain, _) = Tune(acoustic: null);
+        (JunctionTunePlan plain, _) = NoGoal.Value;
         JunctionTunePlan plan = plain with
         {
             Options = plain.Options with
@@ -214,6 +220,7 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void AChannelNotRead_IsNamed_AndTheGoalIsNotCalledLanded()
     {
         (JunctionTunePlan plan, JunctionTuneResult result) = TwoSides(rightTweeterFallsDbPerOctave: 9.0, closestDb: null);
@@ -237,7 +244,7 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
     private static (JunctionTunePlan Plan, JunctionTuneResult Result) TwoSides(
         double rightTweeterFallsDbPerOctave, double? closestDb)
     {
-        (JunctionTunePlan plain, _) = Tune(acoustic: null);
+        (JunctionTunePlan plain, _) = NoGoal.Value;
         JunctionTunePlan plan = plain with
         {
             Options = plain.Options with

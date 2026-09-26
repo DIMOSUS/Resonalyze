@@ -15,6 +15,7 @@ namespace Resonalyze.App.Tests;
 /// Drives the real main window, so a view left reading something else fails here.
 /// </summary>
 [Collection(MainWindowData.Name)]
+[Trait("Category", "Slow")]
 public sealed class AnalyzerWiringTests : IDisposable
 {
     private const BindingFlags Hidden = BindingFlags.Instance | BindingFlags.NonPublic;

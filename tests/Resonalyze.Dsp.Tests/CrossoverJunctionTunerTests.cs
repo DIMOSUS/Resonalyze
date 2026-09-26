@@ -100,6 +100,7 @@ public sealed class CrossoverJunctionTunerTests
             SampleRate);
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Tune_KeepsAJunctionThatIsAlreadyTextbook()
     {
         // A Linkwitz-Riley pair at one corner is lossless: nothing beats it by the keep margin.
@@ -118,6 +119,7 @@ public sealed class CrossoverJunctionTunerTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Tune_ClosesAWideGentleOverlap_OntoOneCorner()
     {
         JunctionTuneResult result = CrossoverJunctionTuner.Tune(
@@ -166,6 +168,7 @@ public sealed class CrossoverJunctionTunerTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Tune_ReadsEverySide_AfterItsBestDelay_AndRanksOnTheirMean()
     {
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
@@ -495,6 +498,7 @@ public sealed class CrossoverJunctionTunerTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void ANarrowNotchInThePlant_CostsFarLessThanASlopeThatIsSystematicallyWrong()
     {
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
@@ -598,6 +602,7 @@ public sealed class CrossoverJunctionTunerTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void FreeingTheCorners_ReadsPairsHeldApartAndPairsOverlapped()
     {
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
@@ -693,7 +698,7 @@ public sealed class CrossoverJunctionTunerTests
                 Side("left", LowPassChain(left), HighPassChain(left)),
                 Side("right", LowPassChain(right), HighPassChain(right))
             ],
-            Options(700, 1_400));
+            Options(1_000, 1_000, slopes: [24], independentSlopes: false));
 
         Assert.Equal(2, result.Current.Sides.Count);
     }
@@ -709,9 +714,11 @@ public sealed class CrossoverJunctionTunerTests
             Side("right", LowPassChain(lr), HighPassChain(lr, delayMs: 0.5))
         ];
 
-        JunctionTuneResult apart = CrossoverJunctionTuner.Tune(sides, Options(700, 1_400));
+        // Only the current junction is read, so the search is held to its own corner.
+        JunctionTuneOptions options = Options(1_000, 1_000, slopes: [24], independentSlopes: false);
+        JunctionTuneResult apart = CrossoverJunctionTuner.Tune(sides, options);
         JunctionTuneResult joint = CrossoverJunctionTuner.Tune(
-            sides, Options(700, 1_400) with { OneAlignmentForAllSides = true });
+            sides, options with { OneAlignmentForAllSides = true });
 
         Assert.Equal(2, apart.CurrentAfterDelay.Count);
         Assert.NotEqual(apart.CurrentAfterDelay[0].ExtraDelayMs, apart.CurrentAfterDelay[1].ExtraDelayMs, 2);

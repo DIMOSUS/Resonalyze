@@ -108,6 +108,7 @@ public sealed class RecordedSweepWindowTests : IDisposable
 
     // Matched filtering concentrates a 2 s sweep into one peak worth about 46 dB.
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(0.3f)]
     [InlineData(0.03f)]
     [InlineData(0.003f)]
@@ -123,6 +124,7 @@ public sealed class RecordedSweepWindowTests : IDisposable
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void AnIsolatedClickIsNotMistakenForTheSweep()
     {
         const int lead = 30 * SampleRate;
@@ -134,6 +136,7 @@ public sealed class RecordedSweepWindowTests : IDisposable
     }
 
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(10.0)]
     [InlineData(30.0)]
     public void InterferenceLouderThanTheSweepIsNotTheMatch(double interferenceOverSweepDb)
@@ -153,6 +156,7 @@ public sealed class RecordedSweepWindowTests : IDisposable
 
     // A bass crossed out 30 dB read as a late start under a level rule; matching costs coherence, not position.
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(true)]
     [InlineData(false)]
     public void AQuietEndOfTheBandDoesNotMoveTheWindow(bool quietHead)

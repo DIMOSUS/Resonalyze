@@ -12,6 +12,7 @@ namespace Resonalyze.App.Tests;
 /// and the cards, the session and the dialog's Undo are read afterwards. The rules have their own tests; these pin the
 /// glue between the dialog, <see cref="VirtualCrossoverJunctionTuneApply"/> and the cards.
 /// </summary>
+[Trait("Category", "Slow")]
 public sealed class VirtualCrossoverJunctionTuneWiringTests
 {
     private const int SampleRate = 48_000;

@@ -32,6 +32,7 @@ public sealed class ArrayMicrophonesDialogWiringTests
     ];
 
     [Theory]
+    [Trait("Category", "Slow")]
     [MemberData(nameof(Changes))]
     public void EachEditReachesTheDialogAndOk(string change) => Run(() =>
     {

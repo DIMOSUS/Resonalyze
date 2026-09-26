@@ -338,6 +338,7 @@ public sealed class LiveSpectrumSessionTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void AReconfigureRepeatingTheRouteKeepsTheCaptureSession_AndANewRouteStartsOne()
     {
         using var analyzer = new NoiseMeasurement(new FakeAudioSessionFactory());

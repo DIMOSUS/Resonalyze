@@ -115,6 +115,7 @@ public sealed class ArrivalCoherenceLadderTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Ladder_ReadsAnInvertedPairAsCenteredAtLagZero()
     {
         // The envelope is polarity-blind: an inversion leaves the optimum at 0 and CurrentR equals PeakR.
@@ -136,6 +137,7 @@ public sealed class ArrivalCoherenceLadderTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Ladder_DropsBandsWhereOneChannelStopsParticipating()
     {
         // The level gate sits at the sum-loss curve's 25 dB: -40 dB empties the ladder, -20 dB participates.

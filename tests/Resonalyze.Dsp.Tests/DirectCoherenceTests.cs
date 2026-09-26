@@ -79,6 +79,7 @@ public sealed class DirectCoherenceTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Compute_WeighsTheDirectCoherenceOnAPolarityTie()
     {
         // Split corners (LP 1500 / HP 1700, BW48) leave a lobe/polarity-partner near-tie: the witness must run,

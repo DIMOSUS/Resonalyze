@@ -262,6 +262,7 @@ public sealed class SteadyStateWindowTests
     // At 192 kHz (171 ms window) both stages move the reading by dB.
     [InlineData(192_000, ChainEdit.Delay, 2.00)]
     [InlineData(192_000, ChainEdit.AllPass, 5.20)]
+    [Trait("Category", "Slow")]
     public void DelayAndAllPass_MoveTheGatedCurve_AtTheLimitsTheUiAllows(
         int sampleRate, ChainEdit edit, double boundDb)
     {

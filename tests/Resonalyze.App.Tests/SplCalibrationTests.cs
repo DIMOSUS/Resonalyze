@@ -190,6 +190,7 @@ public sealed class SplCalibrationTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task ARun_StampsTheAnchorOfItsOwnInput()
     {
         ImpulseResponseFile file = ImpulseResponseFile.From(await MeasureAsync(MatchingWaveAnchor()));
@@ -283,6 +284,7 @@ public sealed class SplCalibrationTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task ARun_DropsAnAnchorCapturedOnADifferentInput()
     {
         MeasurementResult result = await MeasureAsync(ValidAnchor());

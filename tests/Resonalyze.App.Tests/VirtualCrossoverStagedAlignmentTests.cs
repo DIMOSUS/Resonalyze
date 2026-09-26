@@ -298,7 +298,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
 
     private static System.Numerics.Complex[] Impulse(int delaySamples)
     {
-        var ir = new System.Numerics.Complex[16_384];
+        var ir = new System.Numerics.Complex[4_096];
         ir[delaySamples] = 1.0;
         return ir;
     }
@@ -307,6 +307,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
     // A mono side is one instance shared by both cabin lists, which is why both layouts hold.
     [InlineData(false)]
     [InlineData(true)]
+    [Trait("Category", "Slow")]
     public void ComputeStereoAlignment_WalksTheChain_WithAMonoCentreLeftToItsOwnStage(
         bool rightHandDrive)
     {

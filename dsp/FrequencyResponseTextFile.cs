@@ -13,7 +13,8 @@ public sealed class FrequencyResponseTextFile
     // Units a header may write bare after the level's name ("Frequency Level V"); dB ones pass, the rest refuse.
     private static readonly HashSet<string> BareUnits = new(StringComparer.OrdinalIgnoreCase)
     {
-        "dB", "dBFS", "dBSPL", "dBV", "dBu", "V", "mV", "Pa", "mPa", "ohm", "ohms", "\u03a9", "ms", "%", "deg", "degrees", "rad"
+        "dB", "dBFS", "dBSPL", "dBV", "dBu", "V", "mV", "A", "mA", "W", "Pa", "mPa", "m/s", "mm/s", "g",
+        "ohm", "ohms", "\u03a9", "ms", "%", "deg", "degrees", "rad"
     };
 
     private FrequencyResponseTextFile(double[] frequenciesHz, double[] levelsDb)

@@ -746,6 +746,13 @@ public sealed class AgentImportRunnerTests : IDisposable
         Moves(() => Project.Target!.ImportedCurve = [1, 2, 4]);
         Moves(() => left.SpatialAveragePath = @"D:\measurements\left mid mmm.json");
         Moves(() => leftState.SpatialAverage = new LiveCaptureDocument { CaptureSessionId = Guid.NewGuid() });
+        Moves(() => leftState.SpatialAverage = new LiveCaptureDocument
+        {
+            Method = SpatialAverageMethod.File,
+            CurveDb = [70.0, 70.0]
+        });
+        // Only the answer changes: the file, its curve and its (empty) correction stay.
+        Moves(() => leftState.SpatialAverage!.CalibrationFixed = true);
         Moves(() => left.GainDb -= 1.5);
         Moves(() => left.PeqBands = [new PeqBand(820, 2.1, -2.4)]);
         Moves(() => import.Session.Reorder(import.Session.MoveOrder(Channels[0], 1)!));

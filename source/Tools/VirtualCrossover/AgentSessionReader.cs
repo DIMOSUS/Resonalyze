@@ -143,7 +143,7 @@ internal sealed class AgentSessionReader(
                 ? string.Empty
                 : $"{document.CaptureSessionId:D}/{document.SavedAtUtc.UtcTicks}/{document.Method}" +
                   (document.Method == SpatialAverageMethod.File
-                      ? $"/{Digest(document.CurveDb)}/{Digest(document.CalibrationCorrectionDb)}"
+                      ? $"/{document.CalibrationFixed}/{Digest(document.CurveDb)}/{Digest(document.CalibrationCorrectionDb)}"
                       : string.Empty);
 
         static string Edge(CrossoverEdge edge) =>

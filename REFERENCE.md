@@ -3559,7 +3559,11 @@ and why this one has the last word on a finished tune.
 - The report gives each side's sum loss, dip and ripple for the crossover on
   screen and the one found, both read after re-aligning, and the delay and
   polarity that re-alignment gives the upper block — run Auto delay after
-  applying to get them. The re-alignment is the one this junction alone would
+  applying to get them. At a matched split from 1 kHz up the re-alignment keeps
+  the polarity relation Auto delay will force there: inverted where the pair's
+  own filters sum inverted (Linkwitz-Riley 12 or 36 dB/oct, for example), in
+  phase where they sum in phase (Linkwitz-Riley 24). The re-alignment is the one
+  this junction alone would
   choose; a shift near a whole period of the corner may be a neighbouring lobe
   that Auto delay, which walks the whole chain, settles differently.
 

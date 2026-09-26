@@ -328,10 +328,15 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
             inputs.Add(new JunctionAlignmentSide(upperResponse, lowerResponse, side.SampleRate, upperRange, lowerRange));
         }
 
+        List<bool?> forcedFlips = sides
+            .Select(side => PostCheckPolarity.ForcedFlip(side.LowerChain, side.UpperChain, processor.SampleRateHz))
+            .ToList();
+
         if (AgentProbeReader.SharesOneAlignment(lower, upper) && inputs.Count > 1)
         {
             if (VirtualCrossoverAnalysis.MeasureJointlyAlignedJunctionSpectra(
-                    inputs, result.Best.BandLowHz, result.Best.BandHighHz, halfWindowMs) is { } joint)
+                    inputs, result.Best.BandLowHz, result.Best.BandHighHz, halfWindowMs,
+                    PostCheckPolarity.Shared(forcedFlips)) is { } joint)
             {
                 for (int i = 0; i < sides.Count; i++)
                 {
@@ -351,7 +356,8 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
             if (VirtualCrossoverAnalysis.MeasureAlignedJunctionSpectrum(
                     input.VariableImpulseResponse, [input.FixedImpulseResponse], input.SampleRate,
                     result.Best.BandLowHz, result.Best.BandHighHz, halfWindowMs,
-                    input.VariableValidRange, [input.FixedValidRange]) is { Reading: var reading })
+                    input.VariableValidRange, [input.FixedValidRange],
+                    forcedFlips[i]) is { Reading: var reading })
             {
                 sums.Add(new JunctionSum(sides[i].Name, reading.LossDb, reading.DipDb, reading.RippleDb));
             }

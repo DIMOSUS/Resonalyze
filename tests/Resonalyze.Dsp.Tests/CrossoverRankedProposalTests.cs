@@ -54,6 +54,34 @@ public sealed class CrossoverRankedProposalTests
             SampleRate,
             SampleRate);
 
+    private static Complex[] Impulse(double amplitude)
+    {
+        var impulse = new Complex[16_384];
+        impulse[480] = amplitude;
+        return impulse;
+    }
+
+    [Fact]
+    public void ProposeRanked_PostCheckHoldsTheRelationAutoDelayForces()
+    {
+        // A reversed tweeter under a matched split above 1 kHz: held in the relation Auto delay forces, it reaches only the
+        // flip + half-period impostor, which a steep split pays for.
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(250, 4_500), DriverType.Midrange),
+            new(BandCurve(1_000, 20_000), DriverType.Tweeter)
+        };
+        RankedCrossoverProposal Rank(double tweeterSign) => Assert.Single(CrossoverAutoSetup.ProposeRanked(
+            sources, Options(CrossoverFilterFamily.LinkwitzRiley), [Impulse(1.0), Impulse(tweeterSign)], candidateCount: 1));
+
+        RankedCrossoverProposal normal = Rank(1.0);
+        RankedCrossoverProposal reversed = Rank(-1.0);
+
+        Assert.NotNull(AutoAlignmentEngine.SettledRelativeInversion(
+            normal.Proposals[0].LowPassEdge, normal.Proposals[1].HighPassEdge, (int)SampleRate));
+        Assert.True(reversed.AchievabilityPenaltyDb > normal.AchievabilityPenaltyDb + 0.2);
+    }
+
     [Theory]
     [InlineData(83, 85)]
     [InlineData(97, 95)]

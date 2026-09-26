@@ -352,6 +352,49 @@ public sealed class CrossoverJunctionTunerTests
         Assert.False(normal.InvertUpper);
     }
 
+    private static JunctionTuneSide Lr36At2k(string name, double tweeterSign)
+    {
+        CrossoverEdge lr36 = Edge(CrossoverFilterFamily.LinkwitzRiley, 2_000, 36);
+        return new JunctionTuneSide(
+            name, Impulse(), LowPassChain(lr36), Impulse(amplitude: tweeterSign), HighPassChain(lr36), SampleRate);
+    }
+
+    // A reversed tweeter under a matched LR36: the sum wants the flags in phase, Auto delay holds them inverted.
+    [Fact]
+    public void ProbeAlignment_ReportsOnlyTheRelationAutoDelayForces()
+    {
+        JunctionDelayProbeSide read = Assert.Single(
+            CrossoverJunctionTuner.ProbeAlignment([Lr36At2k("left", tweeterSign: -1.0)], SampleRate));
+
+        Assert.NotEmpty(read.Candidates);
+        Assert.All(read.Candidates, candidate => Assert.True(candidate.InvertUpper));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Tune_AlignsAndReadsInTheRelationAutoDelayForces(bool oneAlignmentForAllSides)
+    {
+        JunctionTuneResult Tune(double tweeterSign) => CrossoverJunctionTuner.Tune(
+            oneAlignmentForAllSides
+                ? [Lr36At2k("left", tweeterSign), Lr36At2k("right", tweeterSign)]
+                : [Lr36At2k("left", tweeterSign)],
+            Options(2_000, 2_000, slopes: [36], independentSlopes: false) with
+            {
+                OneAlignmentForAllSides = oneAlignmentForAllSides
+            });
+
+        JunctionTuneResult normal = Tune(1.0);
+        JunctionTuneResult reversed = Tune(-1.0);
+
+        Assert.All(reversed.CurrentAfterDelay, alignment => Assert.True(alignment.InvertUpper));
+        // Held inverted, the reversed tweeter reaches only the flip + half-period impostor, tenths of a dB down at a steep split.
+        for (int i = 0; i < normal.Current.Sides.Count; i++)
+        {
+            Assert.True(reversed.Current.Sides[i].DipDb < normal.Current.Sides[i].DipDb - 0.2);
+        }
+    }
+
     [Fact]
     public void AStatedAcousticSlope_PicksTheElectricalFilterThatLandsIt()
     {

@@ -600,6 +600,31 @@ outranks the rule. The rule also applies only:
   matched BW36 splits at 70 and 180 Hz answer polarity by moving up to a period rather than
   flipping.
 
+Outside the engine the rule is `SettledRelativeInversion`, the same function stages 1 and 2 read: the
+relation a matched split at or above 1 kHz forces, or null. Every post-check that predicts Auto delay's
+result searches only that relation where it is settled, as stage 2 does: the crossover wizard's
+achievability check, the junction tuner's re-aligned reads (`MeasureAlignedJunctionSpectrum`,
+`MeasureJointlyAlignedJunctionSpectra`) and its delay probe. `PostCheckPolarity.ForcedFlip` turns the
+relation into the upper channel's flip, since the tuner renders the chains with their saved signs and
+the wizard without any. Without it the 0.5 dB non-inverted rescue argued for the in-phase relation a
+matched LR12/LR36 split must not have, and an LR24 split could be read inverted where the inverted lobe
+won by more than the margin; Auto delay produces neither.
+
+Measured on the archive: Auto delay's battery (13 sessions, mono and stereo) is unchanged; the tuner's
+(its 8 default sessions, 46 reads per arm, sums judged as the tuner reads them) gains on every arm, in
+loss + ½ dip summed over the reads: plain +0.24, the stated LR24 +0.52, LR24 told only to the tune
++0.52, LR24 under the 1 dB slack +0.77, LR48 +0.07. The wizard's post-check re-scores 98 of 572 pooled
+candidates over 13 sessions, and two top picks move a tweeter corner by 100 Hz or less (v2 3950 to
+3850 Hz, v4 4600 to 4650 Hz).
+
+Three variants were measured. Withdrawing the in-phase preference at a matched split that sums
+inverted, without forcing, moved one tuner read (+0.25); withdrawing it at every such split, below
+1 kHz too, cost the plain arm 0.34 dB. Where the relation is not settled, the preference still keeps
+the relation the chains were saved with, although Auto delay replaces each channel's polarity rather
+than composing with it. Preferring the relation Auto delay will set instead, with the sums judged the
+same way, gained the plain arm 0.37 dB but cost the stated-LR24 arms 2.3 to 2.7 dB, through the tune's
+keep-or-apply choices at v2's 220 Hz junction, so the saved relation stays.
+
 ## Fine alignment at a junction
 
 `AlignChannelAtJunction` is shared by the mono walk and the stereo descent. The window has three
@@ -705,7 +730,8 @@ the coarse base(s) ± the period-scaled range.
 
 Polarity is relative to the settled neighbour. Where the filters expect inversion
 (`expectedRelativeInversion`) the preference is withdrawn, not reversed. Reversing it defended the
-opposite lobe blindly and measured 0.4 dB worse on a matched 180 Hz BW36 junction.
+opposite lobe blindly and measured 0.4 dB worse on a matched 180 Hz BW36 junction. The post-checks
+outside the engine search only the relation a matched split settles (see [Expected polarity](#expected-polarity)).
 
 `GateWideSeedLobe`: an untrusted seed's window spans foreign comb lobes that, under a trusted seed,
 only promotion could reach. Inside one window only the prior and the tie-break defend the arrival,

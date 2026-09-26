@@ -712,8 +712,7 @@ public static class AutoAlignmentEngine
         AlignmentJunction pair)
     {
         ArgumentNullException.ThrowIfNull(pair);
-        if (pair.CrossoverHz < DirectSeedMinCrossoverHz ||
-            ExpectsRelativeInversion(pair) is not bool inverted)
+        if (SettledRelativeInversion(pair) is not bool inverted)
         {
             return null;
         }
@@ -772,9 +771,36 @@ public static class AutoAlignmentEngine
             directSeed?.InvertPolarity == answer.Inverted;
     }
 
-    private static bool? ExpectsRelativeInversion(AlignmentJunction pair)
+    /// <summary>The relation Auto delay forces on a junction, as stage 2 does: at a matched split at or above 1 kHz, true where
+    /// the pair's own filters sum inverted (LR12/LR36, BW12/BW36), false where they sum in phase (LR24/LR48); null where the
+    /// search decides. See docs/tech/auto-alignment.md#expected-polarity.</summary>
+    internal static bool? SettledRelativeInversion(
+        CrossoverEdge? lowPass,
+        CrossoverEdge? highPass,
+        int processorSampleRate) =>
+        lowPass is { } low && highPass is { } high &&
+        0.5 * (low.FrequencyHz + high.FrequencyHz) >= DirectSeedMinCrossoverHz
+            ? ExpectsRelativeInversion(low, high, processorSampleRate)
+            : null;
+
+    private static bool? SettledRelativeInversion(AlignmentJunction pair) =>
+        SettledRelativeInversion(
+            pair.Lower.ProcessingChain?.LowPassEdge,
+            pair.Upper.ProcessingChain?.HighPassEdge,
+            pair.Lower.Channel.ProcessorSampleRate);
+
+    private static bool? ExpectsRelativeInversion(AlignmentJunction pair) =>
+        pair.Lower.ProcessingChain?.LowPassEdge is { } lowPass &&
+        pair.Upper.ProcessingChain?.HighPassEdge is { } highPass
+            ? ExpectsRelativeInversion(lowPass, highPass, pair.Lower.Channel.ProcessorSampleRate)
+            : null;
+
+    private static bool? ExpectsRelativeInversion(
+        CrossoverEdge lowPass,
+        CrossoverEdge highPass,
+        int processorSampleRate)
     {
-        double preferenceDb = FilterPolarityPreferenceDb(pair);
+        double preferenceDb = FilterPolarityPreferenceDb(lowPass, highPass, processorSampleRate);
         if (double.IsNaN(preferenceDb) ||
             Math.Abs(preferenceDb) <= ExpectedInversionMarginDb)
         {
@@ -787,18 +813,11 @@ public static class AutoAlignmentEngine
 
     /// <summary>Inverted-sum advantage (dB) of the junction's own filters at the corner; NaN unless the split is matched.
     /// See docs/tech/auto-alignment.md#expected-polarity.</summary>
-    private static double FilterPolarityPreferenceDb(AlignmentJunction pair)
+    private static double FilterPolarityPreferenceDb(
+        CrossoverEdge lowPass,
+        CrossoverEdge highPass,
+        int rate)
     {
-        if (pair.Lower.ProcessingChain?.Crossover is not { } lowerCrossover ||
-            pair.Upper.ProcessingChain?.Crossover is not { } upperCrossover ||
-            lowerCrossover.LowPassEdge is not { } lowPass ||
-            upperCrossover.HighPassEdge is not { } highPass ||
-            lowerCrossover.Kind is not (CrossoverKind.LowPass or CrossoverKind.BandPass) ||
-            upperCrossover.Kind is not (CrossoverKind.HighPass or CrossoverKind.BandPass))
-        {
-            return double.NaN;
-        }
-
         if (lowPass.Family != highPass.Family ||
             lowPass.SlopeDbPerOctave != highPass.SlopeDbPerOctave ||
             Math.Abs(lowPass.FrequencyHz - highPass.FrequencyHz) >
@@ -807,7 +826,6 @@ public static class AutoAlignmentEngine
             return double.NaN;
         }
 
-        int rate = pair.Lower.Channel.ProcessorSampleRate;
         double cornerHz = 0.5 * (lowPass.FrequencyHz + highPass.FrequencyHz);
         Complex low = CrossoverFilter.Response(
             new CrossoverSpec(CrossoverKind.LowPass, LowPassEdge: lowPass),
@@ -1546,9 +1564,7 @@ public static class AutoAlignmentEngine
 
         // Matched split at or above DirectSeedMinCrossoverHz, no wide seed, no joint search: the filters force polarity (inverted or in phase); a caller polarity outranks it.
         // See docs/tech/auto-alignment.md#expected-polarity.
-        bool? filterPolarity = pair.CrossoverHz >= DirectSeedMinCrossoverHz
-            ? ExpectsRelativeInversion(pair)
-            : null;
+        bool? filterPolarity = SettledRelativeInversion(pair);
         bool expectsInversion = filterPolarity == true;
         if (forcedPolarity == null && filterPolarity is bool expectedInversion &&
             !wideSeed && secondaryNeighbor == null)

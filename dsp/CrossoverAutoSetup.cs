@@ -42,7 +42,7 @@ public sealed record AutoSetupSource(
     IReadOnlyList<SignalPoint>? DistortionDb = null);
 
 /// <summary><see cref="InvertPolarity"/> is derived from the crossover the channel ends up with, not measured; Auto delay
-/// composes its own flip on top. See docs/tech/crossover-auto-setup.md#polarity.</summary>
+/// replaces it with its own answer. See docs/tech/crossover-auto-setup.md#polarity.</summary>
 public sealed record CrossoverProposal(
     CrossoverKind Kind,
     CrossoverEdge? HighPassEdge,
@@ -1260,6 +1260,10 @@ public static class CrossoverAutoSetup
                 ? PostCheckHalfWindowMs(Math.Min(lp, hp))
                 : PostCheckMaxHalfWindowMs;
 
+            // The chains render without the proposal's polarity: only the relation Auto delay will force is searched.
+            bool? forcedFlip = AutoAlignmentEngine.SettledRelativeInversion(
+                orderedProposals[j].LowPassEdge, orderedProposals[j + 1].HighPassEdge, processorSampleRate);
+
             IReadOnlyList<AlignmentCandidate> Search(double half) =>
                 VirtualCrossoverAnalysis.FindAlignmentCandidates(
                     processed[j + 1],
@@ -1270,7 +1274,8 @@ public static class CrossoverAutoSetup
                     center - half,
                     center + half,
                     priorDelayMs: anchored ? center : null,
-                    priorSigmaMs: half / 2.0);
+                    priorSigmaMs: half / 2.0,
+                    forcedPolarity: forcedFlip);
 
             IReadOnlyList<AlignmentCandidate> found = Search(halfWindow);
             if (found.Count == 0)

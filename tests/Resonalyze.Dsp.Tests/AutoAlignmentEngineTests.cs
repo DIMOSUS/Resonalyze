@@ -460,6 +460,44 @@ public sealed class AutoAlignmentEngineTests
             settled.Value.Because);
     }
 
+    [Theory]
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 36, 2_000, 2_000, true)]
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 12, 1_500, 1_500, true)]
+    [InlineData(CrossoverFilterFamily.Butterworth, 36, 3_000, 3_000, true)]
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 24, 2_000, 2_000, false)]
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 48, 4_000, 4_000, false)]
+    [InlineData(CrossoverFilterFamily.Butterworth, 18, 2_000, 2_000, null)]
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 36, 180, 180, null)]
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 36, 1_900, 2_100, null)]
+    public void SettledRelativeInversion_IsTheRelationAMatchedSplitSumsIn(
+        CrossoverFilterFamily family,
+        int slopeDbPerOctave,
+        double lowPassHz,
+        double highPassHz,
+        bool? expected)
+    {
+        var lowPass = new CrossoverEdge(family, lowPassHz, slopeDbPerOctave);
+        var highPass = new CrossoverEdge(family, highPassHz, slopeDbPerOctave);
+
+        Assert.Equal(expected, AutoAlignmentEngine.SettledRelativeInversion(lowPass, highPass, SampleRate));
+        if (lowPassHz == highPassHz)
+        {
+            Assert.Equal(
+                expected,
+                AutoAlignmentEngine.CrossoverSettlesJunctionPolarity(
+                    FilteredJunction(family, slopeDbPerOctave, lowPassHz))?.Inverted);
+        }
+    }
+
+    [Fact]
+    public void SettledRelativeInversion_WithoutBothEdges_LeavesTheSearch()
+    {
+        var edge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_000, 36);
+
+        Assert.Null(AutoAlignmentEngine.SettledRelativeInversion(edge, null, SampleRate));
+        Assert.Null(AutoAlignmentEngine.SettledRelativeInversion(null, edge, SampleRate));
+    }
+
     [Fact]
     public void CrossoverSettlesJunctionPolarity_StaysOutBelowTheFence()
     {

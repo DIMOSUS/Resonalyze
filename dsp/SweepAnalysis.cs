@@ -42,9 +42,9 @@ public static class SweepAnalysis
     {
         ArgumentNullException.ThrowIfNull(recorded);
         ArgumentNullException.ThrowIfNull(inverseFilter);
-        ValidateInputs(recorded.Count, inverseFilter.Samples.Count, normalization);
+        ValidateInputs(recorded.Count, inverseFilter.Samples.Length, normalization);
 
-        int convolutionLength = checked(recorded.Count + inverseFilter.Samples.Count - 1);
+        int convolutionLength = checked(recorded.Count + inverseFilter.Samples.Length - 1);
         int fftLength = DspMath.NextPowerOfTwo(convolutionLength);
 
         var signalSpectrum = new Complex[fftLength];
@@ -139,13 +139,14 @@ public static class SweepAnalysis
 }
 
 /// <summary>An inverse filter's spectrum at the last FFT length asked for. 16 bytes a bin, 32–128 MB for a long sweep, so it
-/// lives no longer than the measurement that shares it.</summary>
+/// lives no longer than the measurement that shares it. The samples are copied: a later edit of the caller's array cannot
+/// part them from their spectrum.</summary>
 public sealed class InverseFilterSpectrum(IReadOnlyList<float> samples)
 {
     private readonly object sync = new();
     private Complex[]? spectrum;
 
-    public IReadOnlyList<float> Samples { get; } = samples ?? throw new ArgumentNullException(nameof(samples));
+    internal float[] Samples { get; } = [.. samples ?? throw new ArgumentNullException(nameof(samples))];
 
     internal Complex[] At(int fftLength)
     {
@@ -154,7 +155,7 @@ public sealed class InverseFilterSpectrum(IReadOnlyList<float> samples)
             if (spectrum?.Length != fftLength)
             {
                 var transformed = new Complex[fftLength];
-                for (int i = 0; i < Samples.Count; i++)
+                for (int i = 0; i < Samples.Length; i++)
                 {
                     transformed[i] = new Complex(Samples[i], 0.0);
                 }

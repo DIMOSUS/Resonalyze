@@ -20,6 +20,9 @@ public sealed class FirGridResponseTests
         {
             AssertSameBits(fir.Response(grid[i], Rate), first[i]);
         }
+
+        Assert.Throws<NotSupportedException>(() => ((IList<Complex>)first)[0] = Complex.One);
+        Assert.Throws<NotSupportedException>(() => ((IList<double>)fir.GroupDelaysSamples(grid, Rate))[0] = 0);
     }
 
     [Fact]

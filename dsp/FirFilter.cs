@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Numerics;
 
 namespace Resonalyze.Dsp;
@@ -118,7 +119,7 @@ public sealed class FirFilter
         Response(UnitCirclePoint(frequencyHz, sampleRateHz));
 
     /// <summary><see cref="Response(double, double)"/> at each frequency, kept per rate and grid for the kernel's
-    /// lifetime; the list is shared, read it only. See docs/tech/dsp-chain-response.md#fir-on-a-plotted-grid.</summary>
+    /// lifetime and handed out read-only. See docs/tech/dsp-chain-response.md#fir-on-a-plotted-grid.</summary>
     public IReadOnlyList<Complex> Responses(IReadOnlyList<double> frequenciesHz, double sampleRateHz) =>
         GridEntryFor(frequenciesHz, sampleRateHz).Responses.Value;
 
@@ -225,16 +226,16 @@ public sealed class FirFilter
         {
             this.sampleRateHz = sampleRateHz;
             this.frequenciesHz = frequenciesHz;
-            Responses = new Lazy<Complex[]>(
-                () => [.. frequenciesHz.Select(frequency => kernel.Response(frequency, sampleRateHz))]);
-            GroupDelays = new Lazy<double[]>(
-                () => [.. frequenciesHz.Select(
-                    frequency => kernel.GroupDelaySamples(UnitCirclePoint(frequency, sampleRateHz)))]);
+            Responses = new Lazy<ReadOnlyCollection<Complex>>(() => Array.AsReadOnly(
+                frequenciesHz.Select(frequency => kernel.Response(frequency, sampleRateHz)).ToArray()));
+            GroupDelays = new Lazy<ReadOnlyCollection<double>>(() => Array.AsReadOnly(
+                frequenciesHz.Select(
+                    frequency => kernel.GroupDelaySamples(UnitCirclePoint(frequency, sampleRateHz))).ToArray()));
         }
 
-        public Lazy<Complex[]> Responses { get; }
+        public Lazy<ReadOnlyCollection<Complex>> Responses { get; }
 
-        public Lazy<double[]> GroupDelays { get; }
+        public Lazy<ReadOnlyCollection<double>> GroupDelays { get; }
 
         public bool Matches(IReadOnlyList<double> frequencies, double rate)
         {

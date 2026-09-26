@@ -374,12 +374,12 @@ namespace Resonalyze
 
             if (GenerateOptions.WaterfallMode == WaterfallMode.Fourier)
             {
+                double[] paddedWindow = DataHelper.OversampledWindow(windowFunction);
                 for (int i = 0; i < sliceCount; i++)
                 {
                     RawSlices.Add(new Slice(new List<DataPoint>(), 0, 0, 0, measurement.SampleRate));
                 }
 
-                double[] paddedWindow = DataHelper.OversampledWindow(windowFunction);
                 Parallel.For(0, sliceCount, slice =>
                 {
                     int offset = anchor - windowFuncOffset + slice * step + GenerateOptions.Offset;

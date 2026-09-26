@@ -7,7 +7,9 @@ public sealed class SweepAnalysisTests
     {
         var random = new Random(9);
         float[] filter = [.. Enumerable.Range(0, 3_000).Select(_ => (float)(random.NextDouble() - 0.5))];
-        var shared = new InverseFilterSpectrum(filter);
+        float[] handedOver = [.. filter];
+        var shared = new InverseFilterSpectrum(handedOver);
+        handedOver[1_500] = 7;
 
         foreach (int length in new[] { 5_000, 5_000, 4_500, 20_000, 5_000 })
         {

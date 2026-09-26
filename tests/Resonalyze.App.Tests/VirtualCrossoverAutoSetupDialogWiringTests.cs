@@ -168,7 +168,9 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
     {
         var impulse = new Complex[4_096];
         impulse[64] = 1;
-        using var wizard = new Wizard(FourWay().Select(channel => channel with { ImpulseResponse = impulse }).ToList());
+        using var wizard = new Wizard(
+            FourWay().Select(channel => channel with { ImpulseResponse = impulse }).ToList(), undoable: "A, B, C, D");
+        Assert.True(wizard.Find<Button>("buttonUndo").Enabled);
 
         wizard.Find<Button>("buttonApply").PerformClick();
 
@@ -184,7 +186,7 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
             .. new[]
             {
                 "checkButterworth", "checkLinkwitzRiley", "checkBessel", "minCrossover", "maxCrossover",
-                "independentSlopes", "reorderBlocks", "subElevation", "buttonApply"
+                "independentSlopes", "reorderBlocks", "subElevation", "buttonApply", "buttonUndo"
             }.Select(wizard.Find<Control>)
         ];
         Assert.All(inputs, input => Assert.False(input.Enabled, $"{input.Name} {input.Text} stayed live."));
@@ -299,10 +301,10 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
     /// <summary>A wizard on a single chain, so every table line is a row: no group headers.</summary>
     private sealed class Wizard : IDisposable
     {
-        public Wizard(IReadOnlyList<AutoSetupWizardChannel> channels)
+        public Wizard(IReadOnlyList<AutoSetupWizardChannel> channels, string? undoable = null)
         {
             Dialog = new VirtualCrossoverAutoSetupDialog();
-            Dialog.Init(SampleRate, SampleRate, channels);
+            Dialog.Init(SampleRate, SampleRate, channels, undoable);
             Dialog.Show();
             Settle();
         }

@@ -3479,7 +3479,8 @@ something to leave a stale all-pass under.
 **Undo last Apply**, in the same dialog, puts every channel back exactly as it
 was before the last Apply: the crossovers, gains and polarity, the phase
 rotations it cleared, and the blocks in the order and with the letters they had
-(see [Undoing a command](#undoing-a-command)).
+(see [Undoing a command](#undoing-a-command)). It is off while Apply ranks the
+candidates.
 
 ### Tune junction
 

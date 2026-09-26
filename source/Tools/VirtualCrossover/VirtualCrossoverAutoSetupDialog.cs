@@ -20,6 +20,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     private readonly List<(CheckBox Box, CrossoverFilterFamily Family)> familyBoxes = new();
     private AutoSetupWizardSession session = null!;
     private bool initialized;
+    private bool undoOffered;
 
     // Set while the dialog writes the session back into the controls, whose events must not read it as the user.
     private bool presenting;
@@ -74,7 +75,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         IReadOnlyList<AutoSetupWizardChannel> channels,
         string? undoable = null)
     {
-        buttonUndo.Enabled = undoable != null;
+        undoOffered = undoable != null;
+        buttonUndo.Enabled = undoOffered;
         toolTip.SetToolTip(
             buttonUndo,
             (undoable == null ? "Nothing applied here to undo." : $"The last Apply was for {undoable}.") + "\r\n" +

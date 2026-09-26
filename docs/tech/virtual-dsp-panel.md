@@ -685,8 +685,9 @@ block order, and has the side lock remember the restored pairs rather than read 
   before walks back without a question, since each restore leaves the session exactly as the earlier write did.
 - The engines an AI import runs (the wizard it opens, the Auto delay it commits) keep no step. The import's own undo
   covers them, and a wizard opened mid-import offering Undo would restore the session under the running import.
-- Undo is off while a dialog holds a run open (Auto delay's run, Tune junction's search): the dialog refuses to close
-  then, so a click would stay armed and turn the next Apply into an Undo.
+- Undo is off while a dialog works toward a write (Auto delay's run, Tune junction's search, the wizard's ranking).
+  The first two refuse to close then, so a click would stay armed and turn the next Apply into an Undo; the wizard
+  closes, and its ranking would run on for nothing.
 - Auto crossover and Auto delay refuse before their dialog opens, and a write can cause the refusal: moved arrivals
   can leave a pinned gate opening after them. The refusal keeps the dialog holding Undo shut, so while a step stands
   a refusal with a message offers the undo instead (`InsteadOf`). The ones that only beep (fewer than two measured

@@ -242,8 +242,9 @@ relation. Every candidate is re-scored, so nothing wrong can ship — but the po
 combinations nobody measured.
 
 Auto delay runs after the wizard (the documented order is Auto crossover, junction tune, Auto delay)
-and composes its own flip over this one with an XOR, reading the already-inverted response. Nothing
-forces the wizard's answer on it.
+and replaces every channel's polarity with its own answer: its reprocessor renders each channel with
+the sign under search in place of the saved one. The wizard's sign is what the user sees until then,
+not an input Auto delay reads.
 
 ## Per-junction windows
 
@@ -622,7 +623,11 @@ per-junction delay.
   delay and envelope rise. Unreadable arrivals fall back to an unanchored search over the widest window.
 - `AchievabilityPenaltyDb` runs the production alignment search per junction: arrival-anchored prior and
   `AlignmentSelection` tie-breaks, so an inverted half-period impostor cannot fake an achievability the
-  real Auto delay would refuse. A pick within 10 % of the window edge triggers one retry at double
+  real Auto delay would refuse. The chains render without the proposal's polarity, and where the split
+  settles the relation Auto delay will force (`AutoAlignmentEngine.SettledRelativeInversion`), only that
+  relation is searched: a matched split from 1 kHz up is read inverted or in phase as its filters sum,
+  never rescued into the other (see `docs/tech/auto-alignment.md#expected-polarity`).
+  A pick within 10 % of the window edge triggers one retry at double
   width, re-selected through the same rules (taking the retry's raw best would hand the wider window
   to exactly that impostor).
 - Deliberate simplifications versus the full engine, acceptable for ranking: no PHAT-seeded timeline and
@@ -680,7 +685,9 @@ ripple included — what varies between candidates is the crossover's doing).
 
 Every reading is taken **after re-aligning** the upper channel for that candidate
 (`VirtualCrossoverAnalysis.MeasureAlignedJunctionSpectrum`: the post-check's window and prior, then
-`AlignmentSelection.Select`, and loss, dip and ripple read on the same bins at the chosen delay and
+`AlignmentSelection.Select`, searching only the relation Auto delay will force where the candidate's split
+settles it (`PostCheckPolarity.ForcedFlip`); loss, dip and ripple are read on the same bins at the chosen
+delay and
 polarity), the current crossover included. A junction tune is followed by re-tuning the delays, and each
 slope puts its own group delay into the handover; read at the delays set for the crossover on screen,
 every other candidate is charged for a misalignment the next Auto delay removes, and the search keeps

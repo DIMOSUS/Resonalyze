@@ -897,6 +897,27 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void MeasureAlignedJunctionSpectrum_AForcedFlipIsNotRescuedInPhase()
+    {
+        // Inverted 1.1x echo 0.5 ms late: the inverted lobe wins on score, the in-phase one sits within the rescue margin.
+        Complex[] variable = UnitImpulse(4_096, 100);
+        var fixedIr = new Complex[4_096];
+        fixedIr[100] = Complex.One;
+        fixedIr[124] = new Complex(-1.1, 0);
+
+        var rescued = VirtualCrossoverAnalysis.MeasureAlignedJunctionSpectrum(
+            variable, [fixedIr], SampleRate, 500, 2_000, halfWindowMs: 2.0)!.Value;
+        var forced = VirtualCrossoverAnalysis.MeasureAlignedJunctionSpectrum(
+            variable, [fixedIr], SampleRate, 500, 2_000, halfWindowMs: 2.0,
+            forcedFlip: true)!.Value;
+
+        Assert.False(rescued.Alignment.InvertPolarity);
+        Assert.True(forced.Alignment.InvertPolarity);
+        Assert.InRange(forced.Alignment.DelayMs, 0.4, 0.6);
+        Assert.True(forced.Reading.LossDb > rescued.Reading.LossDb);
+    }
+
+    [Fact]
     public void FindAlignmentCandidates_ReportsBothSidesOfTheDegeneracy()
     {
         // Both the flipped echo solution and the direct alignment are local optima; both must be exposed.

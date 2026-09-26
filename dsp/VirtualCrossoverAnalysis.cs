@@ -2554,6 +2554,7 @@ public static class VirtualCrossoverAnalysis
 
     /// <summary>The junction read at the variable side's best timing within +/- <paramref name="halfWindowMs"/>, chosen
     /// as the wizard's post-check chooses it. Null without usable bins or delay evidence.</summary>
+    /// <param name="forcedFlip">The only flip searched (<see cref="PostCheckPolarity.ForcedFlip"/>); null searches both.</param>
     public static (JunctionSpectrumReading Reading, AlignmentCandidate Alignment)? MeasureAlignedJunctionSpectrum(
         Complex[] variableImpulseResponse,
         IReadOnlyList<Complex[]> fixedImpulseResponses,
@@ -2562,7 +2563,8 @@ public static class VirtualCrossoverAnalysis
         double maxFrequencyHz,
         double halfWindowMs,
         ValidSampleRange variableValidRange = default,
-        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null,
+        bool? forcedFlip = null)
     {
         List<AlignmentBin> bins = BuildAlignmentBins(
             variableImpulseResponse,
@@ -2588,7 +2590,7 @@ public static class VirtualCrossoverAnalysis
             maxFrequencyHz,
             priorDelayMs: 0,
             priorSigmaMs: halfWindowMs / 2.0,
-            forcedPolarity: null,
+            forcedPolarity: forcedFlip,
             out _);
         if (found.Count == 0)
         {
@@ -2606,7 +2608,8 @@ public static class VirtualCrossoverAnalysis
             IReadOnlyList<JunctionAlignmentSide> sides,
             double minFrequencyHz,
             double maxFrequencyHz,
-            double halfWindowMs)
+            double halfWindowMs,
+            bool? forcedFlip = null)
     {
         ArgumentNullException.ThrowIfNull(sides);
         var bins = new List<List<AlignmentBin>>(sides.Count);
@@ -2641,7 +2644,7 @@ public static class VirtualCrossoverAnalysis
             maxFrequencyHz,
             priorDelayMs: 0,
             priorSigmaMs: halfWindowMs / 2.0,
-            forcedPolarity: null,
+            forcedPolarity: forcedFlip,
             out _);
         if (found.Count == 0)
         {

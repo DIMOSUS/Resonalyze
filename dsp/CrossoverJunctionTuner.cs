@@ -307,12 +307,12 @@ public static class CrossoverJunctionTuner
         }
 
         // One crossover is written to every side, so the sides must agree on the one they run now.
-        CrossoverEdge? currentLowPass = LowPassOf(sides[0].LowerChain);
-        CrossoverEdge? currentHighPass = HighPassOf(sides[0].UpperChain);
+        CrossoverEdge? currentLowPass = sides[0].LowerChain.LowPassEdge;
+        CrossoverEdge? currentHighPass = sides[0].UpperChain.HighPassEdge;
         for (int i = 1; i < sides.Count; i++)
         {
-            if (!SameFilter(LowPassOf(sides[i].LowerChain), currentLowPass) ||
-                !SameFilter(HighPassOf(sides[i].UpperChain), currentHighPass))
+            if (!SameFilter(sides[i].LowerChain.LowPassEdge, currentLowPass) ||
+                !SameFilter(sides[i].UpperChain.HighPassEdge, currentHighPass))
             {
                 throw new ArgumentException(
                     $"The {sides[0].Name} and {sides[i].Name} sides run different crossovers at this junction, " +
@@ -703,11 +703,11 @@ public static class CrossoverJunctionTuner
             foreach (JunctionProbeChains chains in variant.Sides)
             {
                 corners.Add(CornerOf(chains));
-                if (LowPassOf(chains.Lower) is { } low)
+                if (chains.Lower.LowPassEdge is { } low)
                 {
                     corners.Add(low.FrequencyHz);
                 }
-                if (HighPassOf(chains.Upper) is { } high)
+                if (chains.Upper.HighPassEdge is { } high)
                 {
                     corners.Add(high.FrequencyHz);
                 }
@@ -746,8 +746,8 @@ public static class CrossoverJunctionTuner
         foreach (JunctionProbeVariant variant in variants)
         {
             double cornerHz = CornerOf(variant.Sides[0]);
-            CrossoverEdge? lowPass = LowPassOf(variant.Sides[0].Lower);
-            CrossoverEdge? highPass = HighPassOf(variant.Sides[0].Upper);
+            CrossoverEdge? lowPass = variant.Sides[0].Lower.LowPassEdge;
+            CrossoverEdge? highPass = variant.Sides[0].Upper.HighPassEdge;
             (double bandLowHz, double bandHighHz) = JunctionBand(cornerHz, nyquistHz);
             IReadOnlyList<JunctionTuneReading>? own = work.ReadVariant(variant, bandLowHz, bandHighHz);
             IReadOnlyList<JunctionTuneReading>? shared = own == null
@@ -769,7 +769,7 @@ public static class CrossoverJunctionTuner
 
     // Between both edges (geometric middle) since they may be held apart on purpose.
     private static double CornerOf(JunctionProbeChains chains) =>
-        (LowPassOf(chains.Lower)?.FrequencyHz, HighPassOf(chains.Upper)?.FrequencyHz) switch
+        (chains.Lower.LowPassEdge?.FrequencyHz, chains.Upper.HighPassEdge?.FrequencyHz) switch
         {
             ({ } low, { } high) => Math.Sqrt(low * high),
             ({ } low, null) => low,
@@ -795,8 +795,8 @@ public static class CrossoverJunctionTuner
             throw new ArgumentOutOfRangeException(nameof(maxCandidates));
         }
 
-        CrossoverEdge? lowPass = LowPassOf(sides[0].LowerChain);
-        CrossoverEdge? highPass = HighPassOf(sides[0].UpperChain);
+        CrossoverEdge? lowPass = sides[0].LowerChain.LowPassEdge;
+        CrossoverEdge? highPass = sides[0].UpperChain.HighPassEdge;
         double nyquistHz = sides.Min(side => side.SampleRate) * 0.49;
         double cornerHz = lowPass?.FrequencyHz ?? highPass?.FrequencyHz
             ?? throw new ArgumentException(
@@ -820,12 +820,13 @@ public static class CrossoverJunctionTuner
             Complex[] upper = VirtualCrossoverAnalysis.ApplyChain(
                 pair[1], side.UpperChain, side.SampleRate, processorSampleRateHz,
                 out ValidSampleRange upperRange);
+            bool? forcedFlip = PostCheckPolarity.ForcedFlip(side.LowerChain, side.UpperChain, processorSampleRateHz);
             IReadOnlyList<AlignmentCandidate> found = VirtualCrossoverAnalysis.FindAlignmentCandidates(
                 upper, [lower], side.SampleRate, bandLowHz, bandHighHz,
                 -halfWindowMs, halfWindowMs,
                 priorDelayMs: 0,
                 priorSigmaMs: halfWindowMs / 2.0,
-                forcedPolarity: null,
+                forcedPolarity: forcedFlip,
                 levelMatch: false,
                 out IReadOnlyList<AlignmentCandidate> allOptima,
                 gateAnchorSample: null,
@@ -1197,16 +1198,6 @@ public static class CrossoverJunctionTuner
     private static bool ResultingPolarity(DspChannelChain upperChain, AlignmentCandidate candidate) =>
         upperChain.InvertPolarity ^ candidate.InvertPolarity;
 
-    private static CrossoverEdge? LowPassOf(DspChannelChain chain) =>
-        chain.Crossover is { Kind: CrossoverKind.LowPass or CrossoverKind.BandPass } spec
-            ? spec.LowPassEdge
-            : null;
-
-    private static CrossoverEdge? HighPassOf(DspChannelChain chain) =>
-        chain.Crossover is { Kind: CrossoverKind.HighPass or CrossoverKind.BandPass } spec
-            ? spec.HighPassEdge
-            : null;
-
     private static bool SameEdges(JunctionTuneCandidate a, JunctionTuneCandidate b) =>
         a.LowerLowPass.Equals(b.LowerLowPass) && a.UpperHighPass.Equals(b.UpperHighPass);
 
@@ -1434,17 +1425,19 @@ public static class CrossoverJunctionTuner
             double bandLowHz, double bandHighHz, double halfWindowMs)
         {
             var inputs = new List<JunctionAlignmentSide>(sides.Count);
+            var forcedFlips = new List<bool?>(sides.Count);
             for (int i = 0; i < sides.Count; i++)
             {
-                (Complex[] lower, ValidSampleRange lowerRange) = Processed(
-                    i, upper: false, ChainFor(i, upper: false, lowPass, replaceEdges));
-                (Complex[] upper, ValidSampleRange upperRange) = Processed(
-                    i, upper: true, ChainFor(i, upper: true, highPass, replaceEdges));
+                DspChannelChain lowerChain = ChainFor(i, upper: false, lowPass, replaceEdges);
+                DspChannelChain upperChain = ChainFor(i, upper: true, highPass, replaceEdges);
+                (Complex[] lower, ValidSampleRange lowerRange) = Processed(i, upper: false, lowerChain);
+                (Complex[] upper, ValidSampleRange upperRange) = Processed(i, upper: true, upperChain);
                 inputs.Add(new JunctionAlignmentSide(upper, lower, sides[i].SampleRate, upperRange, lowerRange));
+                forcedFlips.Add(ForcedFlip(lowerChain, upperChain));
             }
 
             return VirtualCrossoverAnalysis.MeasureJointlyAlignedJunctionSpectra(
-                inputs, bandLowHz, bandHighHz, halfWindowMs);
+                inputs, bandLowHz, bandHighHz, halfWindowMs, PostCheckPolarity.Shared(forcedFlips));
         }
 
         private JunctionTuneReading WithAcoustic(
@@ -1543,7 +1536,7 @@ public static class CrossoverJunctionTuner
             (JunctionSpectrumReading Reading, AlignmentCandidate Alignment)? aligned =
                 VirtualCrossoverAnalysis.MeasureAlignedJunctionSpectrum(
                     upper, [lower], sides[side].SampleRate, bandLowHz, bandHighHz, halfWindowMs,
-                    upperRange, [lowerRange]);
+                    upperRange, [lowerRange], ForcedFlip(lowerChain, upperChain));
             return aligned is { Reading: var reading }
                 ? new JunctionTuneReading(sides[side].Name, reading.LossDb, reading.DipDb, reading.RippleDb)
                 // No delay evidence in the band: the reading at the current timing is all there is.
@@ -1608,6 +1601,7 @@ public static class CrossoverJunctionTuner
                 -halfWindowMs, halfWindowMs,
                 priorDelayMs: 0,
                 priorSigmaMs: halfWindowMs / 2.0,
+                forcedPolarity: ForcedFlip(lowerChain, upperChain),
                 variableValidRange: upperRange,
                 fixedValidRanges: [lowerRange]);
             if (found.Count == 0)
@@ -1620,6 +1614,9 @@ public static class CrossoverJunctionTuner
                 sides[side].Name, chosen.DelayMs, ResultingPolarity(upperChain, chosen),
                 chosen.LossDb, chosen.DipDb);
         }
+
+        private bool? ForcedFlip(DspChannelChain lowerChain, DspChannelChain upperChain) =>
+            PostCheckPolarity.ForcedFlip(lowerChain, upperChain, options.ProcessorSampleRateHz);
 
         /// <summary>The lower of two split corners, where group delay reaches furthest; shared by readings and report.</summary>
         private static double AlignmentCornerHz(

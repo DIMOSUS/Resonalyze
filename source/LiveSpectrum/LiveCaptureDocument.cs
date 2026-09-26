@@ -264,6 +264,13 @@ public sealed class LiveCaptureDocument
     public void Save(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        // What Load refuses is never written: a response file's document lives only in memory.
+        if (Method == SpatialAverageMethod.File)
+        {
+            throw new InvalidOperationException(
+                "An imported response file is not saved as a capture; its text file is the record.");
+        }
+
         Format = CurrentFormat;
         Validate();
         AtomicFile.Write(path, stream => JsonSerializer.Serialize(stream, this, SerializerOptions));

@@ -163,7 +163,8 @@ public partial class VirtualCrossoverPanel
         }
     }
 
-    // A first attach assumes the file was measured like the channel's own measurement: same microphone file, same hardware filter.
+    // A first attach takes the file as already correct (a REW average of several microphones has no one file) and
+    // assumes the channel measurement's hardware filter was in its path too.
     private static SpatialAverageFileSettings DefaultSpatialAverageFileAnswers(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
@@ -171,7 +172,7 @@ public partial class VirtualCrossoverPanel
             ProtectiveHighPassConfiguration.Normalize(state.ProtectiveHighPass);
         return new SpatialAverageFileSettings
         {
-            Calibration = state.MicrophoneCalibration,
+            CalibratedAsIs = true,
             HighPassKind = highPass.Kind,
             HighPassFrequencyHz = highPass.FrequencyHz,
             HighPassSlopeDbPerOctave = highPass.SlopeDbPerOctave,

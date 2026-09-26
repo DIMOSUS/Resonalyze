@@ -10,6 +10,12 @@ public sealed class FrequencyResponseTextFile
 
     private static readonly char[] Separators = [' ', '\t', ';'];
 
+    // Units a header may write bare after the level's name ("Frequency Level V"); dB ones pass, the rest refuse.
+    private static readonly HashSet<string> BareUnits = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "dB", "dBFS", "dBSPL", "dBV", "dBu", "V", "mV", "Pa", "mPa", "ohm", "ohms", "\u03a9", "ms", "%", "deg", "degrees", "rad"
+    };
+
     private FrequencyResponseTextFile(double[] frequenciesHz, double[] levelsDb)
     {
         FrequenciesHz = frequenciesHz;
@@ -75,6 +81,7 @@ public sealed class FrequencyResponseTextFile
         string? source = null;
         string? smoothing = null;
         string? levelColumn = null;
+        string? levelUnit = null;
         string? dated = null;
         int? sampleRate = null;
         var frequencies = new List<double>();
@@ -125,7 +132,7 @@ public sealed class FrequencyResponseTextFile
                 }
                 else if (ColumnLabel(note) is { } column)
                 {
-                    levelColumn = column;
+                    (levelColumn, levelUnit) = column;
                 }
 
                 continue;
@@ -159,13 +166,16 @@ public sealed class FrequencyResponseTextFile
             }
 
             // An unmarked header row, as other tools write one.
-            levelColumn = ColumnLabel(line) ?? levelColumn;
+            if (ColumnLabel(line) is { } header)
+            {
+                (levelColumn, levelUnit) = header;
+            }
         }
 
-        // Only a stated unit refuses: "Magnitude" says nothing, "Impedance(ohms)" says it is not a level.
-        if (Unit(levelColumn) is { } unit && !unit.Contains("dB", StringComparison.OrdinalIgnoreCase))
+        // Only a stated unit refuses: "Magnitude" says nothing, "Impedance(ohms)" or "Level V" says it is not a level in dB.
+        if (levelUnit != null && !levelUnit.Contains("dB", StringComparison.OrdinalIgnoreCase))
         {
-            problem = $"the second column is \"{levelColumn}\", not a level in dB " +
+            problem = $"the second column is \"{levelColumn}\" in {levelUnit}, not a level in dB " +
                 "(export the frequency response, not impedance, group delay or distortion)";
             return false;
         }
@@ -207,8 +217,8 @@ public sealed class FrequencyResponseTextFile
             ? note[key.Length..].Trim() is { Length: > 0 } value ? value : null
             : null;
 
-    // "Freq(Hz) SPL(dB) Phase(degrees)" → "SPL(dB)"; "Frequency (Hz), Level (dB)" → "Level (dB)".
-    private static string? ColumnLabel(string note)
+    // "Freq(Hz) SPL(dB) Phase(degrees)" → ("SPL(dB)", "dB"); "Frequency Level V" → ("Level", "V"); "Frequency Magnitude" → ("Magnitude", null).
+    private static (string Label, string? Unit)? ColumnLabel(string note)
     {
         var columns = new List<string>();
         foreach (string token in note.Split([' ', '\t', ';', ','], StringSplitOptions.RemoveEmptyEntries))
@@ -224,9 +234,14 @@ public sealed class FrequencyResponseTextFile
             }
         }
 
-        return columns.Count >= 2 && columns[0].StartsWith("Freq", StringComparison.OrdinalIgnoreCase)
-            ? columns[1]
-            : null;
+        if (columns.Count < 2 || !columns[0].StartsWith("Freq", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        string? unit = Unit(columns[1]) ??
+            (columns.Count > 2 && BareUnits.Contains(columns[2]) ? columns[2] : null);
+        return (columns[1], unit);
     }
 
     // "SPL(dB)" → "dB"; null without parentheses.

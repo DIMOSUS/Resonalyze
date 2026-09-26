@@ -94,7 +94,7 @@ answers on the side beside the path. The file is re-read and rebuilt from them o
 - *Calibration in the levels*, stated as a curve (none, the channel measurement's file, one from the
   list, or a file picked by hand). It is recorded as `CalibrationCorrectionDb` on the grid, exactly as
   a capture records its own, so *Off* and *Specific* stay exact.
-- *Already correct* (`CalibratedAsIs`): a REW array or multi-position average went in with each
+- *Already correct* (`CalibratedAsIs`, the first choice and the default): a REW array or multi-position average went in with each
   microphone through its own file, so no single curve can be undone or swapped. The document is marked
   `CalibrationFixed` and `SpatialAverageHybrid.BuildChannelCurve` reads it as stored under every
   calibration mode, which covers the plot, the datum, the audition and the EQ Wizard handoff at once.

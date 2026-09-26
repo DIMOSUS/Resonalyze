@@ -58,6 +58,8 @@ value, and only `Migrate` reads them.
   additive, but the version is bumped because the reverse is harmful: an older build would draw a rotated tune
   without the filter; refusing the file is how it says so.
 - **v10 → v11**: the FIR stage, bumped for the same reason.
+- **v11 → v12**: a side's response-file answers (`SpatialAverageFile`). An older build would drop them and resave
+  the `.txt` path as a capture's, which the next load reads as a missing capture.
 - **Always**: the stereo scene's wire sign and layout flag are re-aligned (see [Stereo scene](#stereo-scene)).
 - **Always**: a Centre pair is made mono (`VirtualCrossoverZones.RequiresMono`). The block forces and locks its Mono
   box, so only a hand-edited file stores a stereo Centre; loaded as such, it would show a mono block that, under the

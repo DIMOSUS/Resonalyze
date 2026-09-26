@@ -583,7 +583,7 @@ public sealed class VirtualCrossoverProjectFile
     public const string CurrentFormat = "resonalyze-virtual-crossover";
 
     // Bump on an incompatible change and add a Migrate step. Newer files are never migrated: LoadOrDefault backs up, LoadFrom rejects.
-    public const int CurrentVersion = 11;
+    public const int CurrentVersion = 12;
 
     // Channel letters and the plot palette go up to this count.
     public const int MaximumChannelCount = 12;
@@ -1269,6 +1269,11 @@ public sealed class VirtualCrossoverProjectFile
         {
             // Bumped for the same reason as v10, for FIR kernels.
             file.Version = 11;
+        }
+        if (file.Version == 11)
+        {
+            // Bumped so an older build refuses a response file's answers rather than resaving its path as a capture's.
+            file.Version = 12;
         }
 
         // Re-align the wire sign and layout flag for files carrying only one; a negative sign wins over a missing flag.

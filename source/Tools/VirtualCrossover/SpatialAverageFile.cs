@@ -47,11 +47,13 @@ internal sealed record SpatialAverageFileCalibrationChoice(
     VirtualCrossoverCalibrationSettings? Calibration,
     bool AsIs = false)
 {
-    public const int AsIsIndex = 1;
+    public const int AsIsIndex = 0;
+
+    public const int NoneIndex = 1;
 
     public override string ToString() => Label;
 
-    /// <summary>None, as-is, the measurement's own file, then the app's list; a stated curve none of them holds is kept.</summary>
+    /// <summary>As-is (the default), none, the measurement's own file, then the app's list; a stated curve none of them holds is kept.</summary>
     public static List<SpatialAverageFileCalibrationChoice> Offer(
         VirtualCrossoverCalibrationSettings? stated,
         VirtualCrossoverCalibrationSettings? measurement,
@@ -60,8 +62,8 @@ internal sealed record SpatialAverageFileCalibrationChoice(
         ArgumentNullException.ThrowIfNull(available);
         var choices = new List<SpatialAverageFileCalibrationChoice>
         {
-            new("None — the levels are uncalibrated", null),
-            new("Already correct — no calibration on top (Mic cal ignored)", null, AsIs: true)
+            new("Already correct — no calibration on top (Mic cal ignored)", null, AsIs: true),
+            new("None — the levels are uncalibrated", null)
         };
         if (measurement != null)
         {
@@ -76,7 +78,7 @@ internal sealed record SpatialAverageFileCalibrationChoice(
             }
         }
 
-        if (stated != null && IndexOf(choices, stated) == 0)
+        if (stated != null && IndexOf(choices, stated) == NoneIndex)
         {
             choices.Add(new($"{stated.Name} (as stated before)", stated));
         }
@@ -84,7 +86,7 @@ internal sealed record SpatialAverageFileCalibrationChoice(
         return choices;
     }
 
-    /// <summary>The choice holding <paramref name="stated"/>'s curve; 0 (None) when there is none.</summary>
+    /// <summary>The choice holding <paramref name="stated"/>'s curve; <see cref="NoneIndex"/> when there is none.</summary>
     public static int IndexOf(
         IReadOnlyList<SpatialAverageFileCalibrationChoice> choices,
         VirtualCrossoverCalibrationSettings? stated)
@@ -92,7 +94,7 @@ internal sealed record SpatialAverageFileCalibrationChoice(
         ArgumentNullException.ThrowIfNull(choices);
         if (stated == null)
         {
-            return 0;
+            return NoneIndex;
         }
 
         CalibrationFile curve = stated.ToCalibrationFile();
@@ -104,7 +106,7 @@ internal sealed record SpatialAverageFileCalibrationChoice(
             }
         }
 
-        return 0;
+        return NoneIndex;
     }
 
     private static bool Same(VirtualCrossoverCalibrationSettings? settings, CalibrationFile curve) =>

@@ -78,6 +78,8 @@ public sealed class FrequencyResponseTextFileTests
     [InlineData("Frequency (Hz)\tSPL (dB)\n20 70\n40 71\n")]
     [InlineData("Freq (Hz), Level (dB)\n20, 70\n40, 71\n")]
     [InlineData("# Frequency response of the left tweeter\n20 70\n40 71\n")]
+    [InlineData("Frequency Level dB\n20 70\n40 71\n")]
+    [InlineData("Frequency Magnitude Phase\n20 70 1\n40 71 2\n")]
     public void ALevelColumnWithoutAForeignUnit_IsAccepted(string text)
     {
         Assert.True(FrequencyResponseTextFile.TryParse(text, out FrequencyResponseTextFile? file, out string? problem), problem);
@@ -86,6 +88,8 @@ public sealed class FrequencyResponseTextFileTests
 
     [Theory]
     [InlineData("* Freq(Hz) Impedance(ohms) Phase(degrees)\n20 4.1 3\n40 4.3 5\n")]
+    [InlineData("Frequency Level V\n20 0.1\n40 0.2\n")]
+    [InlineData("Frequency Amplitude Pa\n20 0.1\n40 0.2\n")]
     [InlineData("* Impulse Response data saved by REW V5.40\n* Data start\n0.1\n0.2\n")]
     [InlineData("* Freq(Hz) SPL(dB)\n40 70\n20 71\n")]
     [InlineData("* Freq(Hz) SPL(dB)\n40 70\n")]

@@ -120,14 +120,23 @@ public sealed class SpatialAverageFileImportTests
     }
 
     [Fact]
-    public void AFileDocumentWrittenToDisk_IsNotReadBackAsACapture()
+    public void AFileDocument_IsNeitherSavedNorReadBackAsACapture()
     {
         LiveCaptureDocument document = SpatialAverageFileImport.Build(
             FlatFile(), new SpatialAverageFileSettings(), "l tw.txt");
         string path = Path.Combine(Path.GetTempPath(), $"file-capture-{Guid.NewGuid():N}.json");
         try
         {
+            Assert.Throws<InvalidOperationException>(() => document.Save(path));
+            Assert.False(File.Exists(path));
+
+            // One written by hand (or by another build) is refused on the way in too.
+            document.Method = SpatialAverageMethod.MovingMic;
+            document.Recipe.SampleRateHz = 48_000;
+            document.Recipe.SequenceLength = 4;
+            document.SpectrumDb = [0.0, 0.0];
             document.Save(path);
+            File.WriteAllText(path, File.ReadAllText(path).Replace("\"MovingMic\"", "\"File\""));
 
             Assert.Throws<InvalidDataException>(() => LiveCaptureDocument.TryLoad(path, out _));
             Assert.Throws<InvalidDataException>(() => LiveCaptureDocument.Load(path));
@@ -162,10 +171,11 @@ public sealed class SpatialAverageFileImportTests
             stated, measurement, [("umik", null, listed), ("ecm copy", null, duplicate)]);
 
         Assert.Equal(5, choices.Count);
-        Assert.Null(choices[0].Calibration);
-        Assert.True(choices[SpatialAverageFileCalibrationChoice.AsIsIndex].AsIs);
+        Assert.True(choices[0].AsIs);
+        Assert.Null(choices[SpatialAverageFileCalibrationChoice.NoneIndex].Calibration);
+        Assert.False(choices[SpatialAverageFileCalibrationChoice.NoneIndex].AsIs);
         Assert.Equal(4, SpatialAverageFileCalibrationChoice.IndexOf(choices, stated));
         Assert.Equal(2, SpatialAverageFileCalibrationChoice.IndexOf(choices, measurement));
-        Assert.Equal(0, SpatialAverageFileCalibrationChoice.IndexOf(choices, null));
+        Assert.Equal(SpatialAverageFileCalibrationChoice.NoneIndex, SpatialAverageFileCalibrationChoice.IndexOf(choices, null));
     }
 }

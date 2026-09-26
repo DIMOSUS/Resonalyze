@@ -223,16 +223,23 @@ public partial class Form1
             return false;
         }
 
+        LiveSpectrumRestartSnapshot liveBefore = LiveSpectrumRestartSnapshot.Capture(viewSettings.LiveSpectrum);
         if (session != null)
         {
             ApplySessionView(session, result.SampleRate);
         }
 
         ApplyMeasurementConfigurationToControllers();
+        // A held live curve must not be redrawn under the entry's acquisition settings (a pink capture re-tilted as
+        // white), as the settings panel and New session already ensure.
+        if (LiveSpectrumRestartSnapshot.Capture(viewSettings.LiveSpectrum) != liveBefore)
+        {
+            liveSpectrumController.DiscardCapturedData();
+        }
 
         if (session != null)
         {
-            // Mode switch re-prepares overlays hidden, so only the active slots are re-shown. Audio settings untouched.
+            // Audio settings untouched.
             await SelectModeAsync(NormalizeSessionMode(session.ActiveMode));
             // A newer load or run that landed during the switch keeps its own slots and settings.
             if (!request.IsCurrent)
@@ -240,7 +247,7 @@ public partial class Form1
                 return false;
             }
 
-            analyzerPlot.RestoreOverlaySlots(session.ActiveOverlaySlots);
+            analyzerPlot.ReplaceOverlaySlots(session.ActiveOverlaySlots);
             SaveMeasurementSettings();
         }
 
@@ -292,6 +299,8 @@ public partial class Form1
         SaveMeasurementSettings();
 
         await SelectModeAsync(ModeTab.Frequency);
+        // Overlay files stay; none is shown until picked again.
+        analyzerPlot.ReplaceOverlaySlots([]);
 
         dockedHistoryHost.InvokeIfOpen<MeasurementHistoryWindow>(dialog =>
             dialog.SetEntries(measurementHistoryService.Entries, null, null));
@@ -305,11 +314,15 @@ public partial class Form1
         }
     }
 
-    private MeasurementSessionSnapshot CaptureCurrentSessionSnapshot() =>
-        viewSettings.CaptureSession(
-            modeController.ActiveTab,
-            analyzerPlot.ActiveOverlaySlots);
+    private MeasurementSessionSnapshot CaptureCurrentSessionSnapshot()
+    {
+        // On a tool tab the entry keeps the analysis tab shown before it and that tab's overlays.
+        (ModeTab tab, List<int> overlaySlots) = analyzerPlot.SessionView();
+        return viewSettings.CaptureSession(tab, overlaySlots);
+    }
 
+    // A tab without the analysis plot (a tool) opens Frequency Response: switching to it would close the History window
+    // the entry was opened from.
     private static ModeTab NormalizeSessionMode(ModeTab mode) =>
-        Enum.IsDefined(mode) ? mode : ModeTab.Frequency;
+        Enum.IsDefined(mode) && ModeCatalog.For(mode).HasPlotView ? mode : ModeTab.Frequency;
 }

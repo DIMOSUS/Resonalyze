@@ -14,6 +14,9 @@ internal sealed class OverlaySession
     private readonly NumericFieldRange offsetRange;
     private readonly Action<PlotModel> refreshPlot;
     private readonly Action plotChanged;
+    // A loop over slots repaints once at its end, not once per slot: each repaint is a full update and render.
+    private int batchDepth;
+    private PlotModel? pendingRefresh;
     private readonly string? storageRoot;
 
     /// <param name="refreshPlot">Repaints the plot after a slot changed its series; also announces the change.</param>
@@ -77,13 +80,16 @@ internal sealed class OverlaySession
     public void Show(Mode mode)
     {
         Mode overlayMode = OverlayModes.SlotModeFor(mode);
-        foreach (OverlaySlot slot in slots)
+        Batched(() =>
         {
-            if (slot.Checked && slot.SeriesMode == overlayMode)
+            foreach (OverlaySlot slot in slots)
             {
-                Show(slot);
+                if (slot.Checked && slot.SeriesMode == overlayMode)
+                {
+                    Show(slot);
+                }
             }
-        }
+        });
 
         plotChanged();
     }
@@ -92,23 +98,53 @@ internal sealed class OverlaySession
     public void ShowAll(Mode mode)
     {
         Mode overlayMode = OverlayModes.SlotModeFor(mode);
-        foreach (OverlaySlot slot in slots)
+        Batched(() =>
         {
-            if (slot.SeriesMode == overlayMode && slot.CheckEnabled && slot.Title.Length > 0)
+            foreach (OverlaySlot slot in slots)
             {
-                SetShown(slot, true);
+                if (slot.SeriesMode == overlayMode && slot.CheckEnabled && slot.Title.Length > 0)
+                {
+                    SetShown(slot, true);
+                }
             }
-        }
+        });
 
         plotChanged();
     }
 
     public void HideAll()
     {
-        foreach (OverlaySlot slot in slots)
+        Batched(() =>
         {
-            Hide(slot);
-        }
+            foreach (OverlaySlot slot in slots)
+            {
+                Hide(slot);
+            }
+        });
+
+        plotChanged();
+    }
+
+    /// <summary>The selection a history entry or New session states, in place of what the mode shows: restoring on top of
+    /// it would only ever add slots, and a later capture of the union would grow the entry's selection.</summary>
+    public void ReplaceActiveSlots(Mode mode, IReadOnlyCollection<int> activeSlots)
+    {
+        Mode overlayMode = OverlayModes.SlotModeFor(mode);
+        Batched(() =>
+        {
+            foreach (OverlaySlot slot in slots.Where(candidate => candidate.SeriesMode == overlayMode))
+            {
+                if (activeSlots.Contains(slot.Index))
+                {
+                    SetChecked(slot, true);
+                    Show(slot);
+                }
+                else if (slot.Checked)
+                {
+                    Hide(slot);
+                }
+            }
+        });
 
         plotChanged();
     }
@@ -148,17 +184,20 @@ internal sealed class OverlaySession
         }
 
         Mode overlayMode = OverlayModes.SlotModeFor(mode);
-        foreach (int index in activeSlots)
+        Batched(() =>
         {
-            OverlaySlot? slot = slots.FirstOrDefault(
-                candidate => candidate.Index == index && candidate.SeriesMode == overlayMode);
-            // Armed first: Show leaves an off-axis slot checked but undrawn, so it returns with its own scale.
-            if (slot != null)
+            foreach (int index in activeSlots)
             {
-                SetChecked(slot, true);
-                Show(slot);
+                OverlaySlot? slot = slots.FirstOrDefault(
+                    candidate => candidate.Index == index && candidate.SeriesMode == overlayMode);
+                // Armed first: Show leaves an off-axis slot checked but undrawn, so it returns with its own scale.
+                if (slot != null)
+                {
+                    SetChecked(slot, true);
+                    Show(slot);
+                }
             }
-        }
+        });
 
         plotChanged();
     }
@@ -205,7 +244,7 @@ internal sealed class OverlaySession
         {
             if (OverlaySeries.Remove(model, slot.SeriesMode, slot.Index))
             {
-                refreshPlot(model);
+                Refresh(model);
             }
 
             return;
@@ -243,13 +282,13 @@ internal sealed class OverlaySession
         if (drawn)
         {
             SetChecked(slot, true);
-            refreshPlot(model);
+            Refresh(model);
         }
         else if (state.IsCurrentMeasurementTarget || state.ReferencesLiveCurve || state.IsComplexSumOperation)
         {
             // Live-sourced targets/operations stay armed while their source is absent; they redraw once data appears.
             SetChecked(slot, true);
-            refreshPlot(model);
+            Refresh(model);
         }
         else
         {
@@ -260,10 +299,10 @@ internal sealed class OverlaySession
     public void Hide(OverlaySlot slot)
     {
         PlotModel? model = Sources.Model;
-        if (model != null)
+        // Nothing drawn, nothing to repaint.
+        if (model != null && OverlaySeries.Remove(model, slot.SeriesMode, slot.Index))
         {
-            OverlaySeries.Remove(model, slot.SeriesMode, slot.Index);
-            refreshPlot(model);
+            Refresh(model);
         }
 
         SetChecked(slot, false);
@@ -537,7 +576,7 @@ internal sealed class OverlaySession
             new OverlayAppearance(settings.Color, settings.StrokeThickness, settings.LineStyle, settings.OpacityPercent),
             settings.Name.Length > 0 ? settings.Name : slot.Title,
             slot.State.Captured?.YAxisKey);
-        refreshPlot(model);
+        Refresh(model);
     }
 
     public void PreviewOperation(OverlaySlot slot, OverlayOperationPreview settings)
@@ -566,7 +605,7 @@ internal sealed class OverlaySession
                 semantics.YAxisKey);
         }
 
-        refreshPlot(model);
+        Refresh(model);
     }
 
     public void PreviewTarget(OverlaySlot slot, OverlayTargetPreview settings)
@@ -580,7 +619,7 @@ internal sealed class OverlaySession
         OverlaySeries.Remove(model, slot.SeriesMode, slot.Index);
         if (!Curves.DrawsOnShownScale(slot))
         {
-            refreshPlot(model);
+            Refresh(model);
             return;
         }
 
@@ -596,7 +635,7 @@ internal sealed class OverlaySession
             settings.SmoothingInverseOctaves,
             new OverlayAppearance(settings.Color, settings.StrokeThickness, settings.LineStyle, settings.OpacityPercent),
             settings.Name.Length > 0 ? settings.Name : slot.Title);
-        refreshPlot(model);
+        Refresh(model);
     }
 
     public void RestoreAfterPreview(OverlaySlot slot, bool wasChecked)
@@ -614,7 +653,7 @@ internal sealed class OverlaySession
         }
         else
         {
-            refreshPlot(model);
+            Refresh(model);
         }
     }
 
@@ -797,6 +836,34 @@ internal sealed class OverlaySession
 
     private void UpdateDrawPoints(OverlaySlot slot) =>
         slot.DrawPoints = Curves.CapturedPoints(slot, slot.State.SmoothingInverseOctaves);
+
+    private void Refresh(PlotModel model)
+    {
+        if (batchDepth > 0)
+        {
+            pendingRefresh = model;
+            return;
+        }
+
+        refreshPlot(model);
+    }
+
+    private void Batched(Action body)
+    {
+        batchDepth++;
+        try
+        {
+            body();
+        }
+        finally
+        {
+            if (--batchDepth == 0 && pendingRefresh is { } model)
+            {
+                pendingRefresh = null;
+                refreshPlot(model);
+            }
+        }
+    }
 
     // An emptied slot stays in its mode, so what is put into it next is saved there.
     private void Reset(OverlaySlot slot, Mode mode)

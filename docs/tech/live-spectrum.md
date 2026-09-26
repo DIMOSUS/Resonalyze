@@ -203,19 +203,26 @@ itself is never touched: a Silent RTA that loses SPL keeps running on the relati
 
 ## Averaging reset and discarding data
 
-- Applying display options restarts an Infinite average — except for a spatial-average capture, where
-  the accumulation is the measurement and a checkbox must not throw away minutes of walking. The rule is
-  keyed on the analysis mode, not the stored averaging speed (in MMM that is only the remembered RTA
-  preference).
+- Applying display options restarts a running Infinite average — except for a spatial-average capture,
+  where the accumulation is the measurement and a checkbox must not throw away minutes of walking. The rule
+  is keyed on the analysis mode, not the stored averaging speed (in MMM that is only the remembered RTA
+  preference). A stopped reading is not restarted for a display change: it takes no more frames, and the
+  display is re-read from it (ticking Show input magnitude after a stop needs the accumulation, not only
+  the held curve). A change of averaging speed restarts the statistics running or not: a stopped
+  accumulation kept would be read back with the new speed's coherence floor, and the held curve stays.
+- Every restart of a running average suspends peak hold, as Reset average does: the new average's first
+  frames are single-frame noise, and max-ed into an envelope of settled averages they lifted it by several
+  dB in the bass.
 - `DiscardCapturedData` runs when an acquisition parameter (mode, signal colour, window, FFT length,
   overlap) changes while stopped: redrawing old data under new parameters would silently re-interpret it
   (slope compensation would re-tilt a pink RTA as if the excitation were white). A loaded capture is
   discarded too. A running analyzer needs no call; its restart begins a fresh accumulation.
 - `LiveSpectrumSession.Configure` drops the stopped accumulation, the held curve and the envelope itself
-  when the sample rate or the frame length changes, whoever reconfigures (Record Settings, a history
-  restore): the bins belong to the grid they were read on, and re-read on another they land on the wrong
-  frequencies and Save writes a capture whose bins disagree with its recipe. A loaded capture carries its
-  own geometry and stays. Restoring a history entry stops a running analyzer first, as a sweep does,
+  when the capture session changes (any of rate, frame length, device, route or channel), whoever
+  reconfigures (Record Settings, a history restore): the bins belong to the grid they were read on, and
+  re-read on another they land on the wrong frequencies and Save writes a capture whose bins disagree with
+  its recipe; under another input or route Save would file it under that session and with that input's SPL
+  anchor. A loaded capture carries its own geometry and stays. Restoring a history entry stops a running analyzer first, as a sweep does,
   since the analyzer refuses a new configuration mid-run.
 - New session discards the same way. The accumulation outlives a stop and a loaded capture is state, so
   forgetting only the held curve let the next visit to the mode read the last session's run, or show its
@@ -241,7 +248,10 @@ frame and clipped-frame counts.
   doing once per analysis **frame**, not every tick. With spatial-average frame lengths (683 ms at
   32768 samples and 48 kHz, no overlap) a frame lands once in about twenty 33 ms ticks; the rest would clone a quarter of a
   megabyte to an identical curve while contending with the audio thread. `lastDrawnFrameCount` lets such
-  ticks skip. Notices still update every tick: an overload is a shortage of frames.
+  ticks skip. Notices still update every tick (an overload is a shortage of frames), but such a tick
+  renders the plot only when a notice appeared, went or changed its text.
+- One frame resamples each display curve once: peak hold envelopes the same transfer or RTA points the
+  series and the coherence split draw.
 - `RebuildModel` prefers a freshly computed snapshot (accumulators survive a stop) so a scale switch
   picks up curves the stored snapshot lacks, falling back to the last drawn one. It rebuilds even while
   running because display options such as coherence add or remove an axis.

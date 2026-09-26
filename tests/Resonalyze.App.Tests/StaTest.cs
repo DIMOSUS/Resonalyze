@@ -43,6 +43,24 @@ internal static class StaTest
         }
     }
 
+    /// <summary>The first visible open form of <typeparamref name="TForm"/> that <paramref name="match"/> takes. The
+    /// open-forms list is process-wide, and tests on other STA threads open and close their own forms while this one reads
+    /// it, so it is copied first, again if a change interrupted the copy.</summary>
+    public static TForm? OpenForm<TForm>(Func<TForm, bool> match)
+        where TForm : Form
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return Application.OpenForms.OfType<TForm>().ToArray().FirstOrDefault(match);
+            }
+            catch (InvalidOperationException) when (attempt < 10)
+            {
+            }
+        }
+    }
+
     public static void Run(Action body)
     {
         ArgumentNullException.ThrowIfNull(body);

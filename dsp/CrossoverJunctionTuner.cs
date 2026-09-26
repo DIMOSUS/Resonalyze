@@ -278,6 +278,8 @@ public static class CrossoverJunctionTuner
         IReadOnlyList<JunctionTuneSide> sides,
         JunctionTuneOptions options)
     {
+        // Arrival reads repeat on identical input across the run; see AlignmentRunMemo.
+        using AlignmentRunMemo.Scope runMemo = AlignmentRunMemo.Begin();
         ArgumentNullException.ThrowIfNull(sides);
         ArgumentNullException.ThrowIfNull(options);
         if (sides.Count == 0)
@@ -672,6 +674,8 @@ public static class CrossoverJunctionTuner
         int processorSampleRateHz,
         IReadOnlyList<JunctionProbeVariant> variants)
     {
+        // Arrival reads repeat on identical input across the run; see AlignmentRunMemo.
+        using AlignmentRunMemo.Scope runMemo = AlignmentRunMemo.Begin();
         ArgumentNullException.ThrowIfNull(sides);
         ArgumentNullException.ThrowIfNull(variants);
         if (sides.Count == 0)
@@ -779,6 +783,8 @@ public static class CrossoverJunctionTuner
         int processorSampleRateHz,
         int maxCandidates = DelayProbeCandidatesReported)
     {
+        // Arrival reads repeat on identical input across the run; see AlignmentRunMemo.
+        using AlignmentRunMemo.Scope runMemo = AlignmentRunMemo.Begin();
         ArgumentNullException.ThrowIfNull(sides);
         if (sides.Count == 0)
         {

@@ -45,7 +45,7 @@ namespace Resonalyze.Dsp
             List<SignalPoint> output = new List<SignalPoint>(steps);
 
             double inputStep = input[1].X - input[0].X;
-            double a = 2.0;
+            const double a = 2.0;
             double frequencyRatio = Math.Pow(2.0, smoothingOctaves * 0.5);
 
             int BinarySearchX(double searchedX)
@@ -79,9 +79,81 @@ namespace Resonalyze.Dsp
                 return -1;
             }
 
-            SignalPoint Sample(int index)
+            // Once per bin, not once per kernel tap: every bin sits under several kernels.
+            double[] values = new double[input.Count];
+            for (int k = 0; k < values.Length; k++)
             {
-                return input[Math.Clamp(index, 0, input.Count - 1)];
+                values[k] = dBUnpack ? DecibelsToAmplitude(input[k].Y) : input[k].Y;
+            }
+
+            bool uniformGrid = IsUniformGrid(input, inputStep);
+
+            double LanczosMean(double frequency, double halfDeltaFrequency, int centerIndex)
+            {
+                double invHalfDeltaFrequency = 1.0 / halfDeltaFrequency * a;
+                int windowRadius = (int)Math.Ceiling(halfDeltaFrequency / inputStep);
+
+                // The kernel stops at the grid's ends, both of them, and the weight sum renormalises. Repeating the last
+                // bin for every virtual bin past the top would weight it several times over near Nyquist.
+                int first = Math.Max(centerIndex - windowRadius, 0);
+                int last = Math.Min(centerIndex + windowRadius, input.Count - 1);
+                double weightSum = 0;
+                double weightedSum = 0;
+                if (uniformGrid)
+                {
+                    // x falls by one bin's worth per tap, so (sin, cos) of pi x / 2 advance by a rotation: the a = 2 kernel
+                    // is sin^2 cos / (pi x / 2)^2, a sine per kernel rather than two per tap.
+                    double delta = 0.5 * Math.PI * inputStep * invHalfDeltaFrequency;
+                    double halfSine = Math.Sin(0.5 * delta);
+                    double alpha = 2.0 * halfSine * halfSine;
+                    double beta = Math.Sin(delta);
+                    double firstX = (frequency - input[first].X) * invHalfDeltaFrequency;
+                    double sine = Math.Sin(0.5 * Math.PI * firstX);
+                    double cosine = Math.Cos(0.5 * Math.PI * firstX);
+                    for (int sampleIndex = first; sampleIndex <= last; sampleIndex++)
+                    {
+                        double x = (frequency - input[sampleIndex].X) * invHalfDeltaFrequency;
+                        double weight;
+                        if (Math.Abs(x) < 1e-5)
+                        {
+                            weight = 1.0;
+                        }
+                        else if (Math.Abs(x) >= a)
+                        {
+                            weight = 0.0;
+                        }
+                        else
+                        {
+                            double phi = 0.5 * Math.PI * x;
+                            weight = sine * sine * cosine / (phi * phi);
+                        }
+
+                        weightedSum += values[sampleIndex] * weight;
+                        weightSum += weight;
+                        double nextCosine = cosine - (alpha * cosine - beta * sine);
+                        sine -= alpha * sine + beta * cosine;
+                        cosine = nextCosine;
+                    }
+                }
+                else
+                {
+                    for (int sampleIndex = first; sampleIndex <= last; sampleIndex++)
+                    {
+                        double weight = LanczosKernel((frequency - input[sampleIndex].X) * invHalfDeltaFrequency, a);
+                        weightedSum += values[sampleIndex] * weight;
+                        weightSum += weight;
+                    }
+                }
+
+                if (weightSum > 1e-12)
+                {
+                    return dBUnpack
+                        ? AmplitudeToDecibels(weightedSum / weightSum)
+                        : weightedSum / weightSum;
+                }
+
+                // Signed Lanczos weights degenerate when the kernel leaves the input grid: hold the nearest sample, not the -160 dB floor.
+                return input[Math.Clamp(centerIndex, 0, input.Count - 1)].Y;
             }
 
             for (int i = 0; i < steps; i++)
@@ -93,57 +165,19 @@ namespace Resonalyze.Dsp
                 frequencyRatio = Math.Pow(2.0, effectiveSmoothingOctaves * 0.5);
 
                 double halfDeltaFrequency = Math.Max(frequency * (frequencyRatio - 1), inputStep * a);
-                double invHalfDeltaFrequency = 1.0 / halfDeltaFrequency * a;
-
                 int centerIndex = BinarySearchX(frequency);
-                int windowRadius = (int)Math.Ceiling(halfDeltaFrequency / inputStep);
 
-                double weightSum = 0;
-                double weightedSum = 0;
-
-                // The kernel stops at the grid's ends, both of them, and the weight sum renormalises. Repeating the last
-                // bin for every virtual bin past the top would weight it several times over near Nyquist.
-                for (int sampleIndex = Math.Max(centerIndex - windowRadius, 0);
-                    sampleIndex <= Math.Min(centerIndex + windowRadius, input.Count - 1);
-                    sampleIndex++)
-                {
-                    SignalPoint samplePoint = Sample(sampleIndex);
-                    double weight = LanczosKernel((frequency - samplePoint.X) * invHalfDeltaFrequency, a);
-
-                    if (dBUnpack)
-                    {
-                        weightedSum += DecibelsToAmplitude(samplePoint.Y) * weight;
-                    }
-                    else
-                    {
-                        weightedSum += samplePoint.Y * weight;
-                    }
-                    weightSum += weight;
-                }
-
-                double filteredValue;
-                if (weightSum > 1e-12)
-                {
-                    filteredValue = dBUnpack
-                        ? AmplitudeToDecibels(weightedSum / weightSum)
-                        : weightedSum / weightSum;
-                }
-                else
-                {
-                    // Signed Lanczos weights degenerate when the kernel leaves the input grid: hold the nearest sample, not the -160 dB floor.
-                    filteredValue = Sample(centerIndex).Y;
-                }
-
-                if (psychoacoustic)
-                {
-                    filteredValue = PsychoacousticCubicMean(
+                // The Lanczos mean is only the psychoacoustic mean's fallback there.
+                double filteredValue = psychoacoustic &&
+                    PsychoacousticCubicMean(
                         input,
+                        values,
                         frequency,
                         effectiveSmoothingOctaves,
                         inputStep,
-                        dBUnpack,
-                        filteredValue);
-                }
+                        dBUnpack) is { } cubicMean
+                    ? cubicMean
+                    : LanczosMean(frequency, halfDeltaFrequency, centerIndex);
 
                 if (calibration != null)
                 {
@@ -160,14 +194,35 @@ namespace Resonalyze.Dsp
             return output;
         }
 
+        // Equal steps to a part in a million: FFT bins, not a curve already on a log grid.
+        private static bool IsUniformGrid(List<SignalPoint> input, double inputStep)
+        {
+            if (!(inputStep > 0.0))
+            {
+                return false;
+            }
+
+            double origin = input[0].X;
+            for (int k = 1; k < input.Count; k++)
+            {
+                if (Math.Abs(input[k].X - origin - k * inputStep) > 1e-6 * inputStep)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         // Gaussian cubic mean: FWHM follows the octave width; favours audible peaks without a hard lower envelope.
-        private static double PsychoacousticCubicMean(
+        /// <returns>Null when the Gaussian degenerates.</returns>
+        private static double? PsychoacousticCubicMean(
             List<SignalPoint> input,
+            double[] values,
             double centerFrequency,
             double smoothingOctaves,
             double inputStep,
-            bool dBUnpack,
-            double fallback)
+            bool dBUnpack)
         {
             const double GaussianRadiusSigma = 3.0;
             const double GaussianTaperStartSigma = 2.5;
@@ -178,7 +233,7 @@ namespace Resonalyze.Dsp
                 GaussianRadiusSigma);
             if (sigmaOctaves <= 0.0 || inputStep <= 0.0)
             {
-                return fallback;
+                return null;
             }
 
             double radiusOctaves = GaussianRadiusSigma * sigmaOctaves;
@@ -217,14 +272,14 @@ namespace Resonalyze.Dsp
                         (GaussianRadiusSigma - GaussianTaperStartSigma)));
                 double weight =
                     Math.Exp(-0.5 * normalized * normalized) * taper;
-                double value = dBUnpack ? DecibelsToAmplitude(point.Y) : point.Y;
+                double value = values[index];
                 weightedCubeSum += value * value * value * weight;
                 weightSum += weight;
             }
 
             if (weightSum <= 1e-12)
             {
-                return fallback;
+                return null;
             }
 
             double cubicMean = Math.Cbrt(weightedCubeSum / weightSum);
@@ -658,6 +713,8 @@ namespace Resonalyze.Dsp
             return weightSum > 1e-12 ? weightedSum / weightSum : curve[centerIndex].Y;
         }
 
+        /// <summary>Lanczos main-lobe mean over a uniform grid (FFT bins), octave-wide; non-finite samples pass through and
+        /// stay out of every mean.</summary>
         public static List<SignalPoint> SmoothLinear(List<SignalPoint> input, double smoothingOctaves = 1.0 / 6.0)
         {
             if (input.Count < 2)
@@ -665,60 +722,117 @@ namespace Resonalyze.Dsp
                 return new List<SignalPoint>(input);
             }
 
-            List<SignalPoint> output = new List<SignalPoint>(input.Count);
-
-            double a = 2.0;
-            double frequencyRatio = Math.Pow(2.0, smoothingOctaves * 0.5);
-
-            SignalPoint Sample(int index)
+            double[] values = new double[input.Count];
+            for (int i = 0; i < values.Length; i++)
             {
-                return input[Math.Clamp(index, 0, input.Count - 1)];
+                values[i] = input[i].Y;
             }
 
-            double fStep = input[1].X - input[0].X;
-
-            for (int i = 0; i < input.Count; i++)
+            double[] smoothed = SmoothLinearChannels(input, smoothingOctaves, values)[0];
+            var output = new List<SignalPoint>(input.Count);
+            for (int i = 0; i < smoothed.Length; i++)
             {
-                var centerPoint = Sample(i);
-                if (!double.IsFinite(centerPoint.Y))
-                {
-                    output.Add(centerPoint);
-                    continue;
-                }
-
-                double frequency = centerPoint.X;
-
-                double halfDeltaFrequency = Math.Max(frequency * (frequencyRatio - 1), fStep * a);
-
-                int win = (int)Math.Max(2, Math.Ceiling(halfDeltaFrequency / fStep));
-
-                double weightSum = 0;
-                double weightedSum = 0;
-
-                for (int sampleIndex = Math.Max(i - win, 0); sampleIndex <= i + win; sampleIndex++)
-                {
-                    SignalPoint samplePoint = Sample(sampleIndex);
-                    if (!double.IsFinite(samplePoint.Y))
-                    {
-                        continue;
-                    }
-
-                    double weight = LanczosKernel((frequency - samplePoint.X) / halfDeltaFrequency, a);
-
-                    weightedSum += samplePoint.Y * weight;
-
-                    weightSum += weight;
-                }
-
-                // Degenerate weight sum: hold the centre sample, as LogarithmicResample does.
-                double filteredValue = weightSum > 1e-12
-                    ? weightedSum / weightSum
-                    : centerPoint.Y;
-
-                output.Add(new SignalPoint(frequency, filteredValue));
+                output.Add(new SignalPoint(input[i].X, smoothed[i]));
             }
 
             return output;
+        }
+
+        /// <summary><see cref="SmoothLinear"/> of several value sets on one grid, sharing each kernel.</summary>
+        internal static double[][] SmoothLinearChannels(
+            List<SignalPoint> grid, double smoothingOctaves, params double[][] channels)
+        {
+            const double a = 2.0;
+            int count = grid.Count;
+            double frequencyRatio = Math.Pow(2.0, smoothingOctaves * 0.5);
+            double fStep = grid[1].X - grid[0].X;
+            var results = new double[channels.Length][];
+            for (int channel = 0; channel < channels.Length; channel++)
+            {
+                results[channel] = new double[count];
+            }
+
+            // Indexed by bin distance: the kernel is even.
+            double[] weights = new double[64];
+            for (int i = 0; i < count; i++)
+            {
+                double halfDeltaFrequency = Math.Max(grid[i].X * (frequencyRatio - 1), fStep * a);
+                int win = (int)Math.Max(2, Math.Ceiling(halfDeltaFrequency / fStep));
+                // The kernel stops at the grid's ends and the weight sum renormalises: repeating the last bin for every
+                // virtual bin past the top would weight it up to the whole half-width over near Nyquist.
+                int first = Math.Max(i - win, 0);
+                int last = Math.Min(i + win, count - 1);
+                int reach = Math.Max(i - first, last - i);
+                if (weights.Length <= reach)
+                {
+                    weights = new double[2 * reach + 1];
+                }
+
+                FillLanczos2Weights(weights, reach, fStep / halfDeltaFrequency);
+                for (int channel = 0; channel < channels.Length; channel++)
+                {
+                    double[] values = channels[channel];
+                    double center = values[i];
+                    if (!double.IsFinite(center))
+                    {
+                        results[channel][i] = center;
+                        continue;
+                    }
+
+                    double weightSum = 0;
+                    double weightedSum = 0;
+                    for (int sampleIndex = first; sampleIndex <= last; sampleIndex++)
+                    {
+                        double value = values[sampleIndex];
+                        if (!double.IsFinite(value))
+                        {
+                            continue;
+                        }
+
+                        double weight = weights[Math.Abs(sampleIndex - i)];
+                        weightedSum += value * weight;
+                        weightSum += weight;
+                    }
+
+                    // Degenerate weight sum: hold the centre sample, as LogarithmicResample does.
+                    results[channel][i] = weightSum > 1e-12 ? weightedSum / weightSum : center;
+                }
+            }
+
+            return results;
+        }
+
+        // LanczosKernel(d * step, 2) for d = 0..reach. With phi = pi x / 2 the kernel is sin^2(phi) cos(phi) / phi^2, and
+        // (sin, cos) of phi advance by one rotation per bin: a sine per kernel, not two per tap.
+        private static void FillLanczos2Weights(double[] weights, int reach, double step)
+        {
+            double delta = 0.5 * Math.PI * step;
+            double halfSine = Math.Sin(0.5 * delta);
+            double alpha = 2.0 * halfSine * halfSine;
+            double beta = Math.Sin(delta);
+            double sine = 0.0;
+            double cosine = 1.0;
+            weights[0] = 1.0;
+            for (int d = 1; d <= reach; d++)
+            {
+                double nextCosine = cosine - (alpha * cosine + beta * sine);
+                sine -= alpha * sine - beta * cosine;
+                cosine = nextCosine;
+                double x = d * step;
+                if (x < 1e-5)
+                {
+                    weights[d] = 1.0;
+                }
+                else if (x >= 2.0)
+                {
+                    weights[d] = 0.0;
+                }
+                else
+                {
+                    double phi = d * delta;
+                    weights[d] = sine * sine * cosine / (phi * phi);
+                }
+            }
         }
     }
 }

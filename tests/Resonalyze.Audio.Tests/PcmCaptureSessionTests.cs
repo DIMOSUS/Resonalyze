@@ -141,6 +141,31 @@ public sealed class PcmCaptureSessionTests
     }
 
     [Fact]
+    public async Task AnOverflowWhilePausedBetweenRuns_LeavesTheNextRunIntact()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        var decoder = new BlockingDecoder();
+        await using var session = new PcmCaptureSession(device, decoder: decoder);
+        session.Pause();
+
+        device.Push([1, 0]);
+        Assert.True(decoder.FirstDecodeStarted.Wait(TimeSpan.FromSeconds(2)));
+        for (int index = 0; index < 16; index++)
+        {
+            device.Push([2, 0]);
+        }
+        decoder.ReleaseFirstDecode.Set();
+        // The overflow is reported before the backlog behind it is decoded.
+        await WaitUntilAsync(() => decoder.DecodeCount == 16);
+
+        session.Reset();
+        Task samples = session.WaitForSamplesAsync(1, CancellationToken.None);
+        device.Push([3, 0]);
+        await samples.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(1, session.ReadSamples);
+    }
+
+    [Fact]
     public async Task AcceptedSamples_IncludesPacketStillProcessingOnWorker()
     {
         var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
@@ -355,6 +380,7 @@ public sealed class PcmCaptureSessionTests
 
         public ManualResetEventSlim FirstDecodeStarted { get; } = new();
         public ManualResetEventSlim ReleaseFirstDecode { get; } = new();
+        public int DecodeCount => Volatile.Read(ref decodeCount);
         public int ChannelCount => 1;
 
         public int Decode(ReadOnlySpan<byte> source, float[][] destination)

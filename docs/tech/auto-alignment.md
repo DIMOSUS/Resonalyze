@@ -123,6 +123,19 @@ first credible arrival.
 does not capture the τ reference. Its Slope estimator is the energy centroid (equal to the mean
 group delay), which is the τ to subtract when detrending excess phase.
 
+### Run memo
+
+An Auto delay run, a junction tune and the crossover wizard's ranking read the same response in the
+same band over and over: every bins build re-reads its gate anchor. In a stereo 4-way Auto delay
+the detector was 88% of the run, 110 of its 367 reads repeated one array, band and range, and the
+band-pass kernel's envelope was rebuilt 351 times for 16 windows; 83% of a junction tune's reads
+were repeats. `AlignmentRunMemo` keeps both for one run: `Compute`, `ComputeStereo`, the tuner's
+entry points and `Propose`/`ProposeRanked` open it (an inner opening does nothing), and parallel work
+sees it. An arrival read keys on the response array itself, because a run renders each response once
+and never writes it after, and is held only as long as that array: a render the run has let go takes
+its reads with it, so the memo does not pin every render of the run. Outside a run nothing is kept.
+Results are identical.
+
 ## Energy onset
 
 `TimeAlignmentAnalysisResult.EnergyOnsetDelayMilliseconds` is a second estimator. It is the point
@@ -685,7 +698,10 @@ the coarse base(s) ± the period-scaled range.
    to a lobe 4.98 ms out, putting the sub 5 ms behind. The reach is absolute because transient smear
    is absolute. A wide seed dilutes the prior, which is why the reach fences the margin.
    `DeclinedInvertRescue` logs a rescue the reach blocked.
-3. **Re-break** near-ties within the chosen polarity.
+3. **Re-break** near-ties of a rescue within its polarity, measured from the rescue's score (the best of
+   its polarity within reach). A pick the first step made is already the arrival-closest within the
+   margin of the best and stands: re-broken from its own score, the margin grew to twice its width, and
+   candidates at 0.00, −0.08 and −0.17 dB returned the one 0.17 dB down.
 
 Polarity is relative to the settled neighbour. Where the filters expect inversion
 (`expectedRelativeInversion`) the preference is withdrawn, not reversed. Reversing it defended the
@@ -765,6 +781,11 @@ a mode can flatter either side. It was calibrated on the v3 cabin, where the lea
 fine and wide sets on the prior-free score, because the prior is what keeps parking the result on
 the trailing lobe. The lead is bounded to one period past the anchor: a sub leading by whole periods
 is detached the other way. The rule does not apply under a scene or onset lock.
+
+Where the pick stands by this rule, the [low-junction polarity](#low-junction-polarity) vote that
+follows chooses only among picks the rule lets stand: its pool spans a period around the pick, which
+still holds the trailing one, and a tie handed it straight back while the decision text said the
+sub-leading lobe stood. A trailing pick the rule found no lead for leaves the vote free.
 
 ## Direct-coherence witness
 

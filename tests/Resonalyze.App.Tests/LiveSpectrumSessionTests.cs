@@ -28,6 +28,7 @@ public sealed class LiveSpectrumSessionTests
         Assert.NotNull(held);
         Assert.False(session.InProgress);
         Assert.Same(held, session.HeldSnapshot);
+        Assert.Equal(session.Reread(session.Display)!.FrameCount, held!.FrameCount);
         Assert.True(session.HasDisplayableCurve);
         Assert.True(session.HasCaptureToSave);
         Assert.Equal(2, changed);
@@ -103,7 +104,7 @@ public sealed class LiveSpectrumSessionTests
 
     // History restores and Record Settings reconfigure a stopped analyzer; its bins must not be re-read at another rate.
     [Fact]
-    public async Task ANewRateOrFrameLengthDropsTheStoppedReading_TheSameOneKeepsIt()
+    public async Task ANewCaptureSessionDropsTheStoppedReading_TheSameOneKeepsIt()
     {
         var options = new LiveSpectrumOptions { AnalysisMode = LiveAnalysisMode.Rta, SequenceLength = 1024 };
         using LiveSpectrumSession session = Create(options);
@@ -125,6 +126,16 @@ public sealed class LiveSpectrumSessionTests
         session.Configure(settings);
         Assert.Null(session.HeldSnapshot);
         Assert.Null(session.Reread(session.Display));
+        Assert.False(session.HasCaptureToSave);
+
+        session.Start();
+        await FirstFrameAsync(session);
+        await session.StopAsync();
+        // Another input: Save would file the reading under that input's session and SPL anchor.
+        settings.WaveInputChannelOffset = 1;
+        settings.WaveLoopbackInputChannelOffset = 0;
+        session.Configure(settings);
+        Assert.Null(session.HeldSnapshot);
         Assert.False(session.HasCaptureToSave);
     }
 
@@ -228,22 +239,35 @@ public sealed class LiveSpectrumSessionTests
         Assert.Null(session.Progress(session.Display));
     }
 
-    // A checkbox must not throw away minutes of walking, but an Infinite RTA restarts under the new display.
+    // A checkbox must not throw away minutes of walking, but a running Infinite RTA restarts under the new display.
     [Fact]
-    public void AnInfiniteAverageRestartsOnADisplayChangeAndAWalkDoesNot()
+    public async Task ARunningInfiniteAverageRestartsOnADisplayChange_AStoppedOneAndAWalkDoNot()
     {
         using LiveSpectrumSession rta = Create(new LiveSpectrumOptions
         {
             AnalysisMode = LiveAnalysisMode.Rta,
-            AveragingSpeed = AveragingSpeed.Infinite
+            AveragingSpeed = AveragingSpeed.Infinite,
+            PeakHold = true
         });
         using LiveSpectrumSession walk = Create(new LiveSpectrumOptions
         {
             AnalysisMode = LiveAnalysisMode.Mmm
         });
+        rta.Start();
+        walk.Start();
+        await FirstFrameAsync(rta);
+        await FirstFrameAsync(walk);
+        rta.PeakHold.Drawn(rta.Display.PeakHoldKey);
+        rta.PeakHold.Hold([new SignalPoint(1000.0, 85.0)]);
 
         Assert.True(rta.ApplyDisplayOptions());
+        Assert.Null(rta.PeakHold.Points);
         Assert.False(walk.ApplyDisplayOptions());
+
+        await rta.StopAsync();
+        Assert.False(rta.ApplyDisplayOptions());
+        Assert.NotNull(rta.Reread(rta.Display));
+        await walk.StopAsync();
     }
 
     [Fact]

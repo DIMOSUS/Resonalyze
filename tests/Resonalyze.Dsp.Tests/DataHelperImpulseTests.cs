@@ -58,6 +58,38 @@ public sealed class DataHelperImpulseTests
     }
 
     [Fact]
+    public void TheEnvelopeAndSnr_ReadTheSameUnderAnotherFramingOrSign_AsAFreshRecordDoes()
+    {
+        var random = new Random(5);
+        var ir = new Complex[8_192];
+        for (int i = 0; i < ir.Length; i++)
+        {
+            ir[i] = new Complex((random.NextDouble() - 0.5) * 1e-3, 0.0);
+        }
+
+        ir[1_000] = Complex.One;
+        var measurement = new SyntheticMeasurement(ir, SampleRate, 1_000);
+        Action<ImpulseResponseOptions> reframed = o =>
+        {
+            o.ShowEnvelope = true;
+            o.Invert = true;
+            o.TimeUnit = ImpulseTimeUnit.Milliseconds;
+        };
+
+        ImpulseCurveSet plain = DataHelper.GetImpulseCurves(
+            measurement, Options(o => o.ShowEnvelope = true), new ImpulseRenderFrame());
+        ImpulseCurveSet kept = DataHelper.GetImpulseCurves(
+            measurement, Options(reframed), new ImpulseRenderFrame());
+        ImpulseCurveSet fresh = DataHelper.GetImpulseCurves(
+            new SyntheticMeasurement((Complex[])ir.Clone(), SampleRate, 1_000), Options(reframed), new ImpulseRenderFrame());
+
+        Assert.NotNull(plain.SnrDb);
+        Assert.Equal(plain.SnrDb, kept.SnrDb);
+        Assert.Equal(fresh.SnrDb, kept.SnrDb);
+        Assert.Equal(fresh.Envelope!.Points, kept.Envelope!.Points);
+    }
+
+    [Fact]
     public void Impulse_EmptyResponseYieldsASingleSample()
     {
         var measurement = new SyntheticMeasurement(Array.Empty<Complex>(), SampleRate, 0);

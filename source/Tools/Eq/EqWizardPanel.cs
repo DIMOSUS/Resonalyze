@@ -66,12 +66,13 @@ public partial class EqWizardPanel : UserControl
         NumericTargetOffset.ValueChanged += (_, _) => OnTargetOffsetChanged();
         // The preamp is part of the bank's undo state.
         NumericGain.ValueChanged += (_, _) => PreampValueChanged();
+        // What is shown, not what is fitted: a running Auto Tune stays valid.
         checkBoxBypass.CheckedChanged += (_, _) =>
         {
             if (!presenting)
             {
                 session.SetBypass(checkBoxBypass.Checked);
-                Redraw();
+                Redraw(orphanFit: false);
             }
         };
         checkBoxEqPhase.CheckedChanged += (_, _) =>
@@ -79,7 +80,7 @@ public partial class EqWizardPanel : UserControl
             if (!presenting)
             {
                 session.SetPhaseMode(checkBoxEqPhase.Checked);
-                Redraw();
+                Redraw(orphanFit: false);
             }
         };
         checkBoxEqCurve.CheckedChanged += (_, _) =>
@@ -87,7 +88,7 @@ public partial class EqWizardPanel : UserControl
             if (!presenting)
             {
                 session.SetShowEqCurve(checkBoxEqCurve.Checked);
-                Redraw();
+                Redraw(orphanFit: false);
             }
         };
         buttonPhaseGate.Click += (_, _) => OpenPhaseGateDialog();
@@ -454,7 +455,8 @@ public partial class EqWizardPanel : UserControl
     }
 
     /// <summary>Redraws from the session. Any input change the user makes funnels through here, so it orphans a running fit.</summary>
-    /// <param name="orphanFit">False for a redraw that only shows a landed render: that changed no input of the fit.</param>
+    /// <param name="orphanFit">False for a redraw that changed no input of the fit: a landed render, a view toggle, a band
+    /// selection. Orphaned, the fit runs on to its end and lands nothing.</param>
     private void Redraw(bool orphanFit = true)
     {
         // Every rate change funnels through a redraw, so the strips' GD readouts learn the rate here.
@@ -520,7 +522,7 @@ public partial class EqWizardPanel : UserControl
         base.OnVisibleChanged(e);
         if (Visible && IsHandleCreated && session.Source is { IsGated: true })
         {
-            Redraw();
+            Redraw(orphanFit: false);
         }
     }
 

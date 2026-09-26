@@ -82,6 +82,53 @@ public sealed class DataHelperResampleTests
     }
 
     [Fact]
+    public void SmoothLinear_IsTheLanczosMainLobeMean_UpToTheGridsTop()
+    {
+        var input = new List<SignalPoint>();
+        for (int k = 1; k <= 400; k++)
+        {
+            input.Add(new SignalPoint(k * 50.0, Math.Sin(k * 0.37) + k * 0.01));
+        }
+
+        List<SignalPoint> output = DataHelper.SmoothLinear(input, 1.0 / 3.0);
+
+        double ratio = Math.Pow(2.0, 1.0 / 6.0);
+        for (int i = 0; i < input.Count; i++)
+        {
+            double halfWidth = Math.Max(input[i].X * (ratio - 1), 100.0);
+            int window = (int)Math.Ceiling(halfWidth / 50.0);
+            double weightedSum = 0;
+            double weightSum = 0;
+            for (int k = Math.Max(i - window, 0); k <= Math.Min(i + window, input.Count - 1); k++)
+            {
+                double weight = DataHelper.LanczosKernel((input[i].X - input[k].X) / halfWidth, 2);
+                weightedSum += input[k].Y * weight;
+                weightSum += weight;
+            }
+
+            Assert.Equal(weightedSum / weightSum, output[i].Y, 1e-9);
+        }
+    }
+
+    [Fact]
+    public void LogarithmicResample_OnFftBins_MatchesTheKernelEvaluatedTapByTap()
+    {
+        var bins = new List<SignalPoint>();
+        var uneven = new List<SignalPoint>();
+        for (int k = 1; k <= 4000; k++)
+        {
+            double level = Math.Sin(k * 0.013) * 6 - 3;
+            bins.Add(new SignalPoint(k * 5.0, level));
+            uneven.Add(new SignalPoint(k == 4000 ? 20_001.0 : k * 5.0, level));
+        }
+
+        List<SignalPoint> fast = DataHelper.LogarithmicResample(bins, 20, 10_000, 400, smoothingOctaves: 1.0);
+        List<SignalPoint> direct = DataHelper.LogarithmicResample(uneven, 20, 10_000, 400, smoothingOctaves: 1.0);
+
+        Assert.All(fast.Zip(direct), pair => Assert.Equal(pair.Second.Y, pair.First.Y, 1e-9));
+    }
+
+    [Fact]
     public void SmoothLinear_PreservesNaNSegmentBreakWithoutBlendingAcrossIt()
     {
         var input = new List<SignalPoint>();

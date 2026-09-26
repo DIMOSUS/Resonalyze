@@ -266,6 +266,8 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
         double maxDelayMs = DefaultMaxDelayMs)
     {
+        // Arrival reads repeat on identical input across the run; see AlignmentRunMemo.
+        using AlignmentRunMemo.Scope runMemo = AlignmentRunMemo.Begin();
         ArgumentNullException.ThrowIfNull(channelsByBand);
         ArgumentNullException.ThrowIfNull(alignment);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxDelayMs);
@@ -1947,6 +1949,9 @@ public static class AutoAlignmentEngine
             }
 
             double? subPrecedenceBehindDb = null;
+            // Set where sub precedence rules and the pick stands by it: a later vote may only choose among picks it would
+            // let stand. A trailing pick it found no lead for leaves the vote free.
+            Func<AlignmentCandidate, bool>? subPrecedenceAdmits = null;
             // Sub precedence (see SubPrecedenceMarginDb): pool spans fine and wide sets on the prior-free score; bounded to one period past the anchor.
             if (monoChannels != null &&
                 sceneLockToleranceMs == null && onsetAnchorMs == null)
@@ -1957,6 +1962,8 @@ public static class AutoAlignmentEngine
                 double leadSign = subNeighbor ? 1.0 : -1.0;
                 if (subSearched ^ subNeighbor)
                 {
+                    Func<AlignmentCandidate, bool> leadsTheStack = item =>
+                        leadSign * (item.DelayMs - anchorMs) >= -SubPrecedenceSlackMs;
                     AlignmentCandidate leading = AlignmentSelection.PreferSubLeading(
                         candidates.Concat(wide),
                         chosen,
@@ -1978,6 +1985,11 @@ public static class AutoAlignmentEngine
                             $"{subPrecedenceBehindDb:0.00} dB, " +
                             $"within the {SubPrecedenceMarginDb:0.00} dB precedence margin.");
                         chosen = leading;
+                    }
+
+                    if (leadsTheStack(chosen))
+                    {
+                        subPrecedenceAdmits = leadsTheStack;
                     }
                 }
             }
@@ -2271,7 +2283,8 @@ public static class AutoAlignmentEngine
                 bool contradicted = ExpectsRelativeInversion(pair) is bool filtersSay &&
                     filtersSay != expected;
 
-                // Polarity only: the pool stays inside the neighbouring lobes so the vote cannot walk a period.
+                // Polarity only: the pool stays inside the neighbouring lobes so the vote cannot walk a period, and
+                // out of the trailing picks sub precedence turned down, which a tie would otherwise hand straight back.
                 AlignmentCandidate votedPick = contradicted
                     ? chosen
                     : LowJunctionPolarity.Decide(
@@ -2279,7 +2292,8 @@ public static class AutoAlignmentEngine
                             .Concat(wideOptima)
                             .Concat(retriedOptima)
                             .Where(item => Math.Abs(item.DelayMs - chosen.DelayMs)
-                                <= 1.5 * halfPeriodMs)
+                                <= 1.5 * halfPeriodMs &&
+                                (subPrecedenceAdmits?.Invoke(item) ?? true))
                             .ToList(),
                         chosen, AcousticScore, expected, anchorMs, neighborInverted);
                 if (votedPick != chosen)
@@ -2581,6 +2595,8 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
         double maxDelayMs = DefaultMaxDelayMs)
     {
+        // Arrival reads repeat on identical input across the run; see AlignmentRunMemo.
+        using AlignmentRunMemo.Scope runMemo = AlignmentRunMemo.Begin();
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(reprocess);
         ArgumentNullException.ThrowIfNull(alignment);

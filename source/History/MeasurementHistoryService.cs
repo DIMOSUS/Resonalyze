@@ -177,7 +177,12 @@ internal sealed class MeasurementHistoryService
         }
 
         entry.Session = session;
-        persistence.Save(entries);
+        // Only file-backed entries reach the history file: rewriting it (tens of ms with a full history) for an entry
+        // that is not in it changes nothing on disk.
+        if (entry.IsFileBacked)
+        {
+            persistence.Save(entries);
+        }
     }
 
     public MeasurementHistoryEntry? FindById(Guid entryId) =>

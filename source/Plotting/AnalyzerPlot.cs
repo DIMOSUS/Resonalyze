@@ -27,6 +27,10 @@ internal sealed class AnalyzerPlot : IModeView
     // Each mode's checked slots, kept while another mode is shown.
     private readonly ActiveOverlaySlotTracker activeOverlaySlots = new();
     private ModeDescriptor descriptor = ModeCatalog.For(ModeTab.Frequency);
+    // The last tab that drew the measurement, which a history entry keeps while a tool is shown.
+    private ModeTab lastAnalysisTab = ModeTab.Frequency;
+    // The slot mode the overlay slots were last loaded for; entering another tab of it keeps them (null: reload).
+    private Mode? preparedSlotMode;
     // A build that finishes after a newer one started is dropped.
     private int refreshVersion;
 
@@ -89,15 +93,37 @@ internal sealed class AnalyzerPlot : IModeView
     /// <summary>The mode on screen; <see cref="Mode.None"/> until the first switch.</summary>
     public Mode Mode { get; private set; }
 
-    /// <summary>The overlay slots checked in the mode on screen, for a history entry.</summary>
-    public List<int> ActiveOverlaySlots => Overlays.CaptureActiveSlots(Mode);
+    /// <summary>The tab and overlay selection a history entry keeps: the analysis tab on screen, or the one shown
+    /// before a tool, with the slots it had checked. A tab without overlays (Waterfall, a tool) has none of its own.</summary>
+    public (ModeTab Tab, List<int> OverlaySlots) SessionView()
+    {
+        if (ShowsOverlays)
+        {
+            return (descriptor.Tab, Overlays.CaptureActiveSlots(Mode));
+        }
+        if (descriptor.HasPlotView)
+        {
+            return (descriptor.Tab, []);
+        }
+
+        Mode analysisMode = ModeCatalog.For(lastAnalysisTab).Mode;
+        if (!OverlayModes.Supports(analysisMode))
+        {
+            return (lastAnalysisTab, []);
+        }
+
+        activeOverlaySlots.TryGet(OverlayModes.SlotModeFor(analysisMode), out List<int> remembered);
+        return (lastAnalysisTab, remembered.ToList());
+    }
+
+    private bool ShowsOverlays => descriptor.HasPlotView && OverlayModes.Supports(Mode);
 
     private bool CanDrawMeasurement => document.HasResult && !document.IsBusy;
 
     public void Leave()
     {
         // Modes without a main plot share Frequency slots but never draw them; capturing their empty set would wipe the selection.
-        if (!descriptor.HasPlotView || !OverlayModes.Supports(Mode))
+        if (!ShowsOverlays)
         {
             return;
         }
@@ -113,9 +139,21 @@ internal sealed class AnalyzerPlot : IModeView
         Mode = mode.Mode;
         Viewports.Show(null, Mode);
         RefreshLabels();
-        if (OverlayModes.Supports(Mode))
+        if (descriptor.HasPlotView)
         {
-            Overlays.Prepare(Mode);
+            lastAnalysisTab = mode.Tab;
+        }
+
+        if (ShowsOverlays)
+        {
+            // Frequency Response and Live Spectrum share one slot set: re-reading and re-smoothing every slot from disk
+            // on a switch between them changes nothing. A tab without a plot draws no slots, so it loads none.
+            Mode slotMode = OverlayModes.SlotModeFor(Mode);
+            if (preparedSlotMode != slotMode)
+            {
+                Overlays.Prepare(Mode);
+                preparedSlotMode = slotMode;
+            }
         }
 
         UpdateOverlayAvailability();
@@ -129,7 +167,7 @@ internal sealed class AnalyzerPlot : IModeView
         }
 
         // Show() with a null model unchecks the slots and loses the saved selection.
-        if (!descriptor.HasPlotView || !OverlayModes.Supports(Mode))
+        if (!ShowsOverlays)
         {
             return;
         }
@@ -179,7 +217,20 @@ internal sealed class AnalyzerPlot : IModeView
     /// <summary>For a setting that changes what an axis means: the next draw fits instead of restoring the zoom.</summary>
     public void ForgetZoom() => Viewports.Forget(Mode);
 
-    public void RestoreOverlaySlots(IReadOnlyList<int>? slots) => Overlays.RestoreActiveSlots(Mode, slots);
+    /// <summary>A history entry's or New session's selection, in place of what is shown and remembered.</summary>
+    public void ReplaceOverlaySlots(IReadOnlyList<int> slots)
+    {
+        activeOverlaySlots.Clear();
+        if (!ShowsOverlays)
+        {
+            // The loaded slots keep the checks of the state being replaced; the next tab with overlays loads them afresh.
+            preparedSlotMode = null;
+            return;
+        }
+
+        Overlays.ReplaceActiveSlots(Mode, slots.ToHashSet());
+        activeOverlaySlots.Store(OverlayModes.SlotModeFor(Mode), slots.ToList());
+    }
 
     public void ShowAllOverlays()
     {
@@ -242,6 +293,8 @@ internal sealed class AnalyzerPlot : IModeView
             };
             file.Save();
             activeOverlaySlots.MarkActive(Mode.FrequencyResponse, slot);
+            // Written past the session: the slots load again when Frequency Response is next entered.
+            preparedSlotMode = null;
             return slot;
         }
 

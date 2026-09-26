@@ -411,12 +411,16 @@ namespace Resonalyze
             }
         }
 
-        public void RefreshLiveAveraging()
+        /// <returns>Whether the statistics restarted.</returns>
+        public bool RefreshLiveAveraging()
         {
             lock (dataSync)
             {
-                // Switching averaging speed restarts statistics: the old mode's memory would linger for its whole decay.
-                if (EffectiveAveragingSpeed != appliedAveragingSpeed)
+                // Switching averaging speed restarts the statistics: running, the old mode's memory would linger for its
+                // whole decay; stopped, the accumulation would be read back with the new mode's coherence floor. A stopped
+                // run's held reading keeps what was shown.
+                bool restart = EffectiveAveragingSpeed != appliedAveragingSpeed;
+                if (restart)
                 {
                     accumulatedCrossSpectrum = null;
                     accumulatedReferencePowerSpectrum = null;
@@ -427,6 +431,7 @@ namespace Resonalyze
                 }
 
                 UpdateAveragingParameters();
+                return restart;
             }
         }
 

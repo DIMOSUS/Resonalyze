@@ -26,12 +26,19 @@ internal sealed record ArrayMicrophoneMetadata(
 internal static class ArrayMicrophoneAnalysis
 {
     /// <summary>No credibility verdict: RequireCredibleTransferIr judges these frames with a better diagnosis.</summary>
+    /// <param name="estimate">The measurement mic's averaged magnitude, which its relative IR was read with.</param>
     public static double[] BuildMeasurementCurve(
-        IReadOnlyList<TransferFunctionFrame> frames,
-        ExcitationBandGate excitationGate,
+        TransferMagnitudeEstimate estimate,
         int sampleRate,
-        ProtectiveHighPassConfiguration? protectiveHighPass) =>
-        BuildCurve(frames, excitationGate, sampleRate, protectiveHighPass, arrayInput: null);
+        ProtectiveHighPassConfiguration? protectiveHighPass)
+    {
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+
+        return Levels(estimate, sampleRate, protectiveHighPass);
+    }
 
     public static double[] BuildArrayCurve(
         IReadOnlyList<TransferFunctionFrame> frames,
@@ -46,7 +53,7 @@ internal static class ArrayMicrophoneAnalysis
         ExcitationBandGate excitationGate,
         int sampleRate,
         ProtectiveHighPassConfiguration? protectiveHighPass,
-        int? arrayInput)
+        int channelOffset)
     {
         ArgumentNullException.ThrowIfNull(frames);
         if (frames.Count == 0)
@@ -61,14 +68,16 @@ internal static class ArrayMicrophoneAnalysis
         }
 
         (TransferMagnitudeEstimate estimate, Complex[]? transfer) =
-            TransferFunction.ComputeAveragedMagnitudeAndIr(
-                frames,
-                excitationGate,
-                wantImpulseResponse: arrayInput.HasValue);
-        if (arrayInput is { } channelOffset)
-        {
-            RequireCredible(transfer, sampleRate, channelOffset);
-        }
+            TransferFunction.ComputeAveragedMagnitudeAndIr(frames, excitationGate);
+        RequireCredible(transfer, sampleRate, channelOffset);
+        return Levels(estimate, sampleRate, protectiveHighPass);
+    }
+
+    private static double[] Levels(
+        TransferMagnitudeEstimate estimate,
+        int sampleRate,
+        ProtectiveHighPassConfiguration? protectiveHighPass)
+    {
         double[] levels = SpatialAverage.FromTransferMagnitude(
             estimate.Magnitude,
             (double)sampleRate / estimate.FftLength);

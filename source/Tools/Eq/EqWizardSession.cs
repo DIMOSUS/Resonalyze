@@ -26,6 +26,9 @@ internal sealed class EqWizardSession
     private Func<string?, CalibrationFile?>? calibrationResolver;
     private EqWizardCurve? sourceCurve;
     private bool sourceCurveStale = true;
+    // The bank as a handoff installed it (held to the strips' limits and steps) beside the channel's own: returned
+    // untouched, the channel's own goes back, not its rounded and clamped copy.
+    private (PeqBankState Installed, EqualizationCurve Channel)? handoffSeed;
     private EqWizardPhaseContext? phaseContext;
     private int quiet;
 
@@ -475,7 +478,7 @@ internal sealed class EqWizardSession
             MoveWindow(from: slopeWindow, to: passbandWindow);
         }
 
-        InvalidateSourceCurve();
+        // Only the target and the window move: the source and corrected curves stand.
         Announce();
     }
 
@@ -527,6 +530,7 @@ internal sealed class EqWizardSession
         SetSourceSmoothing(request.SmoothingInverseOctaves);
         Load(request.Source);
         Bank.Replace(request.BankSeed);
+        handoffSeed = (Bank.State, request.BankSeed);
         Bypass = false;
         passbandWindow = null;
         slopeWindow = null;
@@ -569,7 +573,9 @@ internal sealed class EqWizardSession
             return null;
         }
 
-        EqualizationCurve bank = Bank.Curve;
+        EqualizationCurve bank = handoffSeed is { } seed && Bank.State.Equals(seed.Installed)
+            ? seed.Channel
+            : Bank.Curve;
         EndHandoff();
         return new EqWizardReturn(token, bank, (double)TargetOffsetDb);
     }
@@ -750,6 +756,7 @@ internal sealed class EqWizardSession
     {
         TargetOffsetRange = EqWizardLimits.TargetOffset;
         HandoffToken = null;
+        handoffSeed = null;
     }
 
     private void Announce()

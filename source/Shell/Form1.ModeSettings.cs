@@ -123,6 +123,11 @@ public partial class Form1
         else
         {
             liveSpectrumController.ApplyDisplayOptions();
+            // It rebuilt the live plot; building it again gives the same model.
+            if (CurrentMode == Mode.LiveSpectrum)
+            {
+                return;
+            }
         }
 
         RefreshCurrentModePlot();
@@ -176,7 +181,11 @@ public partial class Form1
 
         if (HasDockedModeSettings(modeController.ActiveTab))
         {
-            ShowDockedModeSettingsForActiveTab();
+            // Toggle closes a panel already open for the tab: re-selecting it (a capture loaded in Live Spectrum) would.
+            if (!dockedModeSettingsHost.IsShowing(modeController.ActiveTab))
+            {
+                ShowDockedModeSettingsForActiveTab();
+            }
         }
         else
         {

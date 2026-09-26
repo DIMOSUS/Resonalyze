@@ -13,7 +13,7 @@ public static class AlignmentSelection
     public const double DefaultDelayTieMarginDb = 0.1;
 
     /// <summary>
-    /// Delay tie-break, then the relative non-inverted preference (within reach), then a re-break within the chosen polarity.
+    /// Delay tie-break, then the relative non-inverted preference (within reach), re-broken within the rescue's polarity.
     /// Polarity is relative to <paramref name="neighborInverted"/>; <paramref name="expectedRelativeInversion"/> withdraws the preference.
     /// </summary>
     public static AlignmentCandidate Select(
@@ -49,15 +49,19 @@ public static class AlignmentSelection
             if (bestPure != null &&
                 bestPure.ScoreDb >= best.ScoreDb - invertPreferenceMarginDb)
             {
-                best = bestPure;
+                // The rescue is the best score of its polarity within reach, so its near-ties sit within the margin of
+                // that polarity's best, as the first tie-break's do of the overall best.
+                return candidates
+                    .Where(item => item.InvertPolarity == bestPure.InvertPolarity &&
+                        item.ScoreDb >= bestPure.ScoreDb - delayTieMarginDb)
+                    .OrderBy(item => Math.Abs(item.DelayMs - baseDeltaMs))
+                    .First();
             }
         }
 
-        return candidates
-            .Where(item => item.InvertPolarity == best.InvertPolarity &&
-                item.ScoreDb >= best.ScoreDb - delayTieMarginDb)
-            .OrderBy(item => Math.Abs(item.DelayMs - baseDeltaMs))
-            .First();
+        // Already the arrival-closest within the margin of the best; a re-break measured from its own score would stretch
+        // the margin to twice its width.
+        return best;
     }
 
     /// <summary>Diagnostic: the rescue the reach gate declined, or null.</summary>

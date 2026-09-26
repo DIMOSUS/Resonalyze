@@ -21,6 +21,9 @@ internal sealed class LiveSpectrumCurves
     private (NoiseSpectralModel Model, int BinCount, int FftLength, int SampleRate,
         double EnbwBins, double MainLobeBins, double SmoothingOctaves, bool Psycho)
         tiltBandKey;
+    // Two model evaluations per bin, the same for every frame of a setup.
+    private double[]? tiltBinCompensation;
+    private (NoiseSpectralModel Model, int BinCount, int FftLength, int SampleRate) tiltBinKey;
 
     /// <summary>Raw samples plus smoothing code for the overlay layer; the band-power RTA has no raw form and returns
     /// the drawn-curve fallback.</summary>
@@ -157,13 +160,13 @@ internal sealed class LiveSpectrumCurves
             : Magnitude(display, magnitude, 0.0);
 
     /// <summary>Trusted and low-coherence (dimmed, dashed) segments sharing boundary points; NaN elsewhere.</summary>
+    /// <param name="magnitudePoints">The <see cref="Transfer"/> curve.</param>
     public (List<SignalPoint> Trusted, List<SignalPoint> Untrusted) CoherenceSplit(
         LiveSpectrumDisplay display,
-        double[] magnitude,
+        List<SignalPoint> magnitudePoints,
         double[] coherence,
         int thresholdPercent)
     {
-        List<SignalPoint> magnitudePoints = Magnitude(display, magnitude);
         List<SignalPoint> coherencePoints = Coherence(display, coherence);
         int count = magnitudePoints.Count;
         double threshold = thresholdPercent / 100.0;
@@ -333,7 +336,7 @@ internal sealed class LiveSpectrumCurves
         return tiltBandCompensation;
     }
 
-    private static List<SignalPoint> Magnitude(
+    private List<SignalPoint> Magnitude(
         LiveSpectrumDisplay display,
         double[] magnitude,
         double offsetDb = 0.0,
@@ -346,12 +349,10 @@ internal sealed class LiveSpectrumCurves
         // Per bin before resample, where LiveRtaRawCapture bakes it, so re-smoothing a raw capture reproduces this trace.
         if (tiltCompensationModel is { } model)
         {
+            double[] compensation = TiltBinCompensation(model, bins, setup);
             for (int i = 0; i < bins.Count; i++)
             {
-                bins[i] = new SignalPoint(
-                    bins[i].X,
-                    bins[i].Y + NoiseTiltCompensation.BinCompensationDb(
-                        model, bins[i].X, setup.SampleRate));
+                bins[i] = new SignalPoint(bins[i].X, bins[i].Y + compensation[i]);
             }
         }
 
@@ -364,6 +365,23 @@ internal sealed class LiveSpectrumCurves
             SpectrumSmoothing.SmoothingOctaves(display.SmoothingCode),
             psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(
                 display.SmoothingCode));
+    }
+
+    private double[] TiltBinCompensation(NoiseSpectralModel model, List<SignalPoint> bins, LiveCaptureSetup setup)
+    {
+        var key = (model, bins.Count, setup.SequenceLength, setup.SampleRate);
+        if (tiltBinCompensation == null || !key.Equals(tiltBinKey))
+        {
+            tiltBinCompensation = new double[bins.Count];
+            for (int i = 0; i < bins.Count; i++)
+            {
+                tiltBinCompensation[i] = NoiseTiltCompensation.BinCompensationDb(model, bins[i].X, setup.SampleRate);
+            }
+
+            tiltBinKey = key;
+        }
+
+        return tiltBinCompensation;
     }
 
     // Both lists sorted by X; a forward cursor keeps pairing linear.

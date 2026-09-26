@@ -397,7 +397,7 @@ public partial class EqWizardPanel
             other.SetSelected(other == slot);
         }
 
-        Redraw();
+        Redraw(orphanFit: false);
     }
 
     private void DeselectBand()
@@ -413,7 +413,7 @@ public partial class EqWizardPanel
             slot.SetSelected(false);
         }
 
-        Redraw();
+        Redraw(orphanFit: false);
     }
 
     private void RestoreSelection(int index)

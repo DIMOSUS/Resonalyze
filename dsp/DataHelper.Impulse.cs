@@ -8,6 +8,21 @@ namespace Resonalyze.Dsp
 {
     public static partial class DataHelper
     {
+        // The whole record's unsmoothed envelope and its SNR depend on the record and the band only (an envelope is blind
+        // to sign): a time unit, origin, scale or framing edit rebuilds the view, not them (72-185 ms on 262 k samples).
+        // Only the records on screen are worth keeping, a main and a Compare set, so a few, most recent first.
+        private const int KeptImpulseEnvelopes = 4;
+        private static readonly List<ImpulseEnvelopeReading> RecentImpulseEnvelopes = new(KeptImpulseEnvelopes);
+
+        private readonly record struct ImpulseEnvelopeBand(int Length, int SampleRate, double? CenterHz, double? Octaves);
+
+        private sealed record ImpulseEnvelopeReading(
+            WeakReference<Complex[]> Record, ImpulseEnvelopeBand Band, double[] Envelope, double? SnrDb)
+        {
+            public bool Reads(Complex[] record, ImpulseEnvelopeBand band) =>
+                Band == band && Record.TryGetTarget(out Complex[]? kept) && ReferenceEquals(kept, record);
+        }
+
         // Traces span the whole record on its own timeline; opening length, zero and reference are the caller's framing.
         public static ImpulseCurveSet GetImpulseCurves(
             IImpulseMeasurement measurement,
@@ -58,17 +73,9 @@ namespace Resonalyze.Dsp
             double? snrDb = null;
             if (opt.ShowEnvelope)
             {
-                double[] envelope = SignalEnvelope.Envelope(samples);
-                // Against the envelope peak, as Time Alignment grades it, so the SNR figures match.
-                double envelopePeak = 0.0;
-                for (int i = 0; i < envelope.Length; i++)
-                {
-                    envelopePeak = Math.Max(envelopePeak, envelope[i]);
-                }
-
-                snrDb = envelopePeak > 0.0
-                    ? SignalEnvelope.EstimatePeakConfidenceDecibels(envelope, envelopePeak)
-                    : null;
+                ImpulseEnvelopeReading reading = WholeRecordEnvelope(measurement, opt, samples);
+                snrDb = reading.SnrDb;
+                double[] envelope = (double[])reading.Envelope.Clone();
                 SmoothEnvelopeInPlace(envelope, opt.EnvelopeSmoothingMs, measurement.SampleRate);
                 envelopeCurve = new AnalysisCurve(
                     "Envelope (ETC)",
@@ -93,6 +100,62 @@ namespace Resonalyze.Dsp
                 reference,
                 ownPeakIndex,
                 snrDb);
+        }
+
+        private static ImpulseEnvelopeReading WholeRecordEnvelope(
+            IImpulseMeasurement measurement,
+            ImpulseResponseOptions opt,
+            double[] samples)
+        {
+            bool banded = opt.HasBandFilter(measurement.SampleRate);
+            var band = new ImpulseEnvelopeBand(
+                samples.Length,
+                measurement.SampleRate,
+                banded ? opt.BandCenterHz : null,
+                banded ? opt.BandFilterOctaves : null);
+            Complex[]? record = measurement.ImpulseResponse;
+            if (record != null)
+            {
+                lock (RecentImpulseEnvelopes)
+                {
+                    int index = RecentImpulseEnvelopes.FindIndex(reading => reading.Reads(record, band));
+                    if (index >= 0)
+                    {
+                        ImpulseEnvelopeReading kept = RecentImpulseEnvelopes[index];
+                        RecentImpulseEnvelopes.RemoveAt(index);
+                        RecentImpulseEnvelopes.Insert(0, kept);
+                        return kept;
+                    }
+                }
+            }
+
+            double[] envelope = SignalEnvelope.Envelope(samples);
+            // Against the envelope peak, as Time Alignment grades it, so the SNR figures match.
+            double envelopePeak = 0.0;
+            for (int i = 0; i < envelope.Length; i++)
+            {
+                envelopePeak = Math.Max(envelopePeak, envelope[i]);
+            }
+
+            double? snrDb = envelopePeak > 0.0
+                ? SignalEnvelope.EstimatePeakConfidenceDecibels(envelope, envelopePeak)
+                : null;
+            if (record == null)
+            {
+                return new ImpulseEnvelopeReading(new WeakReference<Complex[]>([]), band, envelope, snrDb);
+            }
+
+            var reading = new ImpulseEnvelopeReading(new WeakReference<Complex[]>(record), band, envelope, snrDb);
+            lock (RecentImpulseEnvelopes)
+            {
+                RecentImpulseEnvelopes.Insert(0, reading);
+                if (RecentImpulseEnvelopes.Count > KeptImpulseEnvelopes)
+                {
+                    RecentImpulseEnvelopes.RemoveAt(RecentImpulseEnvelopes.Count - 1);
+                }
+            }
+
+            return reading;
         }
 
         private static double ImpulseTime(

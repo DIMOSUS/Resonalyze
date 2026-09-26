@@ -245,6 +245,23 @@ public sealed class EqTargetCrossoverTests
         Assert.Null(EqWizardRender.RenderSet(leftOut, new EqualizationCurve([])).ElectricalTarget);
     }
 
+    [Fact]
+    public void TakingTheCrossoverIntoTheTarget_KeepsTheSourceCurve()
+    {
+        var session = new EqWizardSession();
+        session.Load(Source(new CrossoverSpec(
+            CrossoverKind.LowPass, new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))) with
+        {
+            Points = Enumerable.Range(0, 20).Select(i => new SignalPoint(20 * Math.Pow(2, i * 0.5), -0.1 * i)).ToList()
+        });
+        EqWizardCurve? source = session.SourceCurve;
+
+        session.SetCrossoverInTarget(false);
+
+        Assert.NotNull(source);
+        Assert.Same(source, session.SourceCurve);
+    }
+
     private static int Nearest(EqWizardCurve curve, double hz)
     {
         int best = 0;

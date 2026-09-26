@@ -18,6 +18,8 @@ internal sealed class WasapiPlaybackDevice : IAudioPlaybackDevice, IRenderDiagno
     private TaskCompletionSource<bool>? playbackEnded;
     private IWaveProvider? initializedSource;
     private WaveFormat? streamFormat;
+    // One buffer for the whole stream: a render event asks for at most the device buffer.
+    private byte[] renderBuffer = [];
     private volatile bool stopRequested;
     private bool initialized;
     private bool disposed;
@@ -362,10 +364,15 @@ internal sealed class WasapiPlaybackDevice : IAudioPlaybackDevice, IRenderDiagno
         WaveFormat format = streamFormat ??
             throw new InvalidOperationException("WASAPI render is not initialized.");
         int byteCount = checked(frames * format.BlockAlign);
-        var buffer = new byte[byteCount];
+        if (renderBuffer.Length < byteCount)
+        {
+            renderBuffer = new byte[Math.Max(byteCount, checked(ActualBufferFrames * format.BlockAlign))];
+        }
+
+        byte[] buffer = renderBuffer;
         IWaveProvider source = initializedSource ??
             throw new InvalidOperationException("WASAPI render source is not initialized.");
-        AudioRenderBufferRead read = AudioRenderBufferReader.Fill(source, buffer);
+        AudioRenderBufferRead read = AudioRenderBufferReader.Fill(source, buffer, byteCount);
         IntPtr destination = render.GetBuffer(frames);
         try
         {

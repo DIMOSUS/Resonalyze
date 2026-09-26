@@ -168,13 +168,13 @@ internal sealed class LiveSpectrumSession : IDisposable
     }
 
     /// <summary>Configures the analyzer, and the next run's high-pass, from the measurement settings.</summary>
-    /// <remarks>A stopped accumulation's bins belong to the rate and frame length they were read at; under another
-    /// the plot and Save would place them on the wrong frequencies, so a change of either discards them.</remarks>
+    /// <remarks>A stopped accumulation belongs to the capture session it was read in: under another rate or frame length
+    /// the plot and Save would place its bins on the wrong frequencies, and under another input or route Save would file
+    /// it under that session, with that input's SPL anchor. A new capture session discards it.</remarks>
     public void Configure(MeasurementSettingsFile.SweepMeasurementSettings measurementSettings)
     {
         SetProtectiveHighPass(measurementSettings);
-        int sampleRateBefore = analyzer.SampleRate;
-        int sequenceLengthBefore = analyzer.SequenceLength;
+        Guid captureSessionBefore = analyzer.CaptureSessionId;
         analyzer.Init(
             measurementSettings.SampleRate,
             measurementSettings.Bits,
@@ -194,7 +194,7 @@ internal sealed class LiveSpectrumSession : IDisposable
             measurementSettings.WasapiCaptureEndpointId,
             measurementSettings.WasapiRenderEndpointId,
             measurementSettings.WasapiBufferMilliseconds);
-        if (analyzer.SampleRate != sampleRateBefore || analyzer.SequenceLength != sequenceLengthBefore)
+        if (analyzer.CaptureSessionId != captureSessionBefore)
         {
             // A loaded capture carries its own geometry and stays.
             analyzer.ResetAccumulation();
@@ -233,9 +233,11 @@ internal sealed class LiveSpectrumSession : IDisposable
     /// <returns>The final accumulation, or null when the run read nothing (the held one is then kept).</returns>
     public async Task<LiveSpectrumSnapshot?> StopAsync()
     {
+        await analyzer.AbortAsync();
+        // Read once the run has drained: frames finished during the stop are in the accumulation every later re-read
+        // shows, so the held reading must have them too.
         LiveSpectrumSnapshot? finalSnapshot = analyzer.GetAccumulatedSpectrumSnapshot(
             Display.NeedsInputMagnitude);
-        await analyzer.AbortAsync();
         heldSnapshot = finalSnapshot ?? heldSnapshot;
         Changed?.Invoke();
         return finalSnapshot;
@@ -271,14 +273,16 @@ internal sealed class LiveSpectrumSession : IDisposable
         PeakHold.Suspend();
     }
 
-    /// <summary>Takes a display option: an Infinite average restarts, and an envelope under another transform is dropped.</summary>
+    /// <summary>Takes a display option: a running Infinite average restarts, and an envelope under another transform is
+    /// dropped.</summary>
     /// <returns>Whether the accumulation restarted.</returns>
     public bool ApplyDisplayOptions()
     {
-        analyzer.RefreshLiveAveraging();
-        bool restarted = false;
-        // Infinite restarts on option changes, except spatial-average captures (the accumulation is the measurement). Keyed on mode, not stored speed.
-        if (!Options.AnalysisMode.IsSpatialAverageCapture() &&
+        bool restarted = analyzer.RefreshLiveAveraging();
+        // Infinite restarts on option changes, except spatial-average captures (the accumulation is the measurement). Keyed
+        // on mode, not stored speed. A stopped reading is what the display is re-read from, so it stays.
+        if (analyzer.InProgress &&
+            !Options.AnalysisMode.IsSpatialAverageCapture() &&
             Options.EffectiveAveragingSpeed == AveragingSpeed.Infinite)
         {
             analyzer.ResetAccumulation();
@@ -288,6 +292,11 @@ internal sealed class LiveSpectrumSession : IDisposable
         if (!Options.PeakHold)
         {
             PeakHold.Clear();
+        }
+        else if (restarted && analyzer.InProgress)
+        {
+            // As Reset average: the new average's first frames are noise the envelope must not latch.
+            PeakHold.Suspend();
         }
 
         PeakHold.Follow(Display.PeakHoldKey);

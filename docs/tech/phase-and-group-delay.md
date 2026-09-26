@@ -347,6 +347,14 @@ trace. Wrapped phase is smoothed as unit phasors (cosine and sine separately, th
 false ramp across the kernel's width. Unwrapped and excess phase are continuous and
 are averaged directly.
 
+The phase kernel (`SmoothLinear`) is the Lanczos main lobe over the uniform bin grid,
+half an octave-width wide. It stops at both ends of the grid and renormalises, so the
+top bin weighs once in its neighbours' means; repeating it for every virtual bin past
+Nyquist pulled unwrapped phase near the top by tens of degrees toward the last bin.
+Both phasor components share one pass, and a kernel's weights come from one sine and
+a rotation per bin (`FillLanczos2Weights`), so a 1/12-octave rebuild on 16 k bins
+costs tens of milliseconds, not hundreds.
+
 ## Magnitude spectra
 
 `DataHelper.Spectrum.cs` builds the primary magnitude curve: window the impulse,
@@ -374,8 +382,16 @@ the record's end, as the FDW, phase and group-delay gates do; read as zeros, a
 1.25 ms loopback-referenced arrival came out 0.3-0.4 dB high below 60 Hz against
 the same IR further in, and the FDW curve left the fixed one below its transition.
 Only the pre-roll wraps (`wrapPreRoll`): past the record's end stays zero, so a window
-longer than an imported record does not read the direct sound twice. The Waterfall does
-not wrap at all: its later slices would read the direct sound again.
+longer than an imported record does not read the direct sound twice.
+
+The Waterfall and Burst Decay open their windows at the same start
+(`DataHelper.MagnitudeAnchorIndex`), so the Waterfall's first slice is the Frequency
+Response curve; opened at the peak, a woofer's first slice misread its bass as the
+magnitude once did. Burst Decay's periods axis still counts from the peak, which sits
+that much further into its window. Both read the circular pre-roll as the magnitude
+window does, so a start less than a left fade into the record matches Frequency
+Response there too; only the pre-roll wraps, so the Waterfall's later slices never read
+the direct sound again. The window preview is Frequency Response's.
 
 A composite record (a sum of arrivals) must pass `anchorIndex` = the earliest of its
 parts' own starts. On the mixed record the start estimator reads the front of the
@@ -501,7 +517,10 @@ capture.
 aliasing and jagged traces of nearest-bin lookup. Lanczos weights are signed, so the
 sum degenerates when the kernel falls outside the input grid (resampling to 20 kHz
 from a spectrum that ends below it); the nearest input sample is held instead of
-pinning the point to the −160 dB floor.
+pinning the point to the −160 dB floor. Each bin is converted to amplitude once, and
+on a uniform bin grid the kernel's sines advance by rotation, as in the phase kernel;
+a curve on any other grid is weighted tap by tap. In the psychoacoustic mode the
+Lanczos mean is computed only where the Gaussian degenerates and needs it.
 
 The psychoacoustic mode uses a Gaussian cubic mean whose FWHM follows the
 frequency-dependent octave width: it gives audible peaks more weight without a hard
@@ -584,6 +603,11 @@ Virtual DSP gate pin and saved offsets all refer to its absolute timeline.
   analytic magnitude rides above the samples), because Time Alignment grades the
   record against its envelope peak and the two figures must match. It exists only
   when the envelope is drawn, since the envelope costs a transform.
+- The unsmoothed envelope and its SNR are kept for the last few records and bands
+  read (the ones on screen: a main and a Compare set): they do not depend on time
+  unit, origin, scale, framing or Invert (the analytic magnitude of a negated record
+  is the same, bit for bit), which each rebuilt them for 72-185 ms on a 262 k-sample
+  record. The envelope smoothing is applied to a copy.
 - A band filter (`BandFilterOctaves`, zero-phase mask with a fade skirt of half the
   pass width, as the Time Alignment probe uses) replaces the source signal, so peak,
   reference and SNR describe the band. A band is realisable only if its whole

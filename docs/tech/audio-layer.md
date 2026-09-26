@@ -78,7 +78,10 @@ bounded copies into preallocated slots of `CapturePump` and nothing else; conver
 metering and publication run on a worker thread. The ASIO pool is allocated in
 `AsioCapturePump.Prepare`, because the buffer size is only known once the driver opens;
 PCM packet sizes are known before start. Exhausting the pool means processing fell
-behind the device and arms a terminal overflow failure. ASIO reports no packet
+behind the device and arms a terminal overflow failure, except while a capture is paused
+between averaged runs: its samples are dropped anyway, the next run's reset clears the
+pump, and the last run's analysis (FFTs of 2^20 samples and more) can starve the worker
+for longer than the 16 slots cover. ASIO reports no packet
 discontinuities (`AsioStreamingSession.CaptureDiscontinuity` never fires). ASIO also does
 not duplicate a mono provider onto stereo outputs, so `FloatArrayWaveStream` encodes the
 output routing explicitly.

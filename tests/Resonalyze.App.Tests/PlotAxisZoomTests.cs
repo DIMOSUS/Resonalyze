@@ -187,6 +187,62 @@ public sealed class PlotAxisZoomTests
             out _));
     }
 
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public void ZoomButtons_ScaleTheirAxisByTwoAboutTheMiddleOfTheView(bool horizontal, bool zoomIn)
+    {
+        // The pair sits at an end of its axis; zooming about the button would slide the view towards that end.
+        PlotModel model = RenderedModel();
+        Axis axis = model.Axes.First(axis => axis.Key == (horizontal
+            ? PlotModelFactory.FrequencyAxisKey
+            : PlotModelFactory.DecibelAxisKey));
+        Func<double, double> toLinear = horizontal ? Math.Log10 : value => value;
+        // Room to zoom out: the full view is clamped at the axis's absolute range.
+        axis.ZoomAt(4, axis.InverseTransform(
+            (axis.Transform(axis.ActualMinimum) + axis.Transform(axis.ActualMaximum)) / 2));
+        Update(model);
+        double middleBefore = (toLinear(axis.ActualMinimum) + toLinear(axis.ActualMaximum)) / 2;
+        double spanBefore = toLinear(axis.ActualMaximum) - toLinear(axis.ActualMinimum);
+        PlotZoomButton button = PlotZoomButtons.Layout(model)
+            .Single(candidate => candidate.Horizontal == horizontal && candidate.ZoomIn == zoomIn);
+
+        Assert.True(PlotAxisZoom.ZoomAxisAboutCentre(
+            model,
+            button.Center,
+            horizontal,
+            zoomIn ? PlotAxisZoom.StepZoomInScale : PlotAxisZoom.StepZoomOutScale));
+        Update(model);
+
+        double middleAfter = (toLinear(axis.ActualMinimum) + toLinear(axis.ActualMaximum)) / 2;
+        double spanAfter = toLinear(axis.ActualMaximum) - toLinear(axis.ActualMinimum);
+        Assert.Equal(middleBefore, middleAfter, 6);
+        Assert.Equal(zoomIn ? 0.5 : 2.0, spanAfter / spanBefore, 6);
+    }
+
+    [Fact]
+    public void ClickingTheZoomInButton_KeepsTheMiddleOfTheView()
+    {
+        PlotModel model = RenderedModel();
+        using var view = new PlotView { Width = PlotWidth, Height = PlotHeight };
+        PlotInteraction.Enable(view);
+        view.Model = model;
+        Axis frequency = model.Axes.First(axis => axis.Key == PlotModelFactory.FrequencyAxisKey);
+        double middleBefore = Math.Log10(frequency.ActualMinimum * frequency.ActualMaximum) / 2;
+        PlotZoomButton button = PlotZoomButtons.Layout(model)
+            .Single(candidate => candidate.Horizontal && candidate.ZoomIn);
+
+        view.ActualController.HandleMouseDown(
+            view,
+            new OxyMouseDownEventArgs { ChangedButton = OxyMouseButton.Left, ClickCount = 1, Position = button.Center });
+        Update(model);
+
+        Assert.True(frequency.ActualMaximum - frequency.ActualMinimum < 20_000 - 20);
+        Assert.Equal(middleBefore, Math.Log10(frequency.ActualMinimum * frequency.ActualMaximum) / 2, 6);
+    }
+
     [Fact]
     public void TextAtTheTopLeft_StartsPastTheLeftPair()
     {

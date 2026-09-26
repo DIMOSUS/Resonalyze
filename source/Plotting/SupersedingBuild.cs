@@ -4,27 +4,50 @@ namespace Resonalyze;
 /// lands nothing, whatever it returned or threw.</summary>
 internal sealed class SupersedingBuild
 {
+    // A source is cancelled and disposed only under this lock, so the two never overlap.
+    private readonly object sync = new();
     private CancellationTokenSource? current;
 
-    public void Cancel() => Interlocked.Exchange(ref current, null)?.Cancel();
+    public void Cancel()
+    {
+        lock (sync)
+        {
+            current?.Cancel();
+            current = null;
+        }
+    }
 
     /// <summary>Hands the result to <paramref name="land"/> on the caller's context unless a newer build or
     /// <see cref="Cancel"/> came first; faults when the build fails while still current.</summary>
     public async Task RunAsync<T>(Func<CancellationToken, T> build, Action<T> land)
     {
         var cancellation = new CancellationTokenSource();
-        Interlocked.Exchange(ref current, cancellation)?.Cancel();
+        lock (sync)
+        {
+            current?.Cancel();
+            current = cancellation;
+        }
+
         Task<T> running = Task.Run(() => build(cancellation.Token), cancellation.Token);
         // Waits without throwing: a superseded build's failure is dropped with it.
         await Task.WhenAny(running);
 
-        // Only a build still current takes its source back; whoever superseded it took the source to cancel it.
-        if (Interlocked.CompareExchange(ref current, null, cancellation) != cancellation)
+        bool superseded;
+        lock (sync)
         {
-            return;
+            // Superseded, the source was cancelled already; still current, it leaves, so nothing can cancel it now.
+            superseded = current != cancellation;
+            if (!superseded)
+            {
+                current = null;
+            }
+
+            cancellation.Dispose();
         }
 
-        cancellation.Dispose();
-        land(await running);
+        if (!superseded)
+        {
+            land(await running);
+        }
     }
 }

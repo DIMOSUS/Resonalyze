@@ -26,6 +26,8 @@ public sealed class SupersedingBuildTests
 
         Assert.True(firstToken.IsCancellationRequested);
         Assert.Equal(["second"], landed);
+        // The superseded source is released too, once its build has stopped.
+        Assert.Throws<ObjectDisposedException>(() => firstToken.WaitHandle);
     }
 
     [Fact]

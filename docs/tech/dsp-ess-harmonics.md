@@ -147,7 +147,9 @@ estimate on the record, the decomposition and the noise window fields. `EssDisto
 `ComputeDistortionCurvesResult` overload that takes a decomposition let a caller keep both;
 `MeasurementPlotContext` keeps them for the last two results drawn (a few megabytes each, and history holds
 results in memory), so a Frequency Response rebuild (smoothing, calibration, a curve toggled) only redoes the
-calibrated grid and the smoothing. The plot never changes the fields the analysis reads.
+calibrated grid and the smoothing. The plot never changes the fields the analysis reads. Computing them is
+not cancelled with a superseded build: the next build of the same result would compute the same values, so it
+waits for them instead.
 
 Calibration is applied per bin at the product frequency, tens of thousands of reads per packet in ascending
 order. `CalibrationFile.AscendingCorrections` answers them with the bracketing points and their levels

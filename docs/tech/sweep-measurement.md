@@ -94,6 +94,11 @@ curves builds on the thread pool through `SupersedingBuild`:
   dropped. The factory checks the token between curves, and the long stages check it as they
   go: each FDW window, between the group-delay smoothing passes, each waterfall slice and
   burst-decay band. The analysis caches only ever take complete entries.
+- One stage is shared rather than cancelled: a result's harmonic decomposition and noise floor
+  ([reuse across plot builds](dsp-ess-harmonics.md#reuse-across-plot-builds)). A Frequency Response
+  build computing them for the first time finishes them even when superseded, and a newer build of
+  the same result waits for them instead of starting over: it needs the same values, and a
+  cancellation inside the shared `Lazy` would be cached as the value.
 - A mode switch shows the mode's frame at once (title, axes, peak read-out) and the curves, with
   the overlay slots, when they land. The frame takes the saved zoom but is never remembered
   from (`PlotViewportMemory.ShowPlaceholder`), so its own ranges cannot pass for the user's; a zoom

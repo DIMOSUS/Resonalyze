@@ -16,10 +16,18 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
     private readonly CheckBox firBox = CreateScopeBox("FIR", checkedByDefault: false);
     private readonly Button copyButton =
         UiStyle.CreateDialogButton("Copy", DialogResult.OK, accent: true);
+    private readonly WrappingToolTip toolTip = new()
+    {
+        InitialDelay = 500,
+        ReshowDelay = 150,
+        AutoPopDelay = 12_000
+    };
 
+    /// <param name="undoable">What the last copy was, while it can be undone.</param>
     public VirtualCrossoverCopySideDialog(
         bool fromRightToLeft,
-        IReadOnlyList<string> channelLabels)
+        IReadOnlyList<string> channelLabels,
+        string? undoable = null)
     {
         ArgumentNullException.ThrowIfNull(channelLabels);
 
@@ -97,6 +105,37 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
 
         layout.Controls.Add(scopeTable);
 
+        var footer = new TableLayoutPanel
+        {
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 2,
+            Margin = new Padding(0)
+        };
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        Button undoButton = UiStyle.CreateDialogButton(
+            "Undo last copy",
+            DialogResult.None,
+            accent: false,
+            new Size(112, 30));
+        undoButton.Anchor = AnchorStyles.Left;
+        undoButton.Name = "buttonUndo";
+        undoButton.Enabled = undoable != null;
+        undoButton.Click += (_, _) =>
+        {
+            UndoRequested = true;
+            DialogResult = DialogResult.Cancel;
+            Close();
+        };
+        toolTip.SetToolTip(
+            undoButton,
+            (undoable == null ? "Nothing copied here to undo." : $"The last copy was {undoable}.") + "\r\n" +
+            "Undo puts every channel back exactly as it was before it," + "\r\n" +
+            "anything changed since included. One step; gone once a" + "\r\n" +
+            "session is loaded.");
+        footer.Controls.Add(undoButton, 0, 0);
         var buttons = new FlowLayoutPanel
         {
             Anchor = AnchorStyles.Right,
@@ -112,15 +151,19 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
             accent: false);
         buttons.Controls.Add(cancelButton);
         buttons.Controls.Add(copyButton);
-        layout.Controls.Add(buttons);
+        footer.Controls.Add(buttons, 1, 0);
+        layout.Controls.Add(footer);
 
         Controls.Add(layout);
+        copyButton.Name = "buttonCopy";
         AcceptButton = copyButton;
         CancelButton = cancelButton;
         UpdateCopyEnabled();
         ResumeLayout(false);
         PerformLayout();
     }
+
+    public bool UndoRequested { get; private set; }
 
     public IReadOnlyList<int> SelectedIndices => channelBoxes
         .Select((box, index) => (box.Checked, index))
@@ -167,5 +210,15 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
     private void UpdateCopyEnabled()
     {
         copyButton.Enabled = channelBoxes.Exists(box => box.Checked) && !Scope.IsEmpty;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            toolTip.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 }

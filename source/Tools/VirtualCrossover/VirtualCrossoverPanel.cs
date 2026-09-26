@@ -81,9 +81,12 @@ public partial class VirtualCrossoverPanel : UserControl
             oppositeSide: false,
             channel => session.Calibration.For(channel));
         agentReader = new AgentSessionReader(session, processingCoordinator, metrics, hybridReader);
-        junctionTune = new VirtualCrossoverJunctionTuneApply(session, agentReader);
+        junctionTune = new VirtualCrossoverJunctionTuneApply(session, agentReader, undoHistory);
+        autoCrossoverUndo = VirtualCrossoverUndo.AutoCrossover(undoHistory);
+        autoDelayUndo = VirtualCrossoverUndo.AutoDelay(undoHistory);
+        copySideUndo = VirtualCrossoverUndo.CopySide(undoHistory);
         eqHandoff = new VirtualCrossoverEqHandoff(session, processingCoordinator, metrics, hybridReader);
-        agentImport = new AgentImportRunner(session, agentReader, eqHandoff, this);
+        agentImport = new AgentImportRunner(session, agentReader, eqHandoff, this, undoHistory);
         audition = new VirtualCrossoverAudition(session, processingCoordinator, metrics, hybridReader);
         sharedScale = new VirtualCrossoverSharedScale(
             session, processingCoordinator, metrics, hybridReader, viewBuilder);
@@ -100,7 +103,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         buttonAutoDelay.Click += (_, _) => AutoAlignDelay();
         buttonAi.Click += (_, _) => ShowAgentMenu();
-        buttonAutoSetup.Click += (_, _) => OpenAutoSetupWizard();
+        buttonAutoSetup.Click += (_, _) => OpenAutoSetupWizard(undoable: true);
         buttonTuneJunction.Click += async (_, _) => await ShowJunctionTuneDialogAsync().ConfigureAwait(true);
         buttonDspProcessor.Click += (_, _) => OpenDspProcessorDialog();
         buttonTools.Click += (_, _) => ShowToolsMenu();

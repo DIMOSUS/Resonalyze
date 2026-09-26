@@ -147,4 +147,28 @@ internal static class AgentProposalApplier
         to.FirDesign = from.FirDesign;
         to.FirRunSampleRateHz = from.FirRunSampleRateHz;
     }
+
+    /// <summary>Whether <see cref="CopyEditable"/> would change nothing; the two must name the same fields.</summary>
+    public static bool SameEditable(VirtualCrossoverChannelSettings a, VirtualCrossoverChannelSettings b)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        ArgumentNullException.ThrowIfNull(b);
+
+        return a.GainDb.Equals(b.GainDb) &&
+            a.DelayMs.Equals(b.DelayMs) &&
+            a.InvertPolarity == b.InvertPolarity &&
+            a.CrossoverKind == b.CrossoverKind &&
+            a.LowPassEdge == b.LowPassEdge &&
+            a.HighPassEdge == b.HighPassEdge &&
+            a.AcousticLowPass == b.AcousticLowPass &&
+            a.AcousticHighPass == b.AcousticHighPass &&
+            a.PhaseRotationDegrees.Equals(b.PhaseRotationDegrees) &&
+            a.PeqPreampDb.Equals(b.PeqPreampDb) &&
+            a.PeqBands.SequenceEqual(b.PeqBands) &&
+            a.PeqSourceName == b.PeqSourceName &&
+            ReferenceEquals(a.Fir, b.Fir) &&
+            a.FirSourceName == b.FirSourceName &&
+            a.FirDesign == b.FirDesign &&
+            a.FirRunSampleRateHz == b.FirRunSampleRateHz;
+    }
 }

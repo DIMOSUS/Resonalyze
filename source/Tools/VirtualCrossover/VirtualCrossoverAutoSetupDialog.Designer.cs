@@ -53,6 +53,7 @@ namespace Resonalyze
             progressPreview = new ProgressBar();
             buttonApply = new ReleaseClickButton();
             buttonCancel = new ReleaseClickButton();
+            buttonUndo = new ReleaseClickButton();
             SuspendLayout();
             //
             // labelHeader
@@ -337,6 +338,19 @@ namespace Resonalyze
             buttonCancel.Text = "Cancel";
             buttonCancel.UseVisualStyleBackColor = true;
             //
+            // buttonUndo
+            //
+            buttonUndo.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+            buttonUndo.Enabled = false;
+            buttonUndo.FlatStyle = FlatStyle.Popup;
+            buttonUndo.ForeColor = UiPalette.TextPrimary;
+            buttonUndo.Location = new Point(12, 310);
+            buttonUndo.Name = "buttonUndo";
+            buttonUndo.Size = new Size(130, 26);
+            buttonUndo.TabIndex = 26;
+            buttonUndo.Text = "Undo last Apply";
+            buttonUndo.UseVisualStyleBackColor = true;
+            //
             // VirtualCrossoverAutoSetupDialog
             //
             AutoScaleDimensions = new SizeF(96F, 96F);
@@ -365,6 +379,7 @@ namespace Resonalyze
             Controls.Add(progressPreview);
             Controls.Add(buttonApply);
             Controls.Add(buttonCancel);
+            Controls.Add(buttonUndo);
             Font = new Font("Segoe UI", 9F);
             ForeColor = UiPalette.TextPrimary;
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -403,5 +418,6 @@ namespace Resonalyze
         private ProgressBar progressPreview;
         private ReleaseClickButton buttonApply;
         private ReleaseClickButton buttonCancel;
+        private ReleaseClickButton buttonUndo;
     }
 }

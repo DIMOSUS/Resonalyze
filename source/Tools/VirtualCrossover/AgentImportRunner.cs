@@ -43,14 +43,18 @@ internal sealed class AgentImportRunner(
     VirtualCrossoverSession session,
     AgentSessionReader reader,
     VirtualCrossoverEqHandoff handoff,
-    IAgentImportHost host)
+    IAgentImportHost host,
+    VirtualCrossoverUndoHistory history)
 {
     private const int AutoDelayReportLinesInSummary = 16;
 
+    private AgentImportUndo? armed;
     private long undoGeneration;
+    private long undoWritten;
 
-    /// <summary>The last import's undo; it restores only into the project generation it was taken in.</summary>
-    public AgentImportUndo? Undo { get; private set; }
+    /// <summary>The last import's undo; it restores only into the project generation it was taken in, and goes when a
+    /// command's undo takes the session back to before it.</summary>
+    public AgentImportUndo? Undo => armed != null && history.Stands(undoWritten) ? armed : null;
 
     public string Fingerprint() => reader.Fingerprint(host.View());
 
@@ -59,21 +63,25 @@ internal sealed class AgentImportRunner(
     public AgentImportUndo CaptureUndo() => AgentImportUndo.Capture(session, reader, host.View());
 
     /// <summary>A bound project replaces the settings objects the undo would restore into.</summary>
-    public void ForgetUndo() => Undo = null;
+    public void ForgetUndo() => armed = null;
 
     /// <summary>The undo to restore, or why there is none; either way it is spent.</summary>
     public (AgentImportUndo? Undo, string? Refusal) TakeUndo()
     {
         AgentImportUndo? undo = Undo;
-        Undo = null;
+        armed = null;
         if (undo == null)
         {
             return (null, null);
         }
 
-        return undoGeneration == session.ProjectGeneration
-            ? (undo, null)
-            : (null, "A session was loaded since the last AI import.");
+        if (undoGeneration != session.ProjectGeneration)
+        {
+            return (null, "A session was loaded since the last AI import.");
+        }
+
+        history.DropAfter(undoWritten);
+        return (undo, null);
     }
 
     /// <summary>Runs an import's probes on the tune as it stands, writing nothing; all probes go into one clipboard document,
@@ -189,10 +197,9 @@ internal sealed class AgentImportRunner(
 
         // Armed before the first write: an engine can throw after the rows landed. The previous undo returns only if nothing moved.
         AgentImportUndo undo = CaptureUndo();
-        AgentImportUndo? previousUndo = Undo;
-        long previousUndoGeneration = undoGeneration;
-        Undo = undo;
-        undoGeneration = session.ProjectGeneration;
+        (AgentImportUndo? previousUndo, long previousUndoGeneration, long previousUndoWritten) =
+            (Undo, undoGeneration, undoWritten);
+        (armed, undoGeneration, undoWritten) = (undo, session.ProjectGeneration, history.Write());
 
         List<AgentUndoEntry> written = AgentProposalApplier.Apply(toApply);
         if (written.Count > 0)
@@ -208,8 +215,7 @@ internal sealed class AgentImportRunner(
         bool engines = await EnginesAsync(toApply, summary, progress);
         if (written.Count == 0 && !engines)
         {
-            Undo = previousUndo;
-            undoGeneration = previousUndoGeneration;
+            (armed, undoGeneration, undoWritten) = (previousUndo, previousUndoGeneration, previousUndoWritten);
         }
 
         return engines;

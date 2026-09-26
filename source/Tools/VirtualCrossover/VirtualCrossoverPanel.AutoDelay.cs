@@ -13,7 +13,15 @@ public partial class VirtualCrossoverPanel
             session, gatePlacement, ConsentToBroadWindowSearch);
         if (plan == null)
         {
-            ShowRefusal(refusal!);
+            if (refusal!.Message is { } message)
+            {
+                Refuse(message, refusal.Detail ?? string.Empty, autoDelayUndo);
+            }
+            else if (refusal.Beep)
+            {
+                System.Media.SystemSounds.Beep.Play();
+            }
+
             return;
         }
 
@@ -27,15 +35,26 @@ public partial class VirtualCrossoverPanel
             plan.Run,
             plan.PolarityWarning,
             plan.HasRearFill,
-            session.Project.RearFillOffsetMs);
-        if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
-            dialog.Result is not { } result ||
-            IsDisposed)
+            session.Project.RearFillOffsetMs,
+            autoDelayUndo.Undoable(session.ProjectGeneration));
+        DialogResult answer = dialog.ShowDialog(FindForm());
+        if (IsDisposed)
         {
             return;
         }
 
-        await ApplyConfirmedAutoDelayAsync(result);
+        if (dialog.UndoRequested)
+        {
+            UndoLast(autoDelayUndo);
+            return;
+        }
+
+        if (answer != DialogResult.OK || dialog.Result is not { } result)
+        {
+            return;
+        }
+
+        await ApplyConfirmedAutoDelayAsync(result, autoDelayUndo);
     }
 
     private bool ConsentToBroadWindowSearch() =>
@@ -53,31 +72,40 @@ public partial class VirtualCrossoverPanel
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning) == DialogResult.Yes;
 
-    private void ShowRefusal(AutoDelayRefusal refusal)
+    /// <summary>Commits first, then the outcome metric best-effort: a metric failure must not read as a failed Apply.</summary>
+    /// <param name="undo">The button's run keeps its undo here; an AI import's run is undone with the import.</param>
+    private async Task ApplyConfirmedAutoDelayAsync(AutoDelayRunResult result, VirtualCrossoverUndo? undo = null)
     {
-        if (refusal.Message is { } message)
-        {
-            ShowError(message, refusal.Detail ?? string.Empty);
-        }
-        else if (refusal.Beep)
-        {
-            System.Media.SystemSounds.Beep.Play();
-        }
-    }
-
-    // Commit first, then the outcome metric best-effort: a metric failure must not read as a failed Apply.
-    private async Task ApplyConfirmedAutoDelayAsync(AutoDelayRunResult result)
-    {
+        string aligned = VirtualCrossoverUndo.Aligned(result.Stereo, session.ActiveSideRight);
+        AgentImportUndo? before = null;
+        Exception? failure = null;
         try
         {
+            before = CaptureSession();
             CommitAutoDelayResult(result);
         }
         catch (Exception exception)
         {
-            System.Diagnostics.Debug.WriteLine($"Auto delay apply failed: {exception}");
+            failure = exception;
+        }
+
+        // A failed commit can have written part of the run, so it is undoable too.
+        if (undo != null && before != null)
+        {
+            undo.Remember(before, session.ProjectGeneration, aligned, CaptureSession());
+        }
+
+        if (failure != null)
+        {
+            System.Diagnostics.Debug.WriteLine($"Auto delay apply failed: {failure}");
             if (!IsDisposed && IsHandleCreated)
             {
-                ShowError("Auto delay apply failed.", exception.Message);
+                ShowError(
+                    "Auto delay apply failed.",
+                    failure.Message + (before != null && ReferenceEquals(undo?.Step?.Before, before)
+                        ? Environment.NewLine + Environment.NewLine +
+                            "Part of it was written; Undo last Apply, in the Auto delay dialog, puts it back."
+                        : string.Empty));
             }
 
             return;
@@ -134,14 +162,14 @@ public partial class VirtualCrossoverPanel
     // Both automatic commands are verified on the gated view, so a misplaced gate refuses them.
     private bool GateIsMisplaced => gatePlacement is { CutsChannels: true };
 
-    private bool RefuseOnMisplacedGate(string command)
+    private bool RefuseOnMisplacedGate(string command, VirtualCrossoverUndo? undo)
     {
         if (gatePlacement is not { CutsChannels: true } verdict)
         {
             return false;
         }
 
-        ShowError(verdict.FormatRefusal(command), verdict.FormatDetail());
+        Refuse(verdict.FormatRefusal(command), verdict.FormatDetail(), undo);
         return true;
     }
 

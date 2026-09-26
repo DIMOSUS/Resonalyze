@@ -5,8 +5,9 @@ namespace Resonalyze;
 public partial class VirtualCrossoverPanel
 {
     /// <summary>Opens the crossover wizard and writes what it proposes (<see cref="VirtualCrossoverAutoSetup"/>).</summary>
+    /// <param name="undoable">The button's run, whose Apply its dialog can undo; an AI import's is undone with the import.</param>
     /// <returns>Null when written; otherwise a refusal phrase an import's summary can quote.</returns>
-    private string? OpenAutoSetupWizard()
+    private string? OpenAutoSetupWizard(bool undoable)
     {
         List<VirtualCrossoverChannel> participating = VirtualCrossoverAutoSetup.Participants(session);
         if (participating.Count < 2)
@@ -15,14 +16,15 @@ public partial class VirtualCrossoverPanel
             return "fewer than two enabled channels have a measurement";
         }
 
+        VirtualCrossoverUndo? undo = undoable ? autoCrossoverUndo : null;
         if (VirtualCrossoverAutoSetup.FirCrossoverRefusal(participating) is { } fir)
         {
-            ShowError("Auto crossover cannot write over a FIR crossover.", char.ToUpperInvariant(fir[0]) + fir[1..] + ".");
+            Refuse("Auto crossover cannot write over a FIR crossover.", char.ToUpperInvariant(fir[0]) + fir[1..] + ".", undo);
             return fir;
         }
 
         // The band read is gate-independent, but the result is checked on gated views, so refuse a misplaced gate.
-        if (RefuseOnMisplacedGate("Auto crossover"))
+        if (RefuseOnMisplacedGate("Auto crossover", undo))
         {
             return "the phase gate is misplaced";
         }
@@ -37,7 +39,7 @@ public partial class VirtualCrossoverPanel
         }
         catch (ArgumentException exception)
         {
-            ShowError("A channel's response has no usable band.", exception.Message);
+            Refuse("A channel's response has no usable band.", exception.Message, undo);
             return "a channel's response has no usable band";
         }
         finally
@@ -49,13 +51,22 @@ public partial class VirtualCrossoverPanel
         dialog.Init(
             participating[0].SampleRate,
             session.ProcessorSampleRateHz,
-            dialogChannels);
-        if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
+            dialogChannels,
+            undo?.Undoable(session.ProjectGeneration));
+        DialogResult answer = dialog.ShowDialog(FindForm());
+        if (dialog.UndoRequested)
+        {
+            UndoLast(autoCrossoverUndo);
+            return "cancelled in the wizard";
+        }
+
+        if (answer != DialogResult.OK ||
             dialog.Result is not { } proposals)
         {
             return "cancelled in the wizard";
         }
 
+        AgentImportUndo before = CaptureSession();
         int clearedRotations = VirtualCrossoverAutoSetup.Write(participating, proposals);
         foreach (VirtualCrossoverChannel channel in participating)
         {
@@ -70,10 +81,14 @@ public partial class VirtualCrossoverPanel
         // The wizard wrote both sides; the lock must not carry the shown side's other edge over.
         sideLock.Remember(session.Channels.Select(channel => channel.Pair));
         SaveAndRedraw();
+        undo?.Remember(
+            before,
+            session.ProjectGeneration,
+            VirtualCrossoverUndo.Blocks(session.Channels.Where(participating.Contains)),
+            CaptureSession());
         if (clearedRotations > 0)
         {
-            MessageBox.Show(
-                this,
+            ShowMessage(
                 $"{clearedRotations} channel side" +
                 (clearedRotations == 1 ? " had" : "s had") +
                 " a phase rotation dialled in.\r\n\r\nThat control states its angle " +

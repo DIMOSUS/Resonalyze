@@ -31,10 +31,13 @@ internal sealed class AgentImportFixture : IDisposable, IAgentImportHost
             coordinator, () => Session.MagnitudeGate, oppositeSide: false, channel => Session.Calibration.For(channel));
         var hybrid = new VirtualCrossoverHybrid(Session);
         Reader = new AgentSessionReader(Session, coordinator, metrics, hybrid);
-        Runner = new AgentImportRunner(Session, Reader, new VirtualCrossoverEqHandoff(Session, coordinator, metrics, hybrid), this);
+        Runner = new AgentImportRunner(
+            Session, Reader, new VirtualCrossoverEqHandoff(Session, coordinator, metrics, hybrid), this, UndoHistory);
     }
 
     public VirtualCrossoverSession Session { get; } = new();
+
+    public VirtualCrossoverUndoHistory UndoHistory { get; } = new();
 
     public AgentSessionReader Reader { get; }
 

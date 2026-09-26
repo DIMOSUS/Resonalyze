@@ -8,8 +8,9 @@ namespace Resonalyze.App.Tests;
 /// through ShowMenu, messages answered through ShowMessage, a modal dialog by a timer in its loop.</summary>
 internal sealed class VirtualCrossoverLivePanel : IDisposable
 {
-    private const int SampleRate = 48_000;
-    private const int PeakIndex = 480;
+    public const int SampleRate = 48_000;
+    public const int PeakIndex = 480;
+    public const int Length = 16_384;
 
     private readonly Form host = new()
     {
@@ -21,7 +22,9 @@ internal sealed class VirtualCrossoverLivePanel : IDisposable
 
     private string metric = string.Empty;
 
-    public VirtualCrossoverLivePanel(double rightAmplitude = 1.0)
+    /// <param name="impulseResponse">Each block's measurement by index, peaking at <see cref="PeakIndex"/>; a bare impulse
+    /// without it.</param>
+    public VirtualCrossoverLivePanel(double rightAmplitude = 1.0, Func<int, Complex[]>? impulseResponse = null)
     {
         Panel = new VirtualCrossoverPanel
         {
@@ -45,9 +48,8 @@ internal sealed class VirtualCrossoverLivePanel : IDisposable
             foreach (bool rightSide in new[] { false, true })
             {
                 VirtualCrossoverChannelState state = channels[index].PhysicalSideState(rightSide);
-                var impulse = new Complex[16_384];
-                impulse[PeakIndex] = rightSide ? rightAmplitude : 1.0;
-                state.TransferImpulseResponse = impulse;
+                Complex[] impulse = impulseResponse?.Invoke(index) ?? Impulse();
+                state.TransferImpulseResponse = rightSide ? [.. impulse.Select(sample => sample * rightAmplitude)] : impulse;
                 state.TransferPeakIndex = PeakIndex;
                 state.SampleRate = SampleRate;
                 VirtualCrossoverChannelSettings settings = channels[index].SideSettings(rightSide);
@@ -191,6 +193,13 @@ internal sealed class VirtualCrossoverLivePanel : IDisposable
             StaTest.Pump();
             Thread.Sleep(5);
         }
+    }
+
+    private static Complex[] Impulse()
+    {
+        var impulse = new Complex[Length];
+        impulse[PeakIndex] = 1.0;
+        return impulse;
     }
 
     private static IEnumerable<ToolStripMenuItem> Items(ToolStripItemCollection items)

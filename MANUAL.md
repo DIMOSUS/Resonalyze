@@ -512,8 +512,9 @@ The panel is dense, so here are its six regions:
    side every card shows; `L`, `R` and, to swap, `` ` `` do the same while no field is
    being typed in (`` ` `` is the key Windows reads as the US backtick: under Esc on US
    and Russian layouts, elsewhere on others). **L→R** / **R→L** copy the settings you
-   pick to the other side, and **Lock**, on by default, mirrors crossover, polarity and
-   FIR-crossover edits onto it.
+   pick to the other side (**Undo last copy** in the same dialog takes the last copy
+   back), and **Lock**, on by default, mirrors crossover, polarity and FIR-crossover
+   edits onto it.
 2. **The acoustic plot** — each channel's processed response, the phase-aware **Sum**,
    and **Sum loss** against the right-hand axis (its selector: **Full** for the sum
    the cabin hears, **FDW-8** for the direct sound alone, **Disable** for no curve).
@@ -899,7 +900,9 @@ result there, not here.
 
 Press **Apply** if the result makes physical sense. Auto crossover does not know your
 drivers' limits: always check the proposal against the datasheets and your own knowledge
-of the system.
+of the system. **Undo last Apply** in the same dialog puts every channel back as it was
+before the last Apply, block order and phase rotations included — one step, so try a
+proposal on the plots before settling on it.
 
 ### Refining one junction: Tune junction
 
@@ -1320,7 +1323,8 @@ Below the notes a key says what `->` and `(kept)` mean; scroll the report down t
 
 Low confidence does not mean wrong; it means the data did not strongly favour one
 solution, so those rows are worth reading the notes for and checking by ear. Press
-**Apply** to write the proposal into Virtual DSP, or **Discard**. The optional
+**Apply** to write the proposal into Virtual DSP, or **Discard**; **Undo last Apply**, in
+the same dialog, takes the last written proposal back. The optional
 **Balance channel gains** mode does cut-only level balancing — a useful start, not
 required for alignment.
 

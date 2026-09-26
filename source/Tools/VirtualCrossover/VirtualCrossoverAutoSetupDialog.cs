@@ -32,6 +32,12 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         // Apply ranks asynchronously; an automatic DialogResult would close the form at the first await.
         buttonApply.DialogResult = DialogResult.None;
         buttonApply.Click += ApplyClick;
+        buttonUndo.Click += (_, _) =>
+        {
+            UndoRequested = true;
+            DialogResult = DialogResult.Cancel;
+            Close();
+        };
         WireOptionControls();
         // Runtime tooltip and never-parented arrows (group of one) are outside the designer's components.
         Disposed += (_, _) =>
@@ -59,11 +65,22 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     /// <summary>Init indices in crossed order; null when <c>Reorder the channel blocks</c> is cleared (the panel decides what reordering means).</summary>
     public IReadOnlyList<int>? ChainOrder { get; private set; }
 
+    public bool UndoRequested { get; private set; }
+
+    /// <param name="undoable">The blocks the last Apply wrote, while it can be undone.</param>
     public void Init(
         double sampleRateHz,
         double processorSampleRateHz,
-        IReadOnlyList<AutoSetupWizardChannel> channels)
+        IReadOnlyList<AutoSetupWizardChannel> channels,
+        string? undoable = null)
     {
+        buttonUndo.Enabled = undoable != null;
+        toolTip.SetToolTip(
+            buttonUndo,
+            (undoable == null ? "Nothing applied here to undo." : $"The last Apply was for {undoable}.") + "\r\n" +
+            "Undo puts every channel back exactly as it was before it:\r\n" +
+            "crossovers, gains, polarity, phase rotations, block order\r\n" +
+            "and later changes. One step; gone once a session is loaded.");
         // A second Init builds a second session: until it is bound, the controls' events have nothing to write to.
         initialized = false;
         session = new AutoSetupWizardSession(sampleRateHz, processorSampleRateHz, channels);

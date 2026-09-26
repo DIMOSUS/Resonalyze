@@ -205,7 +205,7 @@ public sealed class VirtualCrossoverJunctionTuneWiringTests
                     return;
                 }
 
-                if (Application.OpenForms.OfType<VirtualCrossoverJunctionTuneDialog>().FirstOrDefault(form => form.Visible)
+                if (StaTest.OpenForm<VirtualCrossoverJunctionTuneDialog>(form => form.Visible)
                     is not { } open)
                 {
                     return;

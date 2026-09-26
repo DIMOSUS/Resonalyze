@@ -124,7 +124,7 @@ internal sealed class VirtualCrossoverLivePanel : IDisposable
         using var pilot = new System.Windows.Forms.Timer { Interval = 20 };
         pilot.Tick += (_, _) =>
         {
-            if (Application.OpenForms.OfType<TForm>().FirstOrDefault(form => form.Visible && form.Modal) is not { } dialog)
+            if (StaTest.OpenForm<TForm>(form => form.Visible && form.Modal) is not { } dialog)
             {
                 return;
             }

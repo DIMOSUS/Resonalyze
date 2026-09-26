@@ -81,7 +81,7 @@ internal static class CalibrationDialogFixtures
         using var pilot = new System.Windows.Forms.Timer { Interval = 20 };
         pilot.Tick += (_, _) =>
         {
-            if (seen || Application.OpenForms.OfType<TForm>().FirstOrDefault(form => form.Visible && form.Modal) is not { } dialog)
+            if (seen || StaTest.OpenForm<TForm>(form => form.Visible && form.Modal) is not { } dialog)
             {
                 return;
             }

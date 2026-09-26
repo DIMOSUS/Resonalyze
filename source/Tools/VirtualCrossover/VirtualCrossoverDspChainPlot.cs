@@ -27,7 +27,7 @@ internal sealed record JunctionCorrelationView(
     List<SignalPoint> ScoreNormal,
     List<SignalPoint> ScoreInverted,
     // Band-limited envelope fronts, lower minus upper: exported to the agent package, not drawn.
-    double ArrivalLagMs);
+    double ArrivalLagMs) : IJunctionView;
 
 /// <summary>One junction's arrival-coherence ladder from the same processed pair; lag 0 is the applied alignment.</summary>
 internal sealed record JunctionCoherenceView(
@@ -36,7 +36,15 @@ internal sealed record JunctionCoherenceView(
     double CrossoverHz,
     double BandLowHz,
     double BandHighHz,
-    List<VirtualCrossoverAnalysis.ArrivalCoherencePoint> Ladder);
+    List<VirtualCrossoverAnalysis.ArrivalCoherencePoint> Ladder) : IJunctionView;
+
+/// <summary>The names a junction view is titled with.</summary>
+internal interface IJunctionView
+{
+    string PairTitle { get; }
+
+    string UpperName { get; }
+}
 
 /// <summary>Virtual DSP lower plot: chain magnitude/phase/group delay without the bulk delay (it would wrap phase and swamp GD),
 /// plus the junction correlation and coherence models.</summary>

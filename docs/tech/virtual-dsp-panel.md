@@ -879,6 +879,12 @@ term, since a bulk delay wraps the phase into a sawtooth and swamps the filter g
 
 `BuildCoherenceView` hands the same cropped processed pair to `VirtualCrossoverAnalysis.ArrivalCoherenceLadder`.
 
+The panel reads both through a `JunctionViewCache`, which keeps the last view of each kind with what it read: the
+cropped pair (`JunctionCrop`: both records' samples in the shared window, their shifted valid ranges and the rate), the
+corners and band, and the names as the view shows them. The crop is a peak scan and a copy per record, the views
+take 0.44 s (correlation) and 0.17 s (coherence) of CPU; a redraw whose crop matches bit for bit (the gate, smoothing, the
+other junction mode and back, a chain edited on a channel that does not move the shared window) returns the same view.
+
 ## Crossover wizard
 
 `OpenAutoSetupWizard` detects each channel's usable band and driver type from the raw magnitude (fixed 1/3-octave

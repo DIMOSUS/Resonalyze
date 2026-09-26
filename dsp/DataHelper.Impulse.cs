@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using System.Runtime.CompilerServices;
 using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp
@@ -11,11 +10,18 @@ namespace Resonalyze.Dsp
     {
         // The whole record's unsmoothed envelope and its SNR depend on the record and the band only (an envelope is blind
         // to sign): a time unit, origin, scale or framing edit rebuilds the view, not them (72-185 ms on 262 k samples).
-        private static readonly ConditionalWeakTable<Complex[], ImpulseEnvelopeReading> ImpulseEnvelopeReadings = new();
+        // Only the records on screen are worth keeping, a main and a Compare set, so a few, most recent first.
+        private const int KeptImpulseEnvelopes = 4;
+        private static readonly List<ImpulseEnvelopeReading> RecentImpulseEnvelopes = new(KeptImpulseEnvelopes);
 
         private readonly record struct ImpulseEnvelopeBand(int Length, int SampleRate, double? CenterHz, double? Octaves);
 
-        private sealed record ImpulseEnvelopeReading(ImpulseEnvelopeBand Band, double[] Envelope, double? SnrDb);
+        private sealed record ImpulseEnvelopeReading(
+            WeakReference<Complex[]> Record, ImpulseEnvelopeBand Band, double[] Envelope, double? SnrDb)
+        {
+            public bool Reads(Complex[] record, ImpulseEnvelopeBand band) =>
+                Band == band && Record.TryGetTarget(out Complex[]? kept) && ReferenceEquals(kept, record);
+        }
 
         // Traces span the whole record on its own timeline; opening length, zero and reference are the caller's framing.
         public static ImpulseCurveSet GetImpulseCurves(
@@ -108,11 +114,19 @@ namespace Resonalyze.Dsp
                 banded ? opt.BandCenterHz : null,
                 banded ? opt.BandFilterOctaves : null);
             Complex[]? record = measurement.ImpulseResponse;
-            if (record != null &&
-                ImpulseEnvelopeReadings.TryGetValue(record, out ImpulseEnvelopeReading? cached) &&
-                cached.Band == band)
+            if (record != null)
             {
-                return cached;
+                lock (RecentImpulseEnvelopes)
+                {
+                    int index = RecentImpulseEnvelopes.FindIndex(reading => reading.Reads(record, band));
+                    if (index >= 0)
+                    {
+                        ImpulseEnvelopeReading kept = RecentImpulseEnvelopes[index];
+                        RecentImpulseEnvelopes.RemoveAt(index);
+                        RecentImpulseEnvelopes.Insert(0, kept);
+                        return kept;
+                    }
+                }
             }
 
             double[] envelope = SignalEnvelope.Envelope(samples);
@@ -123,15 +137,22 @@ namespace Resonalyze.Dsp
                 envelopePeak = Math.Max(envelopePeak, envelope[i]);
             }
 
-            var reading = new ImpulseEnvelopeReading(
-                band,
-                envelope,
-                envelopePeak > 0.0
-                    ? SignalEnvelope.EstimatePeakConfidenceDecibels(envelope, envelopePeak)
-                    : null);
-            if (record != null)
+            double? snrDb = envelopePeak > 0.0
+                ? SignalEnvelope.EstimatePeakConfidenceDecibels(envelope, envelopePeak)
+                : null;
+            if (record == null)
             {
-                ImpulseEnvelopeReadings.AddOrUpdate(record, reading);
+                return new ImpulseEnvelopeReading(new WeakReference<Complex[]>([]), band, envelope, snrDb);
+            }
+
+            var reading = new ImpulseEnvelopeReading(new WeakReference<Complex[]>(record), band, envelope, snrDb);
+            lock (RecentImpulseEnvelopes)
+            {
+                RecentImpulseEnvelopes.Insert(0, reading);
+                if (RecentImpulseEnvelopes.Count > KeptImpulseEnvelopes)
+                {
+                    RecentImpulseEnvelopes.RemoveAt(RecentImpulseEnvelopes.Count - 1);
+                }
             }
 
             return reading;

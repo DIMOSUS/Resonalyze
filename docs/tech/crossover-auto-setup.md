@@ -639,8 +639,10 @@ per-junction delay.
   relation is searched: a matched split from 1 kHz up is read inverted or in phase as its filters sum,
   never rescued into the other (see `docs/tech/auto-alignment.md#expected-polarity`).
   A pick within 10 % of the window edge triggers one retry at double
-  width, re-selected through the same rules (taking the retry's raw best would hand the wider window
-  to exactly that impostor).
+  width, which completes the cut-off lobe (`AlignmentSelection.LobeContinuation`) and only re-selects
+  through the same rules where the lobe is still not found (taking the retry's raw best would hand
+  the wider window to exactly that impostor). The junction tuner's reads share this retry
+  (`AlignmentSelection.SelectWithEdgeRetry`).
 - Deliberate simplifications versus the full engine, acceptable for ranking: no PHAT-seeded timeline and
   no cascade reprocessing of settled neighbours (junction deltas of a mono N-way compose independently).
   Having no seed, the check forces a settled relation even where Auto delay would leave polarity to a
@@ -698,7 +700,7 @@ through their full chains: loss, plus the dip's excess over the loss at half wei
 ripple included — what varies between candidates is the crossover's doing).
 
 Every reading is taken **after re-aligning** the upper channel for that candidate
-(`VirtualCrossoverAnalysis.MeasureAlignedJunctionSpectrum`: the post-check's window and prior, then
+(`VirtualCrossoverAnalysis.MeasureAlignedJunctionSpectrum`: the post-check's window, prior and edge retry, then
 `AlignmentSelection.Select`, searching only the relation Auto delay will force where the candidate's split
 settles it (`PostCheckPolarity.ForcedFlip`); loss, dip and ripple are read on the same bins at the chosen
 delay and
@@ -870,7 +872,10 @@ behaves exactly as above.
 cabins under five policies, runs the same EQ stage (the wizard's defaults) after each, and reads the
 final sums re-aligned, per side: 23 junctions, 46 paired rows. Acoustic cost is the average per-octave
 deviation from the asked edge; the closest is the least worst-channel miss on the lattice; "landed"
-counts junctions whose worst channel is within 2 dB.
+counts junctions whose worst channel is within 2 dB. `RESONALYZE_ACOUSTIC_TARGET_NO_EQ=1` skips the EQ
+stage, so the sums judge the tune's own objective (what it read, re-aligned) rather than the EQ's
+response to it: a change to how the tune reads is judged there first, because the EQ refit moves the
+final sum by tenths of a dB on its own and flips a keep/apply decision at the margin.
 
 | arm | sum loss | worst dip | ripple | applied | acoustic cost (closest) | landed |
 |---|---|---|---|---|---|---|

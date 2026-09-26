@@ -648,10 +648,16 @@ the coarse base(s) ± the period-scaled range.
 - **External prior.** A cross-side Δ-consistent delay replaces the base as the gentle tie-break
   when supplied.
 - **Edge retry.** A result pinned to the window edge is retried once with range
-  min(1.8 × half period, 3 ms) and a relaxed prior, since the base is suspect. The retry goes
-  through the same selection rules, because the raw best could be a flip + half-period impostor.
-  The arrival-anchored pick is captured before the retry, so a widened retry cannot stack with the
-  promotion reach.
+  min(1.8 × half period, 3 ms) and a relaxed prior, since the base is suspect. The retry completes
+  the lobe the window cut off (`AlignmentSelection.LobeContinuation`: the retried candidate of the
+  wall pick's polarity nearest to it, provided it is not at the widened window's own wall); lobe
+  choice stays with the original window's rules. Only where the lobe is still not found does the
+  retry go through the same selection rules, because the raw best could be a flip + half-period
+  impostor. Re-selecting over the widened window let the prior hop lobes: on 3RC's sub junction the
+  wall pick at −0.62 ms continued to −0.83 ms, but a lobe 2.87 ms off, inverted, tied it on the
+  prior-laden score (0.02 dB) while trailing by 0.5 dB on the acoustics, and the delay tie-break
+  took it (−0.42 / −0.63 dB on the panel's loss / dip). The arrival-anchored pick is captured before
+  the retry, so a widened retry cannot stack with the promotion reach.
 - **Wide-seed lobe gate.** Under a wide seed, picks beyond the trusted reach must beat the best
   near candidate on the prior-free score by the promotion margin (`GateWideSeedLobe`).
 - **No evidence in either window.** The run is refused. Fabricating a candidate would apply a delay
@@ -662,7 +668,8 @@ the coarse base(s) ± the period-scaled range.
   inverted twin's onset line.
 - **Prior-free score.** `AcousticScore` is the loss plus the dip-excess term without the prior.
   `ScoreDb`'s prior scales with the window (sigma = window / 4), so only the prior-free figure
-  compares across windows.
+  compares across windows. It is read at the lobe's own optimum, which the prior ranks but does not
+  move (`docs/tech/virtual-dsp-analysis.md#alignment-search-objective`).
 
 **Decision report** (`BuildDecision`).
 

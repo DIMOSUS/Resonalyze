@@ -1277,22 +1277,10 @@ public static class CrossoverAutoSetup
                     priorSigmaMs: half / 2.0,
                     forcedPolarity: forcedFlip);
 
-            IReadOnlyList<AlignmentCandidate> found = Search(halfWindow);
-            if (found.Count == 0)
+            if (AlignmentSelection.SelectWithEdgeRetry(Search, center, halfWindow) is not { } chosen)
             {
                 penalty += PostCheckMissingJunctionPenaltyDb;
                 continue;
-            }
-
-            AlignmentCandidate chosen = AlignmentSelection.Select(found, center);
-            // Retry re-selected through the same rules: the raw best of a widened window is exactly the impostor selection rejects.
-            if (Math.Abs(chosen.DelayMs - center) >= halfWindow * 0.9)
-            {
-                IReadOnlyList<AlignmentCandidate> retried = Search(halfWindow * 2);
-                if (retried.Count > 0)
-                {
-                    chosen = AlignmentSelection.Select(retried, center);
-                }
             }
 
             penalty += -(chosen.LossDb + DipPenaltyWeight * (chosen.DipDb - chosen.LossDb));

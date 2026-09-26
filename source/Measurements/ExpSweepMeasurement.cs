@@ -651,6 +651,7 @@ namespace Resonalyze
                     ArrayInputChannelOffsets);
                 var rejections = new List<SweepRunRejection>();
                 AudioCaptureResult? rejectedCapture = null;
+                var inverseFilter = new InverseFilterSpectrum(sweep.InverseFilter);
                 int requestedRuns = AverageRunCount;
                 for (int run = 1; run <= requestedRuns; run++)
                 {
@@ -669,7 +670,7 @@ namespace Resonalyze
                         break;
                     }
 
-                    accumulator.Add(AnalyzeCapturedRun(captured, sweep));
+                    accumulator.Add(AnalyzeCapturedRun(captured, sweep, inverseFilter));
                 }
 
                 QualityReport = new SweepRunQualityReport(
@@ -679,7 +680,7 @@ namespace Resonalyze
                 if (rejections.Count > 0 || accumulator.AcceptedRuns == 0)
                 {
                     // A shape rejection is the bad-loopback case; diagnose the rejected capture for it.
-                    DiagnoseTotalFailure(rejectedCapture, sweep, rejections);
+                    DiagnoseTotalFailure(rejectedCapture, sweep, inverseFilter, rejections);
                     throw new InvalidOperationException(
                         (rejections.Count > 0
                             ? $"Sweep run {rejections[0].Run} of {requestedRuns} failed " +
@@ -840,6 +841,7 @@ namespace Resonalyze
         private void DiagnoseTotalFailure(
             AudioCaptureResult? capture,
             ExponentialSineSweep sweep,
+            InverseFilterSpectrum inverseFilter,
             IReadOnlyList<SweepRunRejection> rejections)
         {
             if (capture == null ||
@@ -861,7 +863,7 @@ namespace Resonalyze
                     []);
                 // Only one capture exists (the measurement stops on the first failure), which bounds FFT-sized scratch.
                 accumulator.Add(
-                    AnalyzeCapturedRun(capture, sweep, raiseIntermediateLevels: false));
+                    AnalyzeCapturedRun(capture, sweep, inverseFilter, raiseIntermediateLevels: false));
                 result = accumulator.BuildResult();
             }
             catch (Exception)
@@ -988,6 +990,7 @@ namespace Resonalyze
         private SweepRunAnalysis AnalyzeCapturedRun(
             AudioCaptureResult captured,
             ExponentialSineSweep sweep,
+            InverseFilterSpectrum inverseFilter,
             bool raiseIntermediateLevels = true)
         {
             float[][] sampleChannels = captured.Channels;
@@ -1013,7 +1016,7 @@ namespace Resonalyze
 
             SweepDeconvolutionResult sweepResult = SweepAnalysis.DeconvolveWithInverseFilter(
                 recorded,
-                sweep.InverseFilter,
+                inverseFilter,
                 2.0 / sweep.InverseFilter.Length);
             Complex[] sweepImpulseResponse = Array.ConvertAll(
                 sweepResult.ImpulseResponse,
@@ -1031,7 +1034,7 @@ namespace Resonalyze
                     ? null
                     : MeasureDistortion(() => SweepAnalysis.DeconvolveWithInverseFilter(
                         loopbackSamples,
-                        sweep.InverseFilter,
+                        inverseFilter,
                         2.0 / sweep.InverseFilter.Length));
 
             TransferFunctionFrame? transferFrame = null;
@@ -1129,7 +1132,7 @@ namespace Resonalyze
         // Packets 2..5 vs linear; -26 dB (5 %) accuses nothing healthy. See docs/tech/sweep-measurement.md#distortion-diagnosis.
         private const double DistortingChannelDb = -26.0;
 
-        // ~170 MB transient scratch per run at the bound. See docs/tech/sweep-measurement.md#diagnosis-size-bounds.
+        // ~100 MB transient scratch per run at the bound. See docs/tech/sweep-measurement.md#diagnosis-size-bounds.
         internal const int MaxLoopbackDiagnosisFftLength = 1 << 22;
 
         /// <summary>Whether the per-run credibility H1 (padded to twice the capture) fits under the loopback diagnosis ceiling.</summary>

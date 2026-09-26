@@ -1175,6 +1175,31 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void LoadFrom_MakesAStereoCentreMono_KeepingItsRightSide_AndLeavesAStereoSubAlone()
+    {
+        string root = CreateTemporaryDirectory();
+        string path = Path.Combine(root, "session.json");
+        try
+        {
+            var original = new VirtualCrossoverProjectFile();
+            original.Pairs[0].Zone = VirtualCrossoverZone.Center;
+            original.Pairs[0].Right.GainDb = -7;
+            original.Pairs[1].Zone = VirtualCrossoverZone.Sub;
+
+            original.SaveTo(path);
+            VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadFrom(path);
+
+            Assert.True(loaded.Pairs[0].Mono);
+            Assert.Equal(-7, loaded.Pairs[0].Right.GainDb);
+            Assert.False(loaded.Pairs[1].Mono);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void SaveToAndLoadFrom_RoundTripAnExportedSession()
     {
         string root = CreateTemporaryDirectory();

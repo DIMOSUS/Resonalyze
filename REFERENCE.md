@@ -2395,7 +2395,8 @@ Each channel runs through:
   because those three zones can play the *same* band from different places: a
   rear pair high-passed at 290 Hz overlaps the front midrange and tweeter
   entirely and has no junction with either. **Center** forces **Mono** and locks
-  it — a centre plays a signal derived from L and R, so it has no side; every
+  it — a centre plays a signal derived from L and R, so it has no side, and a
+  session file that stores a centre as stereo opens mono; every
   other zone leaves the checkbox free, since a subwoofer pair can be stereo and
   a rear pair normally is. Zone and Mono are deliberately separate fields: Mono
   is a routing fact, and one car can carry two mono subwoofers in different

@@ -1,3 +1,4 @@
+using System.Windows.Forms;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
@@ -50,23 +51,38 @@ public sealed class VirtualCrossoverChannelEditWiringTests
         Assert.Equal(85, channel.Pair.Right.LowPassEdge.FrequencyHz);
     });
 
-    // A hand-edited file only: the load ticks the Centre block's forced Mono box while its events are silenced.
+    // A hand-edited file only. Shown from the right, a stereo pair would answer with its right side under a Mono box.
     [Fact]
-    public void ACentreBlockLoadedStereo_IsStoredMonoByItsNextEdit() => StaTest.Run(() =>
+    public void ACentreBlockLoadedStereo_IsMono_SoItsGoalDialogEditsTheSideTheBlockShows() => StaTest.Run(() =>
     {
         using var live = new VirtualCrossoverLivePanel();
         VirtualCrossoverChannelPairSettings pair = live.Session.Project.Pairs[2];
+        var rightGoal = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 12);
         pair.Zone = VirtualCrossoverZone.Center;
         pair.Mono = false;
+        pair.Left.GainDb = -1;
+        pair.Left.AcousticHighPass = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24);
+        pair.Right.GainDb = -7;
+        pair.Right.AcousticHighPass = rightGoal;
+        live.Session.Project.ActiveSideRight = true;
         Load(live);
         VirtualCrossoverChannel channel = live.Session.Channels[2];
-        Assert.True(live.Card(channel).MonoCheckBox.Checked);
+        Assert.True(channel.Pair.Mono);
+        Assert.True(channel.ActiveRight);
+        Assert.Equal(-1m, live.Card(channel).GainInput.Value);
 
-        live.Card(channel).GainInput.Value = -3m;
-        live.Settle();
+        live.Answer<VirtualCrossoverAcousticGoalDialog>(() => live.Card(channel).AcousticGoalButton.PerformClick(), dialog =>
+        {
+            ThemedComboBox family = VirtualCrossoverLivePanel.In<ThemedComboBox>(dialog, "comboBoxHighPassFamily");
+            Assert.Equal(CrossoverFilterFamily.LinkwitzRiley, ((CrossoverFamilyChoice)family.SelectedItem!).Value);
+            family.SelectedItem = CrossoverFamilyChoice.Offered.First(choice => choice.Value == CrossoverFilterFamily.Bessel);
+            VirtualCrossoverLivePanel.In<Button>(dialog, "buttonOk").PerformClick();
+            return true;
+        });
 
         Assert.True(channel.Pair.Mono);
-        Assert.Equal(-3, channel.Pair.Left.GainDb);
+        Assert.Equal(new JunctionAcousticTarget(CrossoverFilterFamily.Bessel, 24), channel.Pair.Left.AcousticHighPass);
+        Assert.Equal(rightGoal, channel.Pair.Right.AcousticHighPass);
     });
 
     // One edit per field in turn, each checked against everything the block holds: a field raising another's name

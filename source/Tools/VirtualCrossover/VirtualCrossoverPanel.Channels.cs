@@ -443,8 +443,6 @@ public partial class VirtualCrossoverPanel
         else
         {
             VirtualCrossoverChannelEdit.Write(field, ControlFor(channel).Shown, channel.Pair, channel.Settings);
-            // Stored whichever field moved, as the zone is: a Centre zone ticks the box while a load's events are silenced.
-            channel.Pair.Mono = monoNow;
         }
 
         if (wasMono != monoNow)

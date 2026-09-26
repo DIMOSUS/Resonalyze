@@ -1275,6 +1275,12 @@ public sealed class VirtualCrossoverProjectFile
         {
             file.StereoSceneOffsetMs = -file.StereoSceneOffsetMs;
         }
+
+        // A centre has no side, as its locked Mono box shows; only a hand-edited file stores one stereo.
+        foreach (VirtualCrossoverChannelPairSettings pair in file.Pairs)
+        {
+            pair.Mono |= VirtualCrossoverZones.RequiresMono(pair.Zone);
+        }
     }
 
     /// <summary>Path of the <c>.backup</c> <see cref="LoadOrDefault"/> moved an unusable file to; null otherwise.</summary>

@@ -59,6 +59,10 @@ value, and only `Migrate` reads them.
   without the filter; refusing the file is how it says so.
 - **v10 → v11**: the FIR stage, bumped for the same reason.
 - **Always**: the stereo scene's wire sign and layout flag are re-aligned (see [Stereo scene](#stereo-scene)).
+- **Always**: a Centre pair is made mono (`VirtualCrossoverZones.RequiresMono`). The block forces and locks its Mono
+  box, so only a hand-edited file stores a stereo Centre; loaded as such, it would show a mono block that, under the
+  right tab, still answered with its right side, and the goal dialog and the PEQ, FIR and source menus would edit a
+  side the block does not show. The right side's settings are kept, as Mono always keeps them.
 
 `MigrationNoticeText` lists what a load had to drop — bands given up to a migrated all-pass, and phase rotations or FIR kernels
 cleared because the named processor has no such control (reachable only by a hand-edited file, but a silently
@@ -277,9 +281,8 @@ it shows (`VirtualCrossoverChannelShown`), and `VirtualCrossoverChannelEdit` wri
 block back rewrote every rounded value on the first unrelated edit, and the [side Lock](#side-lock), reading moves by
 difference, then saw the rounded crossover as a move and carried it over a deliberately different hidden side.
 Family and slope are written together, since the slope list follows the family; when an edge turns Chebyshev, a
-stored ripple it cannot build (another family's ripple is not checked) is replaced by the shown one. Zone and Mono,
-which their fields show exactly, are stored on every edit: a Centre zone ticks Mono while a load's events are
-silenced, and a hand-edited stereo Centre is made mono by its next edit.
+stored ripple it cannot build (another family's ripple is not checked) is replaced by the shown one. A Centre pair is
+mono before any edit (see the migrations' **Always**), so its locked Mono box never shows a routing the pair lacks.
 
 **The AI review holds a reply to range and step** for gain, delay, corners and Chebyshev ripple, so a value a reply
 moves is one the field shows unchanged. A corner, or a Chebyshev edge's ripple, that a reply restates exactly as

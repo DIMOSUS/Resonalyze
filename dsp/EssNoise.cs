@@ -100,8 +100,8 @@ public static class EssNoise
         }
 
         // A bin's power is exponential, so its median over the windows reads low; dividing by the median's expected
-        // value for this many windows gives the mean power back. ln 2 is only the many-window limit, and read the
-        // floor 0.5 dB high at the default six windows (1.6 dB at two).
+        // value for this many windows gives the mean power back. ln 2 is only the many-window limit: at the default
+        // six windows it would read the floor 0.5 dB high (1.6 dB at two).
         double expectedMedian = ExpectedExponentialMedian(windowCount);
         double[] magnitude = new double[usableBins];
         for (int bin = 0; bin < usableBins; bin++)

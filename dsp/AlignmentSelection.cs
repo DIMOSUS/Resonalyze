@@ -59,8 +59,8 @@ public static class AlignmentSelection
             }
         }
 
-        // Already the arrival-closest within the margin of the best: re-breaking from its own score let the margin grow
-        // to twice its width (a pick 0.08 dB down gave way to one 0.17 dB down).
+        // Already the arrival-closest within the margin of the best; a re-break measured from its own score would stretch
+        // the margin to twice its width.
         return best;
     }
 

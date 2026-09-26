@@ -127,7 +127,8 @@ internal sealed class OverlaySession
 
     /// <summary>The selection a history entry or New session states, in place of what the mode shows: restoring on top of
     /// it would only ever add slots, and a later capture of the union would grow the entry's selection.</summary>
-    public void ReplaceActiveSlots(Mode mode, IReadOnlyCollection<int> activeSlots)
+    /// <param name="draw">False while the plot's model builds: the slots are armed as <see cref="ArmActiveSlots"/> does.</param>
+    public void ReplaceActiveSlots(Mode mode, IReadOnlyCollection<int> activeSlots, bool draw = true)
     {
         Mode overlayMode = OverlayModes.SlotModeFor(mode);
         Batched(() =>
@@ -136,8 +137,15 @@ internal sealed class OverlaySession
             {
                 if (activeSlots.Contains(slot.Index))
                 {
-                    SetChecked(slot, true);
-                    Show(slot);
+                    if (draw)
+                    {
+                        SetChecked(slot, true);
+                        Show(slot);
+                    }
+                    else if (slot.Title.Length > 0)
+                    {
+                        SetChecked(slot, true);
+                    }
                 }
                 else if (slot.Checked)
                 {

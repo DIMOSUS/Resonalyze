@@ -46,10 +46,12 @@ public sealed class EssDistortionTests
     [Fact]
     public void AKeptDecomposition_DrawsTheCurvesOfAFreshAnalysis()
     {
-        double[] impulse = new double[ImpulseLength];
-        impulse[PeakIndex] = 1.0;
-        impulse[PeakIndex - EssHarmonicAnalysis.HarmonicOffsetSamples(Sweep(), 2)] = 0.02;
-        impulse[PeakIndex - EssHarmonicAnalysis.HarmonicOffsetSamples(Sweep(), 3)] = 0.005;
+        // The shortest sweep that still separates HD2..HD4 and leaves room for the noise windows.
+        EssSweepMetadata sweep = EssSweepMetadata.FromExponentialSweep(SampleRate, 8, 60_000, 50_000);
+        double[] impulse = new double[60_000];
+        impulse[50_000] = 1.0;
+        impulse[50_000 - EssHarmonicAnalysis.HarmonicOffsetSamples(sweep, 2)] = 0.02;
+        impulse[50_000 - EssHarmonicAnalysis.HarmonicOffsetSamples(sweep, 3)] = 0.005;
         var random = new Random(7);
         for (int i = 0; i < impulse.Length; i++)
         {
@@ -58,14 +60,15 @@ public sealed class EssDistortionTests
 
         var options = new DistortionOptions(SmoothingOctaves: 1.0 / 6.0, IncludeNoise: true);
         CalibrationFile calibration = CalibrationFile.Parse("20 -2\n1000 0.5\n8000 3\n20000 -1\n");
-        EssHarmonicDecomposition decomposition = EssDistortion.Decompose(impulse, Sweep(), options);
+        EssHarmonicDecomposition decomposition = EssDistortion.Decompose(impulse, sweep, options);
         NoiseEstimate noise = EssNoise.EstimateNoise(impulse, decomposition, options);
 
         EssDistortion.DistortionCurveResult fresh = EssDistortion.ComputeDistortionCurvesResult(
-            impulse, Sweep(), options, calibration, SpectrumCurves.Distortion);
+            impulse, sweep, options, calibration, SpectrumCurves.Distortion);
         EssDistortion.DistortionCurveResult kept = EssDistortion.ComputeDistortionCurvesResult(
             decomposition, noise, options, calibration, SpectrumCurves.Distortion);
 
+        Assert.NotEmpty(fresh.Curves);
         Assert.Equal(fresh.Warnings, kept.Warnings);
         Assert.Equal(fresh.PacketValidity, kept.PacketValidity);
         Assert.Equal(fresh.Curves.Select(curve => curve.Kind), kept.Curves.Select(curve => curve.Kind));

@@ -145,9 +145,9 @@ probe radius rounds to zero, or the linear packet is empty or non-finite).
 The decomposition depends on the record, its sweep, `MaxHarmonic` and `FadeFraction` alone, and the noise
 estimate on the record, the decomposition and the noise window fields. `EssDistortion.Decompose` and the
 `ComputeDistortionCurvesResult` overload that takes a decomposition let a caller keep both;
-`MeasurementPlotContext` keeps them per `MeasurementResult`, so a Frequency Response rebuild (smoothing,
-calibration, a curve toggled) only redoes the calibrated grid and the smoothing. The plot never changes the
-fields the analysis reads.
+`MeasurementPlotContext` keeps them for the last two results drawn (a few megabytes each, and history holds
+results in memory), so a Frequency Response rebuild (smoothing, calibration, a curve toggled) only redoes the
+calibrated grid and the smoothing. The plot never changes the fields the analysis reads.
 
 Calibration is applied per bin at the product frequency, tens of thousands of reads per packet in ascending
 order. `CalibrationFile.AscendingCorrections` answers them with the bracketing points and their levels

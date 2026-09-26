@@ -112,7 +112,7 @@ public sealed class PlotModelFactoryTests
         compare = null;
 
         PlotModel model = frozen.CreateFrequencyResponse(includeCurves: true);
-        Assert.Equal("Frequency Response - first.json", model.Title);
+        Assert.Contains("first.json", model.Title, StringComparison.Ordinal);
         Assert.Contains(model.Series, series => series.Tag is CurveTag { Source: CurveSource.Main });
         Assert.Contains(model.Series, series => series.Tag is CurveTag { Source: CurveSource.Compare });
         Assert.Empty(factory.CreateFrequencyResponse(includeCurves: true).Series);

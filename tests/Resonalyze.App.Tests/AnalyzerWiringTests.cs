@@ -205,7 +205,7 @@ public sealed class AnalyzerWiringTests : IDisposable
             Task select = analyzer.Start("SelectModeAsync", ModeTab.Phase);
 
             Assert.True(select.IsCompleted);
-            Assert.Equal("Phase Response - cabin left.json", analyzer.Plot.Title);
+            Assert.Contains(analyzer.Plot.Axes, axis => axis.Key == PlotModelFactory.PhaseAxisKey);
             Assert.Empty(analyzer.Plot.Series);
             analyzer.Pump();
             Assert.Contains(analyzer.Plot.Series, series => IsCurveOf(series, Mode.PhaseResponse));
@@ -228,7 +228,6 @@ public sealed class AnalyzerWiringTests : IDisposable
             analyzer.Pump();
 
             Assert.True(phase.IsCompletedSuccessfully);
-            Assert.Equal("Group Delay - cabin left.json", analyzer.Plot.Title);
             Assert.DoesNotContain(analyzer.Plot.Series, series => IsCurveOf(series, Mode.PhaseResponse));
             Assert.Contains(analyzer.Plot.Series, series => IsCurveOf(series, Mode.GroupDelay));
         });
@@ -249,7 +248,7 @@ public sealed class AnalyzerWiringTests : IDisposable
             analyzer.StartRun();
             analyzer.Pump();
 
-            Assert.Equal("Frequency Response - cabin left.json", analyzer.Plot.Title);
+            Assert.Contains("cabin left.json", analyzer.Plot.Title, StringComparison.Ordinal);
             Assert.Contains(analyzer.Plot.Series, series => series.Tag is CurveTag { Kind: AnalysisCurveKind.SecondHarmonic });
         });
     }

@@ -221,7 +221,8 @@ internal sealed class AnalyzerPlot : IModeView
             return;
         }
 
-        Overlays.ReplaceActiveSlots(Mode, slots.ToHashSet());
+        // Slots on a frame whose curves are building draw with the curves, as Present's do.
+        Overlays.ReplaceActiveSlots(Mode, slots.ToHashSet(), draw: Drawing.IsCompleted);
         activeOverlaySlots.Store(OverlayModes.SlotModeFor(Mode), slots.ToList());
     }
 

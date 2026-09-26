@@ -363,6 +363,25 @@ public sealed class OverlaySessionTests : IDisposable
     }
 
     [Fact]
+    public void AReplacedSelectionWhileTheModelBuilds_IsArmedNotDrawn_AndDropsTheRest()
+    {
+        session.Capture(Slot(1), AddLiveCurve(AnalysisCurveKind.Primary, "Frequency Response", 0.0));
+        session.Capture(Slot(2), AddLiveCurve(AnalysisCurveKind.SecondHarmonic, "HD2", -30.0));
+        session.HideAll();
+        session.SetShown(Slot(2), true);
+
+        session.ReplaceActiveSlots(mode, [1, 5], draw: false);
+
+        Assert.True(Slot(1).Checked);
+        Assert.Null(OverlaySeriesOrNull(1));
+        Assert.False(Slot(2).Checked);
+        Assert.Null(OverlaySeriesOrNull(2));
+        Assert.False(Slot(5).Checked);
+        session.Show(mode);
+        Assert.NotNull(OverlaySeriesOrNull(1));
+    }
+
+    [Fact]
     public void RestoringAnEmptySlot_LeavesItUnchecked()
     {
         session.RestoreActiveSlots(mode, [5]);

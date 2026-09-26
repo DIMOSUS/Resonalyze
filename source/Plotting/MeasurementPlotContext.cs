@@ -1,5 +1,4 @@
 using System.Numerics;
-using System.Runtime.CompilerServices;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 
@@ -97,8 +96,10 @@ internal sealed class MeasurementPlotContext
     // HD curves smoothed at the primary's width so HD2..HDn read at HD1's resolution.
     private const double HarmonicSmoothingWidthFactor = 1.0;
 
-    // Shared by every build of a result: its decomposition and noise floor depend on nothing a build changes.
-    private static readonly ConditionalWeakTable<MeasurementResult, DistortionAnalysis> DistortionAnalyses = new();
+    // The last results drawn: a decomposition and noise floor depend on nothing a build changes, but hold megabytes
+    // that the results history keeps in memory must not multiply.
+    private const int KeptDistortionAnalyses = 2;
+    private static readonly List<(MeasurementResult Result, DistortionAnalysis Analysis)> DistortionAnalyses = [];
 
     public FrequencyResponseCurves CreateFrequencyResponseCurves(
         FrequencyResponseOptions options,
@@ -156,15 +157,39 @@ internal sealed class MeasurementPlotContext
                 SpectrumSmoothing.SmoothingOctaves(options.SmoothingInverseOctaves),
             IncludeNoise: (curves & SpectrumCurves.NoiseFloor) != 0);
 
-        DistortionAnalysis analysis = DistortionAnalyses.GetValue(
-            result,
-            _ => new DistortionAnalysis(deconvolution.ImpulseResponse, sweepMetadata, distortionOptions));
+        DistortionAnalysis analysis = DistortionAnalysisOf(result, sweepMetadata, distortionOptions);
         return EssDistortion.ComputeDistortionCurvesResult(
             analysis.Decomposition,
             distortionOptions.IncludeNoise ? analysis.Noise : null,
             distortionOptions,
             options.UseCalibration ? calibration : null,
             curves & SpectrumCurves.Distortion);
+    }
+
+    private static DistortionAnalysis DistortionAnalysisOf(
+        MeasurementResult result,
+        EssSweepMetadata sweep,
+        DistortionOptions options)
+    {
+        lock (DistortionAnalyses)
+        {
+            int index = DistortionAnalyses.FindIndex(entry => ReferenceEquals(entry.Result, result));
+            DistortionAnalysis analysis = index >= 0
+                ? DistortionAnalyses[index].Analysis
+                : new DistortionAnalysis(result.SweepDeconvolution.ImpulseResponse, sweep, options);
+            if (index >= 0)
+            {
+                DistortionAnalyses.RemoveAt(index);
+            }
+
+            DistortionAnalyses.Add((result, analysis));
+            if (DistortionAnalyses.Count > KeptDistortionAnalyses)
+            {
+                DistortionAnalyses.RemoveAt(0);
+            }
+
+            return analysis;
+        }
     }
 
     private sealed class DistortionAnalysis

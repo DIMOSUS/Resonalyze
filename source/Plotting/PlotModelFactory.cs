@@ -37,6 +37,7 @@ internal sealed class PlotModelFactory
     private readonly WaterfallGenerateOptions waterfallGenOptions;
     private readonly WaterfallGenerateOptions burstDecayGenOptions;
     private readonly ConditionalWeakTable<PlotModel, StrongBox<ImpulseOverlayFrame>> impulseFrames;
+    private readonly ViewOptions view;
     private Func<CompareAnalysisSource?>? getCompareSource;
 
     public PlotModelFactory(
@@ -44,11 +45,29 @@ internal sealed class PlotModelFactory
         ExpSweepMeasurement expSweepMeasurement,
         Func<string?, CalibrationFile?> getCalibration,
         AnalyzerViewSettings view)
+        : this(
+            expSweepMeasurement,
+            getCalibration,
+            new MeasurementPlotContext(document),
+            ViewOptions.Of(view ?? throw new ArgumentNullException(nameof(view))),
+            new(),
+            null)
     {
-        ArgumentNullException.ThrowIfNull(view);
+    }
+
+    // The one place both a live factory and a frozen copy take their fields.
+    private PlotModelFactory(
+        ExpSweepMeasurement expSweepMeasurement,
+        Func<string?, CalibrationFile?> getCalibration,
+        MeasurementPlotContext measurementContext,
+        ViewOptions view,
+        ConditionalWeakTable<PlotModel, StrongBox<ImpulseOverlayFrame>> impulseFrames,
+        Func<CompareAnalysisSource?>? getCompareSource)
+    {
         this.expSweepMeasurement = expSweepMeasurement;
         this.getCalibration = getCalibration;
-        measurementContext = new MeasurementPlotContext(document);
+        this.measurementContext = measurementContext;
+        this.view = view;
         frequencyResponseOptions = view.FrequencyResponse;
         phaseResponseOptions = view.PhaseResponse;
         groupDelayOptions = view.GroupDelay;
@@ -58,29 +77,8 @@ internal sealed class PlotModelFactory
         impulseResponseOptions = view.ImpulseResponse;
         waterfallGenOptions = view.Waterfall;
         burstDecayGenOptions = view.BurstDecay;
-        impulseFrames = new();
-    }
-
-    private PlotModelFactory(
-        PlotModelFactory live,
-        MeasurementPlotContext measurement,
-        Func<string?, CalibrationFile?> calibrations,
-        CompareAnalysisSource? compare)
-    {
-        expSweepMeasurement = live.expSweepMeasurement;
-        getCalibration = calibrations;
-        measurementContext = measurement;
-        frequencyResponseOptions = live.frequencyResponseOptions.Copy();
-        phaseResponseOptions = live.phaseResponseOptions.Copy();
-        groupDelayOptions = live.groupDelayOptions.Copy();
-        frequencyResponseVisibility = live.frequencyResponseVisibility.Copy();
-        phaseResponseVisibility = live.phaseResponseVisibility.Copy();
-        groupDelayVisibility = live.groupDelayVisibility.Copy();
-        impulseResponseOptions = live.impulseResponseOptions.Copy();
-        waterfallGenOptions = live.waterfallGenOptions.Copy();
-        burstDecayGenOptions = live.burstDecayGenOptions.Copy();
-        impulseFrames = live.impulseFrames;
-        getCompareSource = () => compare;
+        this.impulseFrames = impulseFrames;
+        this.getCompareSource = getCompareSource;
     }
 
     /// <summary>This moment of the open measurement, compare selection, calibration and view settings, for a build off
@@ -90,11 +88,14 @@ internal sealed class PlotModelFactory
         // The Own calibration is the open result's; resolved here, it cannot come from another result.
         string? calibrationId = frequencyResponseOptions.CalibrationId;
         CalibrationFile? calibration = getCalibration(calibrationId);
+        CompareAnalysisSource? compare = getCompareSource?.Invoke();
         return new PlotModelFactory(
-            this,
-            measurementContext.Freeze(),
+            expSweepMeasurement,
             id => id == calibrationId ? calibration : getCalibration(id),
-            getCompareSource?.Invoke());
+            measurementContext.Freeze(),
+            view.Copy(),
+            impulseFrames,
+            () => compare);
     }
 
     /// <summary>On the UI thread, once <paramref name="built"/>'s model lands: the Auto gates it resolved, into the settings
@@ -1948,4 +1949,39 @@ internal sealed class PlotModelFactory
         TextColor = UiPalette.Warning.ToOxy(),
         TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
     };
+
+    // Every view setting a build reads: a frozen copy takes them whole, so none can be left shared.
+    private sealed record ViewOptions(
+        FrequencyResponseOptions FrequencyResponse,
+        FrequencyResponseOptions PhaseResponse,
+        FrequencyResponseOptions GroupDelay,
+        CurveVisibilityOptions FrequencyResponseVisibility,
+        CurveVisibilityOptions PhaseResponseVisibility,
+        CurveVisibilityOptions GroupDelayVisibility,
+        ImpulseResponseOptions ImpulseResponse,
+        WaterfallGenerateOptions Waterfall,
+        WaterfallGenerateOptions BurstDecay)
+    {
+        public static ViewOptions Of(AnalyzerViewSettings view) => new(
+            view.FrequencyResponse,
+            view.PhaseResponse,
+            view.GroupDelay,
+            view.FrequencyResponseVisibility,
+            view.PhaseResponseVisibility,
+            view.GroupDelayVisibility,
+            view.ImpulseResponse,
+            view.Waterfall,
+            view.BurstDecay);
+
+        public ViewOptions Copy() => new(
+            FrequencyResponse.Copy(),
+            PhaseResponse.Copy(),
+            GroupDelay.Copy(),
+            FrequencyResponseVisibility.Copy(),
+            PhaseResponseVisibility.Copy(),
+            GroupDelayVisibility.Copy(),
+            ImpulseResponse.Copy(),
+            Waterfall.Copy(),
+            BurstDecay.Copy());
+    }
 }

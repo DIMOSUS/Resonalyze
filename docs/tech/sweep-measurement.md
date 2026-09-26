@@ -118,7 +118,8 @@ curves builds on the thread pool through `SupersedingBuild`:
   the document is held. Settings edits and mode switches always draw, since the view options
   are not among what it compares.
 - A switch whose curves are building checks the mode's saved overlay slots on the frame
-  (`OverlaySession.ArmActiveSlots`) and draws them once, when the model lands: drawn on the frame
+  (`OverlaySession.ArmActiveSlots`, and `ReplaceActiveSlots` without drawing for a history
+  entry's or New session's selection) and draws them once, when the model lands: drawn on the frame
   too, a calculated slot would compute twice, and an impulse capture would draw under the frame's
   default framing.
 

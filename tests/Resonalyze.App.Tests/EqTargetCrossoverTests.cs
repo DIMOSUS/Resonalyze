@@ -250,7 +250,10 @@ public sealed class EqTargetCrossoverTests
     {
         var session = new EqWizardSession();
         session.Load(Source(new CrossoverSpec(
-            CrossoverKind.LowPass, new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))));
+            CrossoverKind.LowPass, new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))) with
+        {
+            Points = Enumerable.Range(0, 20).Select(i => new SignalPoint(20 * Math.Pow(2, i * 0.5), -0.1 * i)).ToList()
+        });
         EqWizardCurve? source = session.SourceCurve;
 
         session.SetCrossoverInTarget(false);

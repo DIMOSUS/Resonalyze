@@ -10,6 +10,32 @@ public partial class Form1
         MaximizedBounds = Screen.FromPoint(center).WorkingArea;
     }
 
+    /// <summary>Opens the window where the file says it closed and writes it back on close; the app's entry point
+    /// alone calls this, so a window a test or tool builds keeps the designer's size and leaves the file alone.</summary>
+    internal void RememberWindowPlacement(WindowPlacementFile placement)
+    {
+        Rectangle? bounds = WindowPlacementFit.Fit(
+            placement.NormalBounds,
+            Screen.AllScreens.Select(screen => screen.WorkingArea).ToArray(),
+            Screen.PrimaryScreen?.WorkingArea ?? Screen.GetWorkingArea(Point.Empty));
+        if (bounds != null)
+        {
+            StartPosition = FormStartPosition.Manual;
+            Bounds = bounds.Value;
+            if (placement.Maximized)
+            {
+                chromeTitleBar.MaximizeToCurrentScreen();
+            }
+        }
+
+        FormClosed += (_, _) =>
+        {
+            placement.NormalBounds = chromeTitleBar.NormalBounds;
+            placement.Maximized = chromeTitleBar.IsMaximized;
+            placement.TrySave();
+        };
+    }
+
     protected override void WndProc(ref Message m)
     {
         if (m.Msg == ChromeTitleBar.WmNcHitTest &&

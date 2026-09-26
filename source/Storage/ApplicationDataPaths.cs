@@ -36,6 +36,7 @@ internal sealed class ApplicationDataPaths
     public string RootDirectory { get; }
     public string SettingsFile => Path.Combine(RootDirectory, "measurement-settings.json");
     public string AppearanceFile => Path.Combine(RootDirectory, "appearance.json");
+    public string WindowPlacementFile => Path.Combine(RootDirectory, "window.json");
     public string HistoryFile => Path.Combine(RootDirectory, "measurement-history.json");
     public string OverlaysDirectory => Path.Combine(RootDirectory, "overlays");
     public string ToolsDirectory => Path.Combine(RootDirectory, "tools");

@@ -92,6 +92,12 @@ Three things the theme deliberately does **not** touch:
 - **Tuning sheets** — a PDF is printed on paper, which has no theme.
 - **The figures in this documentation**, which were taken in the dark theme.
 
+**The window** opens at the size and place it had when you last closed it, and
+maximized if it was then. If that spot is no longer on a screen (a monitor unplugged,
+a smaller resolution), the window is moved and shrunk to fit the screen it mostly
+sat on, or centred on the main screen. It is kept in `window.json` beside
+`appearance.json`.
+
 ## Graph Zoom and Limits
 
 The analysis plot, the Time Alignment previews, the EQ Wizard and the Virtual DSP

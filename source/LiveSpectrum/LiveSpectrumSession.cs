@@ -293,7 +293,7 @@ internal sealed class LiveSpectrumSession : IDisposable
         {
             PeakHold.Clear();
         }
-        else if (restarted)
+        else if (restarted && analyzer.InProgress)
         {
             // As Reset average: the new average's first frames are noise the envelope must not latch.
             PeakHold.Suspend();

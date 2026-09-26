@@ -206,9 +206,10 @@ itself is never touched: a Silent RTA that loses SPL keeps running on the relati
 - Applying display options restarts a running Infinite average — except for a spatial-average capture,
   where the accumulation is the measurement and a checkbox must not throw away minutes of walking. The rule
   is keyed on the analysis mode, not the stored averaging speed (in MMM that is only the remembered RTA
-  preference). A change of averaging speed restarts a running average as well. A stopped reading is never
-  restarted: it takes no more frames, and the display is re-read from it (ticking Show input magnitude
-  after a stop needs the accumulation, not only the held curve).
+  preference). A stopped reading is not restarted for a display change: it takes no more frames, and the
+  display is re-read from it (ticking Show input magnitude after a stop needs the accumulation, not only
+  the held curve). A change of averaging speed restarts the statistics running or not: a stopped
+  accumulation kept would be read back with the new speed's coherence floor, and the held curve stays.
 - Every restart of a running average suspends peak hold, as Reset average does: the new average's first
   frames are single-frame noise, and max-ed into an envelope of settled averages they lifted it by several
   dB in the bass.

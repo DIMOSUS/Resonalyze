@@ -33,8 +33,16 @@ public static class ExcessDelay
             magnitude[k] = measuredSpectrum[k].Magnitude;
         }
 
-        double[] minimumPhase = MinimumPhase.FromMagnitude(magnitude, magnitudeFloor);
+        return Estimate(measuredSpectrum, sampleRate, MinimumPhase.FromMagnitude(magnitude, magnitudeFloor));
+    }
 
+    /// <summary>Over <paramref name="minimumPhase"/>, the phase the spectrum's own magnitude dictates, already reconstructed.</summary>
+    internal static ExcessDelayResult Estimate(
+        IReadOnlyList<Complex> measuredSpectrum,
+        int sampleRate,
+        double[] minimumPhase)
+    {
+        int n = measuredSpectrum.Count;
         Complex[] excessSpectrum = new Complex[n];
         for (int k = 0; k < n; k++)
         {

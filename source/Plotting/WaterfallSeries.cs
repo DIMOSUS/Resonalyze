@@ -347,7 +347,9 @@ namespace Resonalyze
                 (1.0 - t) * p0.Y + t * p1.Y);
         }
 
-        public void FillFourierWaterfallData(IImpulseMeasurement measurement)
+        public void FillFourierWaterfallData(
+            IImpulseMeasurement measurement,
+            CancellationToken cancellationToken = default)
         {
             RawSlices.Clear();
             rawSlicesRevision++;
@@ -380,7 +382,8 @@ namespace Resonalyze
                     RawSlices.Add(new Slice(new List<DataPoint>(), 0, 0, 0, measurement.SampleRate));
                 }
 
-                Parallel.For(0, sliceCount, slice =>
+                var parallel = new ParallelOptions { CancellationToken = cancellationToken };
+                Parallel.For(0, sliceCount, parallel, slice =>
                 {
                     int offset = anchor - windowFuncOffset + slice * step + GenerateOptions.Offset;
                     List<DataPoint> data = OxyPlotAdapter.ToDataPoints(
@@ -416,7 +419,8 @@ namespace Resonalyze
                     offset,
                     window,
                     windowFunction,
-                    smoothingOctaves);
+                    smoothingOctaves,
+                    cancellationToken);
 
                 for (int i = 0; i < slices.Count; i++)
                 {

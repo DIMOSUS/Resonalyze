@@ -461,6 +461,15 @@ public sealed class LiveSpectrumWiringTests : IDisposable
                 StaTest.Pump();
                 Thread.Sleep(5);
             }
+
+            var plot = Field<AnalyzerPlot>("analyzerPlot");
+            Task drawing;
+            do
+            {
+                drawing = plot.Drawing;
+                StaTest.Settle(drawing);
+            }
+            while (drawing != plot.Drawing);
         }
 
         // The window stops the analyzer before it lets go of it (Form1.Lifecycle); a test that failed mid-run must too,

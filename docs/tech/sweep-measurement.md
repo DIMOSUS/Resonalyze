@@ -73,14 +73,60 @@ cancelled, superseded) is announced when it lets go.
   input that installs and then changes the view (a history entry applies its session, a run
   selects its own calibration) draws once, with the final state. A draw the view makes on its
   own, such as a mode switch, cancels the queued one.
-- While a run or an import holds the document the plot and Time Alignment keep what they show;
-  the end of the hold redraws them, whether a result landed or not.
+- While a run or an import holds the document the plot and Time Alignment keep what they show.
+  The end of the hold redraws Time Alignment whether a result landed or not, and the plot when
+  something it draws moved (see [Plot builds](#plot-builds)).
 - Time Alignment reads only while it is shown; showing it reads.
 - The Frequency Response panel recolours its SPL choice from the measurement it shows.
 
 What each tab shows is the plain table `ModeCatalog`, and every mode's view options are one
 `AnalyzerViewSettings`: the settings file keeps one copy and each history entry keeps the copy it
 was left with (`CaptureSession`, `ApplySession`).
+
+### Plot builds
+
+`AnalyzerPlot` draws through `PlotModelFactory.Create`. A model without curves (nothing open, a
+producer holding the document) is axes and notices, and builds on the UI thread. A model with
+curves builds on the thread pool through `SupersedingBuild`:
+
+- Every draw (a mode switch, the document or the compare selection changing, a settings edit)
+  supersedes the build in flight: its token is cancelled, and whatever it returns or throws is
+  dropped. The factory checks the token between curves, and the long stages check it as they
+  go: each FDW window, between the group-delay smoothing passes, each waterfall slice and
+  burst-decay band. The analysis caches only ever take complete entries.
+- One stage is shared rather than cancelled: a result's harmonic decomposition and noise floor
+  ([reuse across plot builds](dsp-ess-harmonics.md#reuse-across-plot-builds)). A Frequency Response
+  build computing them for the first time finishes them even when superseded, and a newer build of
+  the same result waits for them instead of starting over: it needs the same values, and a
+  cancellation inside the shared `Lazy` would be cached as the value.
+- A mode switch shows the mode's frame at once (title, axes, peak read-out) and the curves, with
+  the overlay slots, when they land. The frame takes the saved zoom but is never remembered
+  from (`PlotViewportMemory.ShowPlaceholder`), so its own ranges cannot pass for the user's; a zoom
+  made on the frame is lost when the curves land. Any other redraw keeps the model on screen until
+  the new one lands.
+- A build reads one moment of the document, the compare selection and the view settings, frozen
+  on the UI thread with the Frequency Response calibration (`PlotModelFactory.Freeze`; Own is the
+  open result's). A run or an import that takes the document meanwhile cannot tear it, and a
+  setting edited meanwhile reaches only the next build. The Auto gate offsets a Phase or Group
+  Delay build resolves go back into the live settings only when its model lands, and only where
+  Auto is still on (`AdoptAutoGates`), so an older build cannot overwrite a gate set by hand.
+- A build keeps what it computes to itself: the distortion warnings travel with the Frequency
+  Response curves, and the impulse framing that stored overlays redraw under is looked up per
+  model (`ImpulseFrameOf`), so two builds in flight cannot mix them.
+- The settings panels await the draw (`RedrawAsync`) and apply the edits that arrived meanwhile
+  once it lands, so a held spin button redraws at the pace of the build. A failed build nobody
+  awaits reaches `Application.ThreadException`, and the next document change draws again.
+- A document or compare change that moves nothing drawn draws nothing (`PlotDrawInputs`): a
+  rename only retitles the model on screen, a compare selection counts only with curves in the
+  modes that draw it (Frequency Response, Phase, Group Delay, Impulse), and a producer that lets
+  go without a result leaves the curves as they were; the peak read-out still follows whether
+  the document is held. Settings edits and mode switches always draw, since the view options
+  are not among what it compares.
+- A switch whose curves are building checks the mode's saved overlay slots on the frame
+  (`OverlaySession.ArmActiveSlots`, and `ReplaceActiveSlots` without drawing for a history
+  entry's or New session's selection) and draws them once, when the model lands: drawn on the frame
+  too, a calculated slot would compute twice, and an impulse capture would draw under the frame's
+  default framing.
 
 ## Sweep generation
 

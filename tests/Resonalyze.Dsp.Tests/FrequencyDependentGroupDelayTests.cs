@@ -60,6 +60,40 @@ public sealed class FrequencyDependentGroupDelayTests
     }
 
     [Theory]
+    [InlineData(PhaseWindowMode.Fixed)]
+    [InlineData(PhaseWindowMode.FrequencyDependent)]
+    public void AGroupDelayReadAfterAPhaseRead_MatchesACold_OneBitForBit(PhaseWindowMode windowMode)
+    {
+        // The upgrade transforms only the twin; a cold read transforms the pair together.
+        PhaseAnalysisSettings settings = Settings(windowMode, 6);
+        SyntheticMeasurement warm = ReflectedImpulse();
+        DataHelper.GetGatedPhaseData(warm, settings);
+
+        GroupDelayCurveSet upgraded = DataHelper.GetGroupDelayCurves(
+            warm, settings, smoothingInverseOctaves: 12, includeMinimumPhase: true);
+        GroupDelayCurveSet cold = DataHelper.GetGroupDelayCurves(
+            ReflectedImpulse(), settings, smoothingInverseOctaves: 12, includeMinimumPhase: true);
+
+        Assert.Equal(cold.Measured.Points, upgraded.Measured.Points);
+        Assert.Equal(cold.Minimum!.Points, upgraded.Minimum!.Points);
+        Assert.Equal(cold.Excess!.Points, upgraded.Excess!.Points);
+    }
+
+    [Fact]
+    public void ACancelledRead_StopsAndCachesNothing()
+    {
+        SyntheticMeasurement measurement = ReflectedImpulse();
+        PhaseAnalysisSettings settings = Settings(PhaseWindowMode.FrequencyDependent, 8);
+
+        Assert.Throws<OperationCanceledException>(() => DataHelper.GetGroupDelayCurves(
+            measurement, settings, smoothingInverseOctaves: 12, cancellationToken: new CancellationToken(true)));
+        Assert.Throws<OperationCanceledException>(() => DataHelper.GetPhase(
+            measurement, settings, cancellationToken: new CancellationToken(true)));
+
+        Assert.Equal(0, DataHelper.CachedPhaseSpectrumCount(measurement.ImpulseResponse!));
+    }
+
+    [Theory]
     [InlineData(4)]
     [InlineData(6)]
     [InlineData(8)]

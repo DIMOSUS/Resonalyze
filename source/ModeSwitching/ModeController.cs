@@ -9,7 +9,7 @@ internal interface IModeView
     /// <summary>Takes the new mode, empty.</summary>
     void Enter(ModeDescriptor mode);
 
-    /// <summary>Draws the entered mode from the open measurement and brings back what it had on screen.</summary>
+    /// <summary>Draws the entered mode and brings back what it had on screen; its curves may land later.</summary>
     void Present();
 }
 

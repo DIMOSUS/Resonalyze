@@ -175,8 +175,8 @@ namespace Resonalyze.Dsp
         private static readonly ConditionalWeakTable<Complex[], PhaseSpectrumCache>
             PhaseSpectrumCaches = new();
 
-        /// <summary>Gates kept per IR, least recently used out first. Each holds a 32768-bin spectrum (and its
-        /// time-weighted twin once group delay reads it), 0.5-1 MiB, and stepping a gate field makes a new one per step.
+        /// <summary>Gates kept per IR, least recently used out first. Each holds a 32768-bin spectrum (with its time-weighted
+        /// twin and the phase views' readings once they ask), 0.5-2 MiB, and stepping a gate field makes a new one per step.
         /// Enough for every view reading one record at once.</summary>
         internal const int PhaseSpectrumCacheCapacity = 8;
 
@@ -233,12 +233,28 @@ namespace Resonalyze.Dsp
         private sealed record CachedPhaseSpectrum(
             Complex[] Spectrum,
             Complex[]? TimeWeighted,
-            int ExtractionStart);
+            int ExtractionStart,
+            PhaseSpectrumReadings Readings);
 
+        // What the phase views derive from one entry, computed once and handed out read-only. Racing readers compute the
+        // same values, so whichever write lands is right; the measured phase keeps the last reading per unwrap mode.
+        private sealed class PhaseSpectrumReadings
+        {
+            public double[]? MinimumPhase;
+            public StrongBox<(double SlopeMilliseconds, double PeakMilliseconds)>? Detrend;
+            public readonly MeasuredPhaseReading?[] Measured = new MeasuredPhaseReading?[2];
+        }
+
+        private sealed record MeasuredPhaseReading(
+            double ReferenceSamples,
+            IReadOnlyList<double>? Coherence,
+            List<SignalPoint> Phase);
+
+        // Spectrum is null where the stitch is known already and this entry's start is the reference's.
         private sealed record FdwSpectrumEntry(
             double CenterFrequencyHz,
             int EffectiveGateSamples,
-            Complex[] Spectrum,
+            Complex[]? Spectrum,
             Complex[]? TimeWeighted,
             int ExtractionStart);
 
@@ -353,16 +369,30 @@ namespace Resonalyze.Dsp
         private static Complex[] BuildAnalysisSpectrum(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
-            out int extractionStart) =>
-            BuildAnalysisSpectra(measurement, settings, timeWeighted: false, out extractionStart)
+            out int extractionStart,
+            CancellationToken cancellationToken = default) =>
+            BuildAnalysisSpectra(
+                measurement, settings, timeWeighted: false, out extractionStart, cancellationToken)
                 .Spectrum;
 
-        // A group-delay reader replaces a phase-only cache entry with the pair (spectrum bit-identical).
         private static (Complex[] Spectrum, Complex[]? TimeWeighted) BuildAnalysisSpectra(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
             bool timeWeighted,
-            out int extractionStart)
+            out int extractionStart,
+            CancellationToken cancellationToken = default)
+        {
+            CachedPhaseSpectrum entry = AnalysisEntry(measurement, settings, timeWeighted, cancellationToken);
+            extractionStart = entry.ExtractionStart;
+            return (entry.Spectrum, entry.TimeWeighted);
+        }
+
+        // A group-delay reader replaces a phase-only entry with the pair, transforming only the twin and keeping the readings.
+        private static CachedPhaseSpectrum AnalysisEntry(
+            IImpulseMeasurement measurement,
+            PhaseAnalysisSettings settings,
+            bool timeWeighted,
+            CancellationToken cancellationToken)
         {
             Complex[] impulse = measurement.ImpulseResponse
                 ?? throw new InvalidOperationException("Impulse response is not available.");
@@ -376,17 +406,22 @@ namespace Resonalyze.Dsp
                 settings.ValidatedFdwCycles,
                 GatedFftLength);
             PhaseSpectrumCache cache = PhaseSpectrumCaches.GetOrCreateValue(impulse);
+            CachedPhaseSpectrum? phaseOnly = null;
             lock (cache.Entries)
             {
-                if (cache.Entries.TryGetValue(key, out CachedPhaseSpectrum? cached) &&
-                    (!timeWeighted || cached.TimeWeighted != null))
+                if (cache.Entries.TryGetValue(key, out CachedPhaseSpectrum? cached))
                 {
-                    cache.Touch(key);
-                    extractionStart = cached.ExtractionStart;
-                    return (cached.Spectrum, cached.TimeWeighted);
+                    if (!timeWeighted || cached.TimeWeighted != null)
+                    {
+                        cache.Touch(key);
+                        return cached;
+                    }
+
+                    phaseOnly = cached;
                 }
             }
 
+            int extractionStart;
             Complex[] spectrum;
             Complex[]? weighted;
             if (settings.WindowMode == PhaseWindowMode.Fixed)
@@ -398,21 +433,75 @@ namespace Resonalyze.Dsp
                     settings.PlateauMs,
                     settings.RightMs,
                     timeWeighted,
-                    out extractionStart);
+                    out extractionStart,
+                    phaseOnly?.Spectrum);
             }
             else
             {
                 (spectrum, weighted) = BuildFdwSpectra(
-                    measurement, settings, timeWeighted, out extractionStart);
+                    measurement, settings, timeWeighted, out extractionStart, cancellationToken, phaseOnly?.Spectrum);
             }
+            var entry = new CachedPhaseSpectrum(
+                spectrum, weighted, extractionStart, phaseOnly?.Readings ?? new PhaseSpectrumReadings());
             lock (cache.Entries)
             {
-                cache.Store(key, new CachedPhaseSpectrum(spectrum, weighted, extractionStart));
+                cache.Store(key, entry);
             }
-            return (spectrum, weighted);
+            return entry;
+        }
+
+        private static double[] MinimumPhaseOf(CachedPhaseSpectrum entry) =>
+            LazyInitializer.EnsureInitialized(
+                ref entry.Readings.MinimumPhase,
+                () => MinimumPhase.FromMagnitude(entry.Spectrum.Select(value => value.Magnitude).ToArray()));
+
+        private static (double SlopeMilliseconds, double PeakMilliseconds) DetrendOf(
+            CachedPhaseSpectrum entry,
+            int sampleRate) =>
+            LazyInitializer.EnsureInitialized(
+                ref entry.Readings.Detrend,
+                () => new StrongBox<(double, double)>(EstimatePhaseDetrend(
+                    entry.Spectrum, entry.ExtractionStart, sampleRate, MinimumPhaseOf(entry)))).Value;
+
+        private static double DetrendMilliseconds(
+            CachedPhaseSpectrum entry,
+            int sampleRate,
+            PhaseAnalysisSettings settings) => settings.DetrendMode switch
+            {
+                PhaseDetrendMode.Off => 0.0,
+                PhaseDetrendMode.Manual => settings.ManualDetrendMilliseconds,
+                PhaseDetrendMode.Auto => DetrendOf(entry, sampleRate).SlopeMilliseconds,
+                _ => 0.0
+            };
+
+        // Shared by the phase and excess curves, which only read it.
+        private static List<SignalPoint> MeasuredPhaseOf(
+            CachedPhaseSpectrum entry,
+            int sampleRate,
+            PhaseAnalysisSettings settings,
+            bool unwrap,
+            IReadOnlyList<double>? coherence)
+        {
+            double referenceSamples = DetrendMilliseconds(entry, sampleRate, settings) * sampleRate / 1000.0;
+            ref MeasuredPhaseReading? slot = ref entry.Readings.Measured[unwrap ? 1 : 0];
+            MeasuredPhaseReading? reading = Volatile.Read(ref slot);
+            if (reading == null ||
+                !reading.ReferenceSamples.Equals(referenceSamples) ||
+                !ReferenceEquals(reading.Coherence, coherence))
+            {
+                reading = new MeasuredPhaseReading(
+                    referenceSamples,
+                    coherence,
+                    BuildMeasuredPhase(
+                        entry.Spectrum, entry.ExtractionStart, referenceSamples, sampleRate, unwrap, coherence));
+                Volatile.Write(ref slot, reading);
+            }
+
+            return reading.Phase;
         }
 
         // Operands of τ = Re[T·conj(H)] / |H|². See docs/tech/phase-and-group-delay.md#group-delay-identity.
+        // knownSpectrum: this gate's H, transformed before, so only the twin is.
         private static (Complex[] Spectrum, Complex[]? TimeWeighted) BuildFixedSpectra(
             IImpulseMeasurement measurement,
             double gateOffsetMs,
@@ -420,7 +509,8 @@ namespace Resonalyze.Dsp
             double plateauMs,
             double rightMs,
             bool timeWeighted,
-            out int extractionStart)
+            out int extractionStart,
+            Complex[]? knownSpectrum = null)
         {
             Complex[] windowedImpulse = ExtractGatedWindowedImpulse(
                 measurement,
@@ -433,6 +523,11 @@ namespace Resonalyze.Dsp
             Complex[]? weighted = timeWeighted
                 ? TimeWeightSpectrum(windowedImpulse, measurement.SampleRate)
                 : null;
+            if (knownSpectrum != null)
+            {
+                return (knownSpectrum, weighted);
+            }
+
             Fourier.Forward(windowedImpulse, FourierOptions.Matlab);
             return (windowedImpulse, weighted);
         }
@@ -456,7 +551,9 @@ namespace Resonalyze.Dsp
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
             bool timeWeighted,
-            out int extractionStart)
+            out int extractionStart,
+            CancellationToken cancellationToken,
+            Complex[]? knownSpectrum = null)
         {
             int sampleRate = measurement.SampleRate;
             FdwGateGeometry geometry = FdwGateGeometry.Resolve(settings, sampleRate);
@@ -465,7 +562,8 @@ namespace Resonalyze.Dsp
 
             foreach ((double center, int effectiveGate) in FdwBankPlan(geometry, sampleRate))
             {
-                Complex[] spectrum = ExtractFdwWindowedImpulse(
+                cancellationToken.ThrowIfCancellationRequested();
+                Complex[] windowed = ExtractFdwWindowedImpulse(
                     measurement,
                     settings.GateOffsetMs,
                     geometry.Left,
@@ -473,27 +571,36 @@ namespace Resonalyze.Dsp
                     effectiveGate,
                     out int start);
                 Complex[]? weighted = timeWeighted
-                    ? TimeWeightSpectrum(spectrum, sampleRate)
+                    ? TimeWeightSpectrum(windowed, sampleRate)
                     : null;
-                Fourier.Forward(spectrum, FourierOptions.Matlab);
-                entries.Add(new FdwSpectrumEntry(center, effectiveGate, spectrum, weighted, start));
+                // Re-referencing a twin reads its H, so an entry off the reference start transforms it regardless.
+                bool transformed = knownSpectrum == null || (entries.Count > 0 && start != entries[0].ExtractionStart);
+                if (transformed)
+                {
+                    Fourier.Forward(windowed, FourierOptions.Matlab);
+                }
+
+                entries.Add(new FdwSpectrumEntry(center, effectiveGate, transformed ? windowed : null, weighted, start));
             }
 
             extractionStart = entries[0].ExtractionStart;
             foreach (FdwSpectrumEntry entry in entries)
             {
-                ReReferenceSpectra(
-                    entry.Spectrum,
-                    entry.TimeWeighted,
-                    entry.ExtractionStart,
-                    extractionStart,
-                    sampleRate);
+                if (entry.ExtractionStart != extractionStart)
+                {
+                    ReReferenceSpectra(
+                        entry.Spectrum!,
+                        entry.TimeWeighted,
+                        entry.ExtractionStart,
+                        extractionStart,
+                        sampleRate);
+                }
             }
 
-            var combined = new Complex[GatedFftLength];
+            Complex[]? combined = knownSpectrum == null ? new Complex[GatedFftLength] : null;
             Complex[]? combinedWeighted = timeWeighted ? new Complex[GatedFftLength] : null;
             int upperIndex = 0;
-            for (int bin = 0; bin <= combined.Length / 2; bin++)
+            for (int bin = 0; bin <= GatedFftLength / 2; bin++)
             {
                 double frequency = bin * binWidth;
                 while (upperIndex < entries.Count - 1 &&
@@ -504,7 +611,11 @@ namespace Resonalyze.Dsp
 
                 if (upperIndex == 0)
                 {
-                    combined[bin] = entries[0].Spectrum[bin];
+                    if (combined != null)
+                    {
+                        combined[bin] = entries[0].Spectrum![bin];
+                    }
+
                     if (combinedWeighted != null)
                     {
                         combinedWeighted[bin] = entries[0].TimeWeighted![bin];
@@ -520,17 +631,25 @@ namespace Resonalyze.Dsp
                         (Math.Log(upper.CenterFrequencyHz) - Math.Log(lower.CenterFrequencyHz)),
                     0.0,
                     1.0);
-                combined[bin] = InterpolateSpectrum(
-                    lower.Spectrum[bin], upper.Spectrum[bin], t);
+                if (combined != null)
+                {
+                    combined[bin] = InterpolateSpectrum(
+                        lower.Spectrum![bin], upper.Spectrum![bin], t);
+                }
+
                 if (combinedWeighted != null)
                 {
                     combinedWeighted[bin] = InterpolateSpectrum(
                         lower.TimeWeighted![bin], upper.TimeWeighted![bin], t);
                 }
             }
-            for (int bin = 1; bin < combined.Length / 2; bin++)
+            for (int bin = 1; bin < GatedFftLength / 2; bin++)
             {
-                combined[combined.Length - bin] = Complex.Conjugate(combined[bin]);
+                if (combined != null)
+                {
+                    combined[combined.Length - bin] = Complex.Conjugate(combined[bin]);
+                }
+
                 if (combinedWeighted != null)
                 {
                     combinedWeighted[combinedWeighted.Length - bin] =
@@ -538,7 +657,7 @@ namespace Resonalyze.Dsp
                 }
             }
 
-            return (combined, combinedWeighted);
+            return (combined ?? knownSpectrum!, combinedWeighted);
         }
 
         // The twin's time weight shifts by ((s − s_ref) / fs) · H before the rotation. A no-op in today's bank; SumGatedSpectraPairs needs the general form.
@@ -838,18 +957,15 @@ namespace Resonalyze.Dsp
         public static List<SignalPoint> GetGatedPhaseData(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
-            IReadOnlyList<double>? coherence = null)
+            IReadOnlyList<double>? coherence = null,
+            CancellationToken cancellationToken = default)
         {
-            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out int extractionStart);
-            double detrendMilliseconds = ResolveDetrendMilliseconds(
-                spectrum,
-                extractionStart,
-                measurement.SampleRate,
-                settings);
+            CachedPhaseSpectrum entry = AnalysisEntry(
+                measurement, settings, timeWeighted: false, cancellationToken);
             return BuildMeasuredPhase(
-                spectrum,
-                extractionStart,
-                detrendMilliseconds * measurement.SampleRate / 1000.0,
+                entry.Spectrum,
+                entry.ExtractionStart,
+                DetrendMilliseconds(entry, measurement.SampleRate, settings) * measurement.SampleRate / 1000.0,
                 measurement.SampleRate,
                 settings.Unwrap,
                 coherence);
@@ -963,34 +1079,18 @@ namespace Resonalyze.Dsp
 
         public static double ResolvePhaseDetrendMilliseconds(
             IImpulseMeasurement measurement,
-            PhaseAnalysisSettings settings)
-        {
-            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out int extractionStart);
-            return ResolveDetrendMilliseconds(
-                spectrum,
-                extractionStart,
+            PhaseAnalysisSettings settings,
+            CancellationToken cancellationToken = default) =>
+            DetrendMilliseconds(
+                AnalysisEntry(measurement, settings, timeWeighted: false, cancellationToken),
                 measurement.SampleRate,
                 settings);
-        }
 
         /// <summary>One Auto reference for every channel and sum; accepting only the reference measurement makes per-channel flattening impossible by accident.</summary>
         public static double ResolveCommonPhaseDetrendMilliseconds(
             IImpulseMeasurement referenceMeasurement,
             PhaseAnalysisSettings settings) =>
             ResolvePhaseDetrendMilliseconds(referenceMeasurement, settings);
-
-        private static double ResolveDetrendMilliseconds(
-            Complex[] spectrum,
-            int extractionStart,
-            int sampleRate,
-            PhaseAnalysisSettings settings) => settings.DetrendMode switch
-            {
-                PhaseDetrendMode.Off => 0.0,
-                PhaseDetrendMode.Manual => settings.ManualDetrendMilliseconds,
-                PhaseDetrendMode.Auto => EstimatePhaseDetrend(
-                    spectrum, extractionStart, sampleRate).SlopeMilliseconds,
-                _ => 0.0
-            };
 
         public static AnalysisCurve GetPhase(
             IImpulseMeasurement measurement,
@@ -1027,9 +1127,13 @@ namespace Resonalyze.Dsp
         public static AnalysisCurve GetPhase(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
-            IReadOnlyList<double>? coherence = null)
+            IReadOnlyList<double>? coherence = null,
+            CancellationToken cancellationToken = default)
         {
-            List<SignalPoint> phase = GetGatedPhaseData(measurement, settings, coherence);
+            CachedPhaseSpectrum entry = AnalysisEntry(
+                measurement, settings, timeWeighted: false, cancellationToken);
+            List<SignalPoint> phase = MeasuredPhaseOf(
+                entry, measurement.SampleRate, settings, settings.Unwrap, coherence);
             List<SignalPoint> data = phase
                 .Select(point => new SignalPoint(point.X, point.Y / Math.PI * 180.0))
                 .ToList();
@@ -1082,20 +1186,21 @@ namespace Resonalyze.Dsp
 
         public static AnalysisCurve GetMinimumPhase(
             IImpulseMeasurement measurement,
-            PhaseAnalysisSettings settings)
+            PhaseAnalysisSettings settings,
+            CancellationToken cancellationToken = default)
         {
-            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _);
+            CachedPhaseSpectrum entry = AnalysisEntry(
+                measurement, settings, timeWeighted: false, cancellationToken);
             return BuildMinimumPhaseCurve(
-                spectrum, measurement.SampleRate, settings.SmoothingInverseOctaves);
+                entry.Spectrum, MinimumPhaseOf(entry), measurement.SampleRate, settings.SmoothingInverseOctaves);
         }
 
         private static AnalysisCurve BuildMinimumPhaseCurve(
             Complex[] spectrum,
+            double[] minimumPhase,
             int sampleRate,
             double smoothingInverseOctaves)
         {
-            double[] magnitude = spectrum.Select(value => value.Magnitude).ToArray();
-            double[] minimumPhase = MinimumPhase.FromMagnitude(magnitude);
             var data = new List<SignalPoint>(spectrum.Length / 2);
             for (int i = 1; i < spectrum.Length / 2; i++)
             {
@@ -1164,20 +1269,14 @@ namespace Resonalyze.Dsp
         public static AnalysisCurve GetExcessPhase(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
-            IReadOnlyList<double>? coherence = null)
+            IReadOnlyList<double>? coherence = null,
+            CancellationToken cancellationToken = default)
         {
-            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out int extractionStart);
-            double detrendMilliseconds = ResolveDetrendMilliseconds(
-                spectrum, extractionStart, measurement.SampleRate, settings);
-            List<SignalPoint> measured = BuildMeasuredPhase(
-                spectrum,
-                extractionStart,
-                detrendMilliseconds * measurement.SampleRate / 1000.0,
-                measurement.SampleRate,
-                unwrap: true,
-                coherence);
-            double[] minimumPhase = MinimumPhase.FromMagnitude(
-                spectrum.Select(value => value.Magnitude).ToArray());
+            CachedPhaseSpectrum entry = AnalysisEntry(
+                measurement, settings, timeWeighted: false, cancellationToken);
+            List<SignalPoint> measured = MeasuredPhaseOf(
+                entry, measurement.SampleRate, settings, unwrap: true, coherence);
+            double[] minimumPhase = MinimumPhaseOf(entry);
             var data = new List<SignalPoint>(measured.Count);
             for (int j = 0; j < measured.Count; j++)
             {
@@ -1213,18 +1312,20 @@ namespace Resonalyze.Dsp
 
         public static (double SlopeMilliseconds, double PeakMilliseconds) EstimatePhaseDetrend(
             IImpulseMeasurement measurement,
-            PhaseAnalysisSettings settings)
-        {
-            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out int extractionStart);
-            return EstimatePhaseDetrend(spectrum, extractionStart, measurement.SampleRate);
-        }
+            PhaseAnalysisSettings settings) =>
+            DetrendOf(
+                AnalysisEntry(measurement, settings, timeWeighted: false, CancellationToken.None),
+                measurement.SampleRate);
 
         private static (double SlopeMilliseconds, double PeakMilliseconds) EstimatePhaseDetrend(
             Complex[] spectrum,
             int extractionStart,
-            int sampleRate)
+            int sampleRate,
+            double[]? minimumPhase = null)
         {
-            ExcessDelayResult result = ExcessDelay.Estimate(spectrum, sampleRate);
+            ExcessDelayResult result = minimumPhase == null
+                ? ExcessDelay.Estimate(spectrum, sampleRate)
+                : ExcessDelay.Estimate(spectrum, sampleRate, minimumPhase);
             double toMilliseconds = 1000.0 / sampleRate;
             return (
                 (extractionStart + result.SlopeDelaySamples) * toMilliseconds,
@@ -1288,10 +1389,11 @@ namespace Resonalyze.Dsp
             PhaseAnalysisSettings settings,
             double smoothingInverseOctaves,
             double magnitudeGateDb = -30.0,
-            bool includeMinimumPhase = false)
+            bool includeMinimumPhase = false,
+            CancellationToken cancellationToken = default)
         {
             (Complex[] spectrum, Complex[]? weighted) = BuildAnalysisSpectra(
-                measurement, settings, timeWeighted: true, out int extractionStart);
+                measurement, settings, timeWeighted: true, out int extractionStart, cancellationToken);
             return BuildGroupDelayCurves(
                 spectrum,
                 weighted!,
@@ -1302,7 +1404,8 @@ namespace Resonalyze.Dsp
                 magnitudeGateDb,
                 includeMinimumPhase,
                 lowestMeasuredFrequencyHz: 0.0,
-                highestMeasuredFrequencyHz: double.PositiveInfinity);
+                highestMeasuredFrequencyHz: double.PositiveInfinity,
+                cancellationToken);
         }
 
         /// <summary>Curves over a prebuilt pair; <paramref name="settings"/> must carry the window geometry the pair was analysed through (its offset is ignored: <paramref name="extractionStart"/> sets the time reference).</summary>
@@ -1355,7 +1458,8 @@ namespace Resonalyze.Dsp
             double magnitudeGateDb,
             bool includeMinimumPhase,
             double lowestMeasuredFrequencyHz,
-            double highestMeasuredFrequencyHz)
+            double highestMeasuredFrequencyHz,
+            CancellationToken cancellationToken = default)
         {
             int n = spectrum.Length;
             double invSampleRate = 1.0 / sampleRate;
@@ -1377,6 +1481,7 @@ namespace Resonalyze.Dsp
             double[]? minimumNumerator = includeMinimumPhase
                 ? ComputeMinimumPhaseGroupDelayNumerator(spectrum, invSampleRate)
                 : null;
+            cancellationToken.ThrowIfCancellationRequested();
 
             double decodedOctaves =
                 SpectrumSmoothing.SmoothingOctaves(smoothingInverseOctaves);
@@ -1413,6 +1518,7 @@ namespace Resonalyze.Dsp
                         minimumNumerator, smoothingOctaves, binWidthHz, minHalfWidthAt);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             double maxEnergy = 0.0;
             for (int i = 1; i < halfLength; i++)
             {

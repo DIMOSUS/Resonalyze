@@ -242,6 +242,10 @@ frame and clipped-frame counts.
 
 ## Redraw loop
 
+- The analysis reuses its per-frame arrays: `OverlapReframer` hands out one frame it overwrites at each hop, and
+  a run's `SpectrumFrameBuffers` hold the spectra and the frame `SpectrumAnalysis` returns. At N = 65,536 a
+  transfer frame allocated 3.1 MB and an RTA frame 1.3 MB, all on the large-object heap, every hop; what is left
+  is MathNet's own FFT scratch (about 40 KiB). The one place a frame is kept, the seed of the average, copies it.
 - A ~30 fps timer drives redraws with a re-entrancy guard; the measurement runs on background threads, so
   a busy CPU only thins the display rate.
 - A redraw clones the accumulators under the data lock and rebuilds the display curve, which is worth

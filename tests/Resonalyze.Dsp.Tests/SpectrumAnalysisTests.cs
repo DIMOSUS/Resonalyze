@@ -5,6 +5,34 @@ namespace Resonalyze.Dsp.Tests;
 public sealed class SpectrumAnalysisTests
 {
     [Fact]
+    public void ReusedFrameBuffers_GiveEachFrameWhatFreshOnesGive()
+    {
+        var random = new Random(5);
+        var buffers = new SpectrumFrameBuffers();
+        foreach (int length in new[] { 1_024, 1_024, 1_024, 256, 1_024 })
+        {
+            float[] reference = [.. Enumerable.Range(0, length).Select(_ => (float)(random.NextDouble() - 0.5))];
+            float[] target = [.. Enumerable.Range(0, length).Select(_ => (float)(random.NextDouble() - 0.5))];
+            foreach (WindowType window in new[] { WindowType.Hann, WindowType.Rectangular })
+            {
+                TransferSpectrumFrame fresh = SpectrumAnalysis.ComputeTransferSpectrumFrame(reference, target, window);
+                double[] freshPower = SpectrumAnalysis.ComputeAutoPowerSpectrumFrame(target, window);
+
+                TransferSpectrumFrame reused =
+                    SpectrumAnalysis.ComputeTransferSpectrumFrame(reference, target, window, buffers);
+                AssertSameBits(fresh.CrossSpectrum.SelectMany(value => new[] { value.Real, value.Imaginary }),
+                    reused.CrossSpectrum.SelectMany(value => new[] { value.Real, value.Imaginary }));
+                AssertSameBits(fresh.ReferencePowerSpectrum, reused.ReferencePowerSpectrum);
+                AssertSameBits(fresh.TargetPowerSpectrum, reused.TargetPowerSpectrum);
+                AssertSameBits(freshPower, SpectrumAnalysis.ComputeAutoPowerSpectrumFrame(target, window, buffers));
+            }
+        }
+    }
+
+    private static void AssertSameBits(IEnumerable<double> expected, IEnumerable<double> actual) =>
+        Assert.Equal(expected.Select(BitConverter.DoubleToInt64Bits), actual.Select(BitConverter.DoubleToInt64Bits));
+
+    [Fact]
     public void ComputeTransferMagnitudeSpectrum_IdenticalImpulseIsFlatUnity()
     {
         double[] spectrum = SpectrumAnalysis.ComputeTransferMagnitudeSpectrum(

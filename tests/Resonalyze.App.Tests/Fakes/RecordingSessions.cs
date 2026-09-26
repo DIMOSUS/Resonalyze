@@ -402,13 +402,20 @@ internal sealed class RecordingStreamingSession : IAudioStreamingSession
     private readonly int framesToRaise;
     private readonly bool failAfterFrames;
     private readonly float microphonePeak;
+    private readonly IReadOnlyList<float>? microphonePeaks;
 
     /// <param name="microphonePeak">The microphone tone's peak; the default 1.0 reaches full scale in every frame.</param>
-    public RecordingStreamingSession(int framesToRaise, bool failAfterFrames, float microphonePeak = 1.0f)
+    /// <param name="microphonePeaks">Per-frame peaks, cycled, in place of <paramref name="microphonePeak"/>.</param>
+    public RecordingStreamingSession(
+        int framesToRaise,
+        bool failAfterFrames,
+        float microphonePeak = 1.0f,
+        IReadOnlyList<float>? microphonePeaks = null)
     {
         this.framesToRaise = framesToRaise;
         this.failAfterFrames = failAfterFrames;
         this.microphonePeak = microphonePeak;
+        this.microphonePeaks = microphonePeaks;
     }
 
     public event Action<AudioCaptureFrame>? FrameAvailable;
@@ -428,10 +435,11 @@ internal sealed class RecordingStreamingSession : IAudioStreamingSession
             cancellationToken.ThrowIfCancellationRequested();
             var mic = new float[sequenceLength];
             var loop = new float[sequenceLength];
+            float peak = microphonePeaks is { Count: > 0 } peaks ? peaks[f % peaks.Count] : microphonePeak;
             for (int i = 0; i < sequenceLength; i++)
             {
                 double phase = 2.0 * Math.PI * 8.0 * i / sequenceLength;
-                mic[i] = microphonePeak * (float)Math.Sin(phase);
+                mic[i] = peak * (float)Math.Sin(phase);
                 loop[i] = (float)(0.5 * Math.Sin(phase));
             }
             FrameAvailable?.Invoke(new AudioCaptureFrame([mic, loop], 0, 1));

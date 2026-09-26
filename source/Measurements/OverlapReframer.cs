@@ -1,11 +1,13 @@
 namespace Resonalyze
 {
-    /// <summary>Re-frames a contiguous stream into fixed-size overlapping frames, decoupling FFT size from capture block size.</summary>
+    /// <summary>Re-frames a contiguous stream into fixed-size overlapping frames, decoupling FFT size from capture block size.
+    /// Every frame is the same arrays, overwritten by the next: a caller copies what it keeps.</summary>
     internal sealed class OverlapReframer
     {
         private readonly int frameSize;
         private readonly int hopSize;
         private float[][]? buffers;
+        private float[][]? frame;
         private int bufferedCount;
 
         public OverlapReframer(int frameSize, int hopSize)
@@ -50,13 +52,12 @@ namespace Resonalyze
             int consumed = 0;
             while (bufferedCount - consumed >= frameSize)
             {
-                var frame = new float[channelCount][];
+                float[][] reused = Frame(channelCount);
                 for (int channel = 0; channel < channelCount; channel++)
                 {
-                    frame[channel] = new float[frameSize];
-                    Array.Copy(buffers![channel], consumed, frame[channel], 0, frameSize);
+                    Array.Copy(buffers![channel], consumed, reused[channel], 0, frameSize);
                 }
-                yield return frame;
+                yield return reused;
                 consumed += hopSize;
             }
 
@@ -69,6 +70,20 @@ namespace Resonalyze
                 }
                 bufferedCount = remaining;
             }
+        }
+
+        private float[][] Frame(int channelCount)
+        {
+            if (frame?.Length != channelCount)
+            {
+                frame = new float[channelCount][];
+                for (int channel = 0; channel < channelCount; channel++)
+                {
+                    frame[channel] = new float[frameSize];
+                }
+            }
+
+            return frame;
         }
 
         private void EnsureCapacity(int channelCount, int requiredCapacity)

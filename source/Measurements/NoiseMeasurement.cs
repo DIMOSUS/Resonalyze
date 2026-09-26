@@ -475,6 +475,7 @@ namespace Resonalyze
             Task processingTask = ProcessSequencesAsync(
                 sequenceChannel.Reader,
                 reframer,
+                new SpectrumFrameBuffers(),
                 cancellationToken);
 
             IAudioStreamingSession? session = null;
@@ -595,6 +596,7 @@ namespace Resonalyze
         private async Task ProcessSequencesAsync(
             ChannelReader<LiveSequence> reader,
             OverlapReframer reframer,
+            SpectrumFrameBuffers buffers,
             CancellationToken cancellationToken)
         {
             long? previousIndex = null;
@@ -617,11 +619,11 @@ namespace Resonalyze
                 {
                     if (IsRtaCapture)
                     {
-                        AccumulateMicOnlySequence(frame);
+                        AccumulateMicOnlySequence(frame, buffers);
                     }
                     else
                     {
-                        AccumulateTransferSequence(frame);
+                        AccumulateTransferSequence(frame, buffers);
                     }
                 }
             }
@@ -659,9 +661,9 @@ namespace Resonalyze
             appliedAveragingSpeed = averaging;
         }
 
-        private void AccumulateTransferSequence(float[][] sequence)
+        private void AccumulateTransferSequence(float[][] sequence, SpectrumFrameBuffers buffers)
         {
-            TransferSpectrumFrame frame = ComputeTransferSpectrumFrame(sequence);
+            TransferSpectrumFrame frame = ComputeTransferSpectrumFrame(sequence, buffers);
             bool clipped = MicrophoneReachedFullScale(sequence);
 
             lock (dataSync)
@@ -713,7 +715,7 @@ namespace Resonalyze
         }
 
         // Same settle/seed/EMA as the transfer path; null cross/reference power means mic-only to the snapshot.
-        private void AccumulateMicOnlySequence(float[][] sequence)
+        private void AccumulateMicOnlySequence(float[][] sequence, SpectrumFrameBuffers buffers)
         {
             int microphoneIndex = captureMicrophoneIndex;
             if ((uint)microphoneIndex >= (uint)sequence.Length)
@@ -724,7 +726,8 @@ namespace Resonalyze
 
             double[] targetPower = SpectrumAnalysis.ComputeAutoPowerSpectrumFrame(
                 sequence[microphoneIndex],
-                EffectiveWindowType);
+                EffectiveWindowType,
+                buffers);
             bool clipped = MicrophoneReachedFullScale(sequence);
 
             lock (dataSync)
@@ -743,7 +746,7 @@ namespace Resonalyze
                         return;
                     }
 
-                    accumulatedTargetPowerSpectrum = targetPower;
+                    accumulatedTargetPowerSpectrum = (double[])targetPower.Clone();
                     averagedFrameCount = 1;
                     sequencesCounter++;
                     return;
@@ -783,7 +786,7 @@ namespace Resonalyze
             return false;
         }
 
-        private TransferSpectrumFrame ComputeTransferSpectrumFrame(float[][] sequence)
+        private TransferSpectrumFrame ComputeTransferSpectrumFrame(float[][] sequence, SpectrumFrameBuffers buffers)
         {
             int microphoneIndex = captureMicrophoneIndex;
             int loopbackIndex = captureLoopbackIndex;
@@ -798,7 +801,8 @@ namespace Resonalyze
             return SpectrumAnalysis.ComputeTransferSpectrumFrame(
                 sequence[loopbackIndex],
                 sequence[microphoneIndex],
-                EffectiveWindowType);
+                EffectiveWindowType,
+                buffers);
         }
 
         private void WarmUpAnalysisPath()

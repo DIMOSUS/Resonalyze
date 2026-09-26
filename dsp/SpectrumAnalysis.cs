@@ -97,8 +97,17 @@ public static class SpectrumAnalysis
     public static TransferSpectrumFrame ComputeTransferSpectrumFrame(
         IReadOnlyList<float> reference,
         IReadOnlyList<float> target,
-        WindowType windowType = WindowType.Hann)
+        WindowType windowType = WindowType.Hann) =>
+        ComputeTransferSpectrumFrame(reference, target, windowType, new SpectrumFrameBuffers());
+
+    /// <summary>Into <paramref name="buffers"/>: the frame returned is theirs and the next call overwrites it.</summary>
+    public static TransferSpectrumFrame ComputeTransferSpectrumFrame(
+        IReadOnlyList<float> reference,
+        IReadOnlyList<float> target,
+        WindowType windowType,
+        SpectrumFrameBuffers buffers)
     {
+        ArgumentNullException.ThrowIfNull(buffers);
         ArgumentNullException.ThrowIfNull(reference);
         ArgumentNullException.ThrowIfNull(target);
         if (reference.Count != target.Count)
@@ -111,8 +120,8 @@ public static class SpectrumAnalysis
         }
 
         double[] window = Windowing.SharedAnalysisWindow(windowType, reference.Count);
-        var referenceSpectrum = new Complex[reference.Count];
-        var targetSpectrum = new Complex[target.Count];
+        Complex[] referenceSpectrum = buffers.FirstSpectrum(reference.Count);
+        Complex[] targetSpectrum = buffers.SecondSpectrum(target.Count);
         for (int i = 0; i < reference.Count; i++)
         {
             referenceSpectrum[i] = new Complex(reference[i] * window[i], 0.0);
@@ -123,9 +132,10 @@ public static class SpectrumAnalysis
         Fourier.Forward(targetSpectrum, FourierOptions.Matlab);
 
         int binCount = reference.Count / 2;
-        var crossSpectrum = new Complex[binCount];
-        var referencePowerSpectrum = new double[binCount];
-        var targetPowerSpectrum = new double[binCount];
+        TransferSpectrumFrame frame = buffers.TransferFrame(binCount);
+        Complex[] crossSpectrum = frame.CrossSpectrum;
+        double[] referencePowerSpectrum = frame.ReferencePowerSpectrum;
+        double[] targetPowerSpectrum = frame.TargetPowerSpectrum;
         for (int i = 0; i < binCount; i++)
         {
             crossSpectrum[i] = targetSpectrum[i] * Complex.Conjugate(referenceSpectrum[i]);
@@ -135,17 +145,22 @@ public static class SpectrumAnalysis
                 targetSpectrum[i].Magnitude * targetSpectrum[i].Magnitude;
         }
 
-        return new TransferSpectrumFrame(
-            crossSpectrum,
-            referencePowerSpectrum,
-            targetPowerSpectrum);
+        return frame;
     }
 
     /// <summary>Target auto-power of <see cref="ComputeTransferSpectrumFrame"/> with a single FFT, for mic-only captures.</summary>
     public static double[] ComputeAutoPowerSpectrumFrame(
         IReadOnlyList<float> samples,
-        WindowType windowType = WindowType.Hann)
+        WindowType windowType = WindowType.Hann) =>
+        ComputeAutoPowerSpectrumFrame(samples, windowType, new SpectrumFrameBuffers());
+
+    /// <summary>Into <paramref name="buffers"/>: the power returned is theirs and the next call overwrites it.</summary>
+    public static double[] ComputeAutoPowerSpectrumFrame(
+        IReadOnlyList<float> samples,
+        WindowType windowType,
+        SpectrumFrameBuffers buffers)
     {
+        ArgumentNullException.ThrowIfNull(buffers);
         ArgumentNullException.ThrowIfNull(samples);
         if (samples.Count == 0)
         {
@@ -153,7 +168,7 @@ public static class SpectrumAnalysis
         }
 
         double[] window = Windowing.SharedAnalysisWindow(windowType, samples.Count);
-        var spectrum = new Complex[samples.Count];
+        Complex[] spectrum = buffers.FirstSpectrum(samples.Count);
         for (int i = 0; i < samples.Count; i++)
         {
             spectrum[i] = new Complex(samples[i] * window[i], 0.0);
@@ -162,7 +177,7 @@ public static class SpectrumAnalysis
         Fourier.Forward(spectrum, FourierOptions.Matlab);
 
         int binCount = samples.Count / 2;
-        var power = new double[binCount];
+        double[] power = buffers.AutoPower(binCount);
         for (int i = 0; i < binCount; i++)
         {
             power[i] = spectrum[i].Magnitude * spectrum[i].Magnitude;
@@ -257,3 +272,27 @@ public sealed record TransferSpectrumFrame(
     Complex[] CrossSpectrum,
     double[] ReferencePowerSpectrum,
     double[] TargetPowerSpectrum);
+
+/// <summary>What a live analyzer's frames are computed in, reused frame after frame; every call overwrites them all.
+/// One owner, one thread. A frame at N = 65,536 is about 3 MB, all on the large-object heap.</summary>
+public sealed class SpectrumFrameBuffers
+{
+    private Complex[] first = [];
+    private Complex[] second = [];
+    private TransferSpectrumFrame? transfer;
+    private double[] autoPower = [];
+
+    internal Complex[] FirstSpectrum(int length) =>
+        first.Length == length ? first : first = new Complex[length];
+
+    internal Complex[] SecondSpectrum(int length) =>
+        second.Length == length ? second : second = new Complex[length];
+
+    internal TransferSpectrumFrame TransferFrame(int binCount) =>
+        transfer is { } frame && frame.CrossSpectrum.Length == binCount
+            ? frame
+            : transfer = new TransferSpectrumFrame(new Complex[binCount], new double[binCount], new double[binCount]);
+
+    internal double[] AutoPower(int binCount) =>
+        autoPower.Length == binCount ? autoPower : autoPower = new double[binCount];
+}

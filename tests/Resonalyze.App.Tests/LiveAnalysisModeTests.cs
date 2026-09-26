@@ -83,6 +83,45 @@ public sealed class LiveAnalysisModeTests
     }
 
     [Fact]
+    public async Task TheRtaAverage_HoldsItsOwnSpectrum_WhileTheFrameBuffersAreReused()
+    {
+        var factory = new FakeAudioSessionFactory(
+            streamingFactory: _ => new RecordingStreamingSession(
+                framesToRaise: 12,
+                failAfterFrames: false,
+                microphonePeaks: [0.8f, 0.2f]));
+        using var measurement = new NoiseMeasurement(factory);
+        measurement.Init(
+            44_100,
+            24,
+            0.5,
+            PlaybackChannel.Mono,
+            sequenceLength: 1024,
+            waveInputChannelOffset: 0,
+            waveLoopbackInputChannelOffset: 1,
+            liveSpectrumOptions: new LiveSpectrumOptions
+            {
+                AnalysisMode = LiveAnalysisMode.Rta,
+                NoiseColor = NoiseColor.PinkPeriodic,
+                AveragingSpeed = AveragingSpeed.Infinite
+            });
+
+        Task<bool> running = measurement.RunAsync();
+        LiveSpectrumSnapshot? snapshot = null;
+        for (int attempt = 0; attempt < 300 && snapshot is not { FrameCount: >= 6 }; attempt++)
+        {
+            await Task.Delay(10);
+            snapshot = measurement.GetAccumulatedSpectrumSnapshot();
+        }
+        await measurement.AbortAsync();
+
+        Assert.True(await running, measurement.LastError?.ToString());
+        Assert.NotNull(snapshot?.InputMagnitude);
+        // A tone on bin 8 at 0.8 and 0.2 in turn: the mean power, not the last frame's, which an aliased buffer would show.
+        Assert.InRange(snapshot!.InputMagnitude![8], 0.3, 0.7);
+    }
+
+    [Fact]
     public async Task TransferCapture_StillRequestsTheLoopbackChannel()
     {
         var factory = new FakeAudioSessionFactory(

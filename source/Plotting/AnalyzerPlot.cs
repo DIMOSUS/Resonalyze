@@ -27,7 +27,7 @@ internal sealed class AnalyzerPlot : IModeView
     // Each mode's checked slots, kept while another mode is shown.
     private readonly ActiveOverlaySlotTracker activeOverlaySlots = new();
     private ModeDescriptor descriptor = ModeCatalog.For(ModeTab.Frequency);
-    // The last tab that drew the measurement with overlays, which a history entry keeps while a tool is shown.
+    // The last tab that drew the measurement, which a history entry keeps while a tool is shown.
     private ModeTab lastAnalysisTab = ModeTab.Frequency;
     // The slot mode the overlay slots were last loaded for; entering another tab of it keeps them (null: reload).
     private Mode? preparedSlotMode;
@@ -94,16 +94,25 @@ internal sealed class AnalyzerPlot : IModeView
     public Mode Mode { get; private set; }
 
     /// <summary>The tab and overlay selection a history entry keeps: the analysis tab on screen, or the one shown
-    /// before a tool, with the slots it had checked. A tool tab has no overlays of its own to keep.</summary>
+    /// before a tool, with the slots it had checked. A tab without overlays (Waterfall, a tool) has none of its own.</summary>
     public (ModeTab Tab, List<int> OverlaySlots) SessionView()
     {
         if (ShowsOverlays)
         {
             return (descriptor.Tab, Overlays.CaptureActiveSlots(Mode));
         }
+        if (descriptor.HasPlotView)
+        {
+            return (descriptor.Tab, []);
+        }
 
-        Mode slotMode = OverlayModes.SlotModeFor(ModeCatalog.For(lastAnalysisTab).Mode);
-        activeOverlaySlots.TryGet(slotMode, out List<int> remembered);
+        Mode analysisMode = ModeCatalog.For(lastAnalysisTab).Mode;
+        if (!OverlayModes.Supports(analysisMode))
+        {
+            return (lastAnalysisTab, []);
+        }
+
+        activeOverlaySlots.TryGet(OverlayModes.SlotModeFor(analysisMode), out List<int> remembered);
         return (lastAnalysisTab, remembered.ToList());
     }
 
@@ -130,9 +139,13 @@ internal sealed class AnalyzerPlot : IModeView
         Mode = mode.Mode;
         Viewports.Show(null, Mode);
         RefreshLabels();
-        if (ShowsOverlays)
+        if (descriptor.HasPlotView)
         {
             lastAnalysisTab = mode.Tab;
+        }
+
+        if (ShowsOverlays)
+        {
             // Frequency Response and Live Spectrum share one slot set: re-reading and re-smoothing every slot from disk
             // on a switch between them changes nothing. A tab without a plot draws no slots, so it loads none.
             Mode slotMode = OverlayModes.SlotModeFor(Mode);

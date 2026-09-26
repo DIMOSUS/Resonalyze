@@ -4,6 +4,7 @@ using System.Windows.Forms;
 namespace Resonalyze.App.Tests;
 
 /// <summary>A plain-key shortcut yields to whatever holds the caret: a text box, a numeric field's editor, an editable combo.</summary>
+[Collection(WindowInput.Name)]
 public sealed class KeyboardFocusTests
 {
     [Fact]

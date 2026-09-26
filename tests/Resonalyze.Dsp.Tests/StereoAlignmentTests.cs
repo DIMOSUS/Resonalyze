@@ -94,7 +94,9 @@ public sealed class StereoAlignmentTests
             reprocessCount[0] = run.ReprocessCount;
         }
 
-        return (run.Sub, run.Left, run.Right, run.Alignment, run.Log);
+        // Copies: the run is shared by tests in parallel classes, and none may change another's.
+        return (run.Sub, [.. run.Left], [.. run.Right],
+            new Dictionary<IAlignmentChannel, AlignmentOverride>(run.Alignment), new StringBuilder(run.Log.ToString()));
     }
 
     private static (TestChannel Sub,

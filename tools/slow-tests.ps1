@@ -9,6 +9,10 @@ param(
 $results = Join-Path ([System.IO.Path]::GetTempPath()) ("resonalyze-slow-tests-" + [guid]::NewGuid().ToString("N"))
 dotnet test $Target -c Release --filter "Category!=Hardware&Category!=Slow" --logger trx --results-directory $results
 $testExit = $LASTEXITCODE
+if (-not (Test-Path $results)) {
+    # Nothing ran, most often a failed build: its own errors are the message.
+    exit ([Math]::Max($testExit, 1))
+}
 
 $methods = @{}
 foreach ($file in Get-ChildItem $results -Filter *.trx) {

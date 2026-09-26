@@ -10,8 +10,9 @@ public sealed class SplCalibrationSessionTests
 
     private static SplCalibration Existing(double level) => new() { ReferenceLevelDbSpl = level, MeasuredLevelDbFs = -30 };
 
-    private static SplCalibrationSession Session(SplCalibration? existing = null, AudioSessionRequest? request = null) =>
-        new(request ?? SplRequest(), existing, () => Now, TimeSpan.FromSeconds(1.5));
+    private static SplCalibrationSession Session(
+        SplCalibration? existing = null, AudioSessionRequest? request = null, double listenSeconds = 1.5) =>
+        new(request ?? SplRequest(), existing, () => Now, TimeSpan.FromSeconds(listenSeconds));
 
     private static FakeAudioSessionFactory Hearing(Func<IAudioStreamingSession> stream) =>
         new(streamingFactory: _ => stream());
@@ -178,7 +179,7 @@ public sealed class SplCalibrationSessionTests
     public void TheProgressFollowsTheTimeListened() => StaTest.Run(() =>
     {
         // Progress is wall-clock time: a loaded machine must not run out the listen before the sixth frame.
-        var session = new SplCalibrationSession(SplRequest(), null, () => Now, TimeSpan.FromSeconds(10));
+        SplCalibrationSession session = Session(listenSeconds: 10);
         var stream = new ToneStream(1_000, Frames(0.1)) { FrameGap = TimeSpan.FromMilliseconds(60) };
         var percents = new List<int>();
 

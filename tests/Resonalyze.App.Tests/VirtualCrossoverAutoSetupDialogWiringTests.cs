@@ -257,11 +257,10 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
         }
 
         // A preview writes the session back into the controls as it lands; that is not the user, so none follows.
-        // Generous: the fits share the machine with the whole suite and with the test's own readers.
         public void Settle()
         {
             Task? pending = Dialog.PendingPreview;
-            StaTest.Settle(pending, timeoutMilliseconds: 120_000);
+            StaTest.Settle(pending);
             StaTest.Pump();
             Assert.Same(pending, Dialog.PendingPreview);
         }

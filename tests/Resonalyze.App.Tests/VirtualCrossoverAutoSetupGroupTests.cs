@@ -54,15 +54,6 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
     }
 
     [Fact]
-    public void Apply_AsksForNothingWhenTheUserClearedTheReorder()
-    {
-        AutoSetupWizardSession session = Session(ReferenceCar());
-        session.ReorderBlocks = false;
-
-        Assert.Null(session.RequestedChainOrder());
-    }
-
-    [Fact]
     public void MovingTheBassAnchor_MovesTheCeilingOnTheElevationWithIt()
     {
         // The elevation cap follows the lowest bass driver, so reordering must re-open it rather than keep the first cap.

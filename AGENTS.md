@@ -225,7 +225,7 @@ Tests use xUnit. DSP tests are deterministic and synthetic: `tests/Resonalyze.Ds
 
 ### Two tiers
 
-A test method whose cases take a second or more in all is `[Trait("Category", "Slow")]`, on the method, or on the class when most of its methods are or when its tests share one expensive fixture (whichever runs first pays for it). While working, run the fast tier and the classes of the area you touch; run the slow tier with them once, before a commit or PR. CI runs both. After adding tests, run `tools/slow-tests.ps1`: it lists unmarked methods that reached 2 s in a fast-tier run, where contention can double a test's time. Mark a test slow only after it is as cheap as it can be made: a slow test is paid for on every CI run.
+A test method whose cases take 2 s or more in all in a fast-tier run (about a second alone: contention doubles it) is `[Trait("Category", "Slow")]`, on the method, or on the class when most of its methods are or when its tests share one expensive fixture (whichever runs first pays for it). While working, run the fast tier and the classes of the area you touch; run the slow tier with them once, before a commit or PR. CI runs both. After adding tests, run `tools/slow-tests.ps1`, which lists the unmarked methods over that line. Mark a test slow only after it is as cheap as it can be made: a slow test is paid for on every CI run.
 
 ### What a test asserts
 

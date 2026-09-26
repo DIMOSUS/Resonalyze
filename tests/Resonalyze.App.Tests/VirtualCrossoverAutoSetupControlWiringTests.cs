@@ -12,14 +12,23 @@ namespace Resonalyze.App.Tests;
 /// </summary>
 internal static class AutoSetupControlWiring
 {
-    // Every case starts from this session; a fit costs over a second, so its preview is read once.
-    private static readonly Lazy<AutoSetupPreview> Untouched = new(() => Preview(Session(LoudSub()))!);
+    // Every case starts from this session; a fit costs over a second, so its preview and proposals are read once.
+    // The first preview takes the elevation, as the dialog's does; the second is read with it taken.
+    private static readonly Lazy<(AutoSetupPreview First, AutoSetupPreview Settled, CrossoverProposal[] Proposals)>
+        Untouched = new(() =>
+        {
+            AutoSetupWizardSession session = Session(LoudSub());
+            AutoSetupPreview first = Preview(session)!;
+            return (first, Preview(session)!, Proposals(session));
+        });
 
     public static void EachControl_ReachesTheProposalApplyWrites(string change) => StaTest.Run(() =>
     {
+        (AutoSetupPreview first, AutoSetupPreview settled, CrossoverProposal[] untouched) = Untouched.Value;
         AutoSetupWizardSession expected = Session(LoudSub());
-        expected.TakeElevation(Untouched.Value.ElevationCeiling, Untouched.Value.ElevationValue);
-        CrossoverProposal[] untouched = AutoSetupWizardFit.InInitOrder(Untouched.Value.Fits, expected.Rows.Count);
+        expected.TakeElevation(first.ElevationCeiling, first.ElevationValue);
+        // Apply is checked against a preview's fit; with the elevation taken, that must be TryFit's.
+        Assert.Equal(untouched, AutoSetupWizardFit.InInitOrder(settled.Fits, expected.Rows.Count));
         Action<Wizard> changeShown = Change(change, expected);
         // The readers' fit runs beside the dialog's own; neither touches the other's session.
         Task<AutoSetupPreview?> readers = Task.Run(() => Preview(expected));
@@ -31,7 +40,6 @@ internal static class AutoSetupControlWiring
 
         AssertShows(wizard, expected, preview);
         CrossoverProposal[] applied = wizard.Apply();
-        // With the elevation taken, a preview's fit is exactly TryFit's (Proposals), so it is not fitted twice.
         Assert.Equal(AutoSetupWizardFit.InInitOrder(preview.Fits, expected.Rows.Count), applied);
         Assert.NotEqual(untouched, applied);
         Assert.Equal(expected.RequestedChainOrder(), wizard.Dialog.ChainOrder);

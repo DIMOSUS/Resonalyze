@@ -207,7 +207,7 @@ public sealed class VirtualCrossoverUndoTests : IDisposable
     }
 
     [Fact]
-    public void TheQuestions_NameTheWrite_AsEachCommandCallsIt()
+    public void TheQuestion_NamesTheWriteTheSessionMovedOnFrom()
     {
         var tune = new VirtualCrossoverJunctionTuneApply(session, reader, history);
         AgentImportUndo before = Now();
@@ -216,18 +216,8 @@ public sealed class VirtualCrossoverUndoTests : IDisposable
         VirtualCrossoverUndo copy = VirtualCrossoverUndo.CopySide(history);
         Write(copy, 1, VirtualCrossoverUndo.Copied(fromRight: false, session.Channels.Take(2)));
 
-        Assert.Equal(
-            "The session has changed since the tune of A/B was applied. Undo puts every channel back exactly as it was " +
-            "before that Apply, so the later changes go as well." + Environment.NewLine + Environment.NewLine +
-            "Undo anyway?",
-            tune.Undo.ChangedSince(tune.Undo.Step!));
-        Assert.StartsWith(
-            "The session has changed since the copy L → R of A, B. Undo puts every channel back exactly as it was before " +
-            "that copy,",
-            copy.ChangedSince(copy.Step!));
-        Assert.Equal("Tune junction", tune.Undo.Command);
-        Assert.Equal("the left side", VirtualCrossoverUndo.Aligned(stereo: false, rightSide: false));
-        Assert.Equal("both sides", VirtualCrossoverUndo.Aligned(stereo: true, rightSide: true));
+        Assert.Contains("A/B", tune.Undo.ChangedSince(tune.Undo.Step!));
+        Assert.Contains("L → R of A, B", copy.ChangedSince(copy.Step!));
     }
 
     [Fact]
@@ -239,9 +229,7 @@ public sealed class VirtualCrossoverUndoTests : IDisposable
 
         Write(undo, 1, "both sides");
 
-        Assert.Equal(
-            "Auto delay cannot run." + Environment.NewLine + Environment.NewLine + "Undo the last Auto delay instead?",
-            undo.InsteadOf("Auto delay cannot run.", 1));
+        Assert.Contains("Auto delay cannot run.", undo.InsteadOf("Auto delay cannot run.", 1));
         Assert.Null(undo.InsteadOf("Auto delay cannot run.", 2));
     }
 

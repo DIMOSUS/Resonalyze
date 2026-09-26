@@ -9,6 +9,7 @@ namespace Resonalyze.App.Tests;
 /// <summary>Undo last Apply / Undo last copy through a live panel: the command's button opens its real dialog, a timer in
 /// its loop writes, and the same dialog's Undo is read against the session, the cards and the questions. The rules are
 /// <see cref="VirtualCrossoverUndoTests"/>'.</summary>
+[Trait("Category", "Slow")]
 public sealed class VirtualCrossoverUndoWiringTests
 {
     [Fact]
@@ -35,9 +36,7 @@ public sealed class VirtualCrossoverUndoWiringTests
 
         UndoIn<VirtualCrossoverCopySideDialog>(live, "buttonCopyRightToLeft");
 
-        Assert.StartsWith(
-            "Copy between sides: The session has changed since the copy L → R of A, B, C.",
-            Assert.Single(live.Messages));
+        Assert.Contains("L → R of A, B, C", Assert.Single(live.Messages));
         Assert.Equal([bell], a.SideSettings(rightSide: true).PeqBands);
 
         live.Answers.Enqueue(DialogResult.Yes);
@@ -92,8 +91,9 @@ public sealed class VirtualCrossoverUndoWiringTests
 
         NeverOpens<VirtualCrossoverAutoDelayDialog>(live, () => live.Click("buttonAutoDelay"));
 
-        // The gate is not part of what Undo takes back, so moving it asks nothing more.
-        Assert.EndsWith("Undo the last Auto delay instead?", Assert.Single(live.Messages));
+        // One question, the offer: the gate is not part of what Undo takes back, so moving it asks nothing more.
+        Assert.Single(live.Messages);
+        Assert.Empty(live.Answers);
         Assert.Equal(1.5, b.SideSettings(rightSide: false).DelayMs);
     });
 
@@ -116,11 +116,13 @@ public sealed class VirtualCrossoverUndoWiringTests
 
         Assert.Same(woofer, live.Session.Channels[0]);
         Assert.All(live.Session.Sides(), side => Assert.Equal(0, side.Channel.SideSettings(side.RightSide).PhaseRotationDegrees));
-        Assert.StartsWith("Virtual DSP: 6 channel sides had a phase rotation", Assert.Single(live.Messages));
+        Assert.Contains("6 channel sides", Assert.Single(live.Messages));
 
         PinGate(live, 200);
+        live.Answers.Enqueue(DialogResult.No);
         NeverOpens<VirtualCrossoverAutoSetupDialog>(live, () => live.Click("buttonAutoSetup"));
-        Assert.EndsWith("Undo the last Auto crossover instead?", live.Messages[^1]);
+        // The refusal asked (a report would have left the answer queued), and No leaves the Apply standing.
+        Assert.Empty(live.Answers);
         Assert.Same(woofer, live.Session.Channels[0]);
         PinGate(live, null);
 

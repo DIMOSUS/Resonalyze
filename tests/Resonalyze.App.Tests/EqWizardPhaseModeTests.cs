@@ -235,6 +235,7 @@ public sealed class EqWizardPhaseModeTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void AnEstimatedDetrendFollowsTheWindowsJustResolved()
     {
         // Auto τ must be estimated through the window this call resolved, not the replaced ones.
@@ -263,6 +264,7 @@ public sealed class EqWizardPhaseModeTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void UnpinningAGateThatArrivedPinnedPutsEachWindowBackOnItsDriver()
     {
         // Auto after a pinned handoff must return windows to their own arrivals, not reuse the pinned offsets.

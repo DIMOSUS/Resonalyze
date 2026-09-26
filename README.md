@@ -490,6 +490,10 @@ WASAPI configuration). The filter drops the hardware smoke tests, which need rea
 WASAPI endpoints named through the `RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID` and
 `RESONALYZE_WASAPI_RENDER_ENDPOINT_ID` environment variables.
 
+While working, add `&Category!=Slow` to the filter: the fast tier leaves out the
+few hundred tests that take a second or more each, which are most of a full run's
+time. CI runs both tiers.
+
 For local performance profiling, build the dedicated Tracy configuration
 (`dotnet run --project source/Resonalyze.csproj -c Tracy`), which defines
 `TRACY_ENABLE` and references `Tracy-CSharp`. Add instrumentation through

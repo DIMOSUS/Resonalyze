@@ -96,6 +96,7 @@ public sealed class ProtectiveHighPassCompensationTests
     }
 
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(CrossoverFilterFamily.Butterworth, 12, 30.0)]
     [InlineData(CrossoverFilterFamily.LinkwitzRiley, 24, 30.0)]
     [InlineData(CrossoverFilterFamily.LinkwitzRiley, 48, 30.0)]

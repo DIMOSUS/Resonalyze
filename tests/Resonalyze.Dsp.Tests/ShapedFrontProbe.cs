@@ -1,9 +1,11 @@
-﻿using System.Numerics;
+﻿using System.Collections.Concurrent;
+using System.Numerics;
 
 namespace Resonalyze.Dsp.Tests;
 
 /// <summary>The predicted-arrival probe against shaped (non-impulse) fronts: how far the impulse-measured chain term transfers,
 /// and that a shortfall never manufactures a conviction.</summary>
+[Trait("Category", "Slow")]
 public sealed class ShapedFrontProbe
 {
     private const int SampleRate = 48_000;
@@ -250,11 +252,9 @@ public sealed class ShapedFrontProbe
     public void ArrivalProbeTolerance_OverCreditsNoSourceByMoreThanHalfTheBase(
         string sourceName)
     {
-        foreach ((DspChannelChain chain, double lowHz, double highHz) in
-            ToleranceCases())
+        foreach ((double lowHz, double highHz, double honestSkewMs,
+            double toleranceMs, double baseToleranceMs) in TolerancesFor(sourceName))
         {
-            (double honestSkewMs, double toleranceMs, double baseToleranceMs) =
-                MeasureTolerance(sourceName, chain, lowHz, highHz);
             double overCreditMs =
                 toleranceMs - baseToleranceMs - Math.Max(0, honestSkewMs);
 
@@ -266,88 +266,95 @@ public sealed class ShapedFrontProbe
         }
     }
 
-    // Skews landing between the base allowance and the clamped ceiling: the probe declines to convict there.
-    [Fact]
-    public void ArrivalProbeTolerance_DoesNotConvictInsideTheCreditedWindow()
+    // The slow grid sits in its own class so xUnit runs it beside the rest; it runs one class's tests in turn.
+    [Trait("Category", "Slow")]
+    public sealed class CreditedWindow
     {
-        const double LowHz = 100;
-        const double HighHz = 400;
-        double probeLowHz = Math.Sqrt(LowHz * HighHz);
-        double baseToleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
-
-        // Only a near, weak build-up lands in the 2.5-5 ms window (5-6.5 ms, level under 0.15 on a 2-9 ms, 0.05-2 sweep);
-        // the grid holds that corner with a margin, and the sweep itself is asserted.
-        var landed = new List<(double DelayMs, double Level, double SkewMs)>();
-        for (double modeDelayMs = 4.0; modeDelayMs <= 7.5; modeDelayMs += 0.5)
+        // Skews landing between the base allowance and the clamped ceiling: the probe declines to convict there.
+        [Fact]
+        public void ArrivalProbeTolerance_DoesNotConvictInsideTheCreditedWindow()
         {
-            for (double level = 0.05; level <= 0.25; level *= 1.3)
+            const double LowHz = 100;
+            const double HighHz = 400;
+            double probeLowHz = Math.Sqrt(LowHz * HighHz);
+            double baseToleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
+
+            // Only a near, weak build-up lands in the 2.5-5 ms window (5-6.5 ms, level under 0.15 on a 2-9 ms, 0.05-2 sweep);
+            // the grid is that corner alone, so most of it must land.
+            var landed = new List<(double DelayMs, double Level, double SkewMs)>();
+            int gridPoints = 0;
+            for (double modeDelayMs = 5.0; modeDelayMs <= 6.5; modeDelayMs += 0.5)
             {
-                (AlignmentSnapshot snapshot,
-                    TimeAlignmentAnalysisResult full,
-                    TimeAlignmentAnalysisResult probe) = ModeFixture(
-                        modeDelayMs, level, LowHz, probeLowHz, HighHz);
-                double skewMs = full.FirstArrivalDelayMilliseconds -
-                    probe.FirstArrivalDelayMilliseconds;
-                if (skewMs <= baseToleranceMs || skewMs >= 2.0 * baseToleranceMs)
+                for (double level = 0.05; level <= 0.15; level *= 1.69)
                 {
-                    continue;
+                    gridPoints++;
+                    (AlignmentSnapshot snapshot,
+                        TimeAlignmentAnalysisResult full,
+                        TimeAlignmentAnalysisResult probe) = ModeFixture(
+                            modeDelayMs, level, LowHz, probeLowHz, HighHz);
+                    double skewMs = full.FirstArrivalDelayMilliseconds -
+                        probe.FirstArrivalDelayMilliseconds;
+                    if (skewMs <= baseToleranceMs || skewMs >= 2.0 * baseToleranceMs)
+                    {
+                        continue;
+                    }
+
+                    landed.Add((modeDelayMs, level, skewMs));
+                    // A 200-400 Hz probe resolves ~5 ms: energy 3-4 ms behind the front may be dispersion. Field latches run 7 ms and up.
+                    double toleranceMs = AutoAlignmentEngine.ArrivalProbeToleranceMs(
+                        snapshot, full.FirstArrivalDelayMilliseconds,
+                        probe.FirstArrivalDelayMilliseconds,
+                        LowHz, probeLowHz, HighHz);
+                    Assert.Equal(
+                        AutoAlignmentEngine.ArrivalCertificate.Verified,
+                        AutoAlignmentEngine.ClassifyArrival(full, probe, toleranceMs));
+                    // The credit may never push the tolerance past the probe's resolution.
+                    Assert.True(toleranceMs <= 1000.0 / probeLowHz,
+                        $"mode {modeDelayMs:0.0} ms at {level:0.00}: tolerance " +
+                        $"{toleranceMs:0.000} ms exceeds the probe's resolution " +
+                        $"({1000.0 / probeLowHz:0.000} ms)");
                 }
-
-                landed.Add((modeDelayMs, level, skewMs));
-                // A 200-400 Hz probe resolves ~5 ms: energy 3-4 ms behind the front may be dispersion. Field latches run 7 ms and up.
-                double toleranceMs = AutoAlignmentEngine.ArrivalProbeToleranceMs(
-                    snapshot, full.FirstArrivalDelayMilliseconds,
-                    probe.FirstArrivalDelayMilliseconds,
-                    LowHz, probeLowHz, HighHz);
-                Assert.Equal(
-                    AutoAlignmentEngine.ArrivalCertificate.Verified,
-                    AutoAlignmentEngine.ClassifyArrival(full, probe, toleranceMs));
-                // The credit may never push the tolerance past the probe's resolution.
-                Assert.True(toleranceMs <= 1000.0 / probeLowHz,
-                    $"mode {modeDelayMs:0.0} ms at {level:0.00}: tolerance " +
-                    $"{toleranceMs:0.000} ms exceeds the probe's resolution " +
-                    $"({1000.0 / probeLowHz:0.000} ms)");
             }
+
+            Assert.True(2 * landed.Count > gridPoints,
+                $"only {landed.Count} of {gridPoints} build-ups put the skew inside the credited window " +
+                $"({baseToleranceMs:0.000}-{2.0 * baseToleranceMs:0.000} ms) — " +
+                "the grid no longer sits on the corner it asserts");
         }
 
-        Assert.True(landed.Count > 0,
-            "no build-up put the skew inside the credited window " +
-            $"({baseToleranceMs:0.000}-{2.0 * baseToleranceMs:0.000} ms) — " +
-            "the test asserted nothing");
-    }
-
-    private static (AlignmentSnapshot Snapshot,
-        TimeAlignmentAnalysisResult Full, TimeAlignmentAnalysisResult Probe)
-        ModeFixture(
-            double modeDelayMs, double modeLevel,
-            double lowHz, double probeLowHz, double highHz)
-    {
-        DspChannelChain chain = BandPass(70, 200, 36);
-        var impulse = new Complex[Length];
-        impulse[Position] = Complex.One;
-        Complex[] bypassed = VirtualCrossoverAnalysis.ApplyChain(
-            impulse, HighPass(60, 12), SampleRate, SampleRate);
-        int start = Position + (int)(modeDelayMs / 1_000.0 * SampleRate);
-        double peak = bypassed.Max(sample => sample.Magnitude);
-        for (int i = start; i < bypassed.Length; i++)
+        private static (AlignmentSnapshot Snapshot,
+            TimeAlignmentAnalysisResult Full, TimeAlignmentAnalysisResult Probe)
+            ModeFixture(
+                double modeDelayMs, double modeLevel,
+                double lowHz, double probeLowHz, double highHz)
         {
-            double t = (i - start) / (double)SampleRate;
-            bypassed[i] += modeLevel * peak *
-                (1 - Math.Exp(-t / 0.008)) * Math.Exp(-t / 0.1) *
-                Math.Sin(2 * Math.PI * 120 * t);
-        }
+            DspChannelChain chain = BandPass(70, 200, 36);
+            var impulse = new Complex[Length];
+            impulse[Position] = Complex.One;
+            Complex[] bypassed = VirtualCrossoverAnalysis.ApplyChain(
+                impulse, HighPass(60, 12), SampleRate, SampleRate);
+            int start = Position + (int)(modeDelayMs / 1_000.0 * SampleRate);
+            double peak = bypassed.Max(sample => sample.Magnitude);
+            for (int i = start; i < bypassed.Length; i++)
+            {
+                double t = (i - start) / (double)SampleRate;
+                bypassed[i] += modeLevel * peak *
+                    (1 - Math.Exp(-t / 0.008)) * Math.Exp(-t / 0.1) *
+                    Math.Sin(2 * Math.PI * 120 * t);
+            }
 
-        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            bypassed, chain, SampleRate, SampleRate, out ValidSampleRange processedRange);
-        return (
-            new AlignmentSnapshot(
-                new Channel(), processed,
-                VirtualCrossoverAnalysis.FindPeakIndex(processed),
-                processedRange, chain, bypassed),
-            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                processed, SampleRate, lowHz, highHz, processedRange),
-            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                processed, SampleRate, probeLowHz, highHz, processedRange));
+            Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+                bypassed, chain, SampleRate, SampleRate, out ValidSampleRange processedRange);
+            return (
+                new AlignmentSnapshot(
+                    new Channel(), processed,
+                    VirtualCrossoverAnalysis.FindPeakIndex(processed),
+                    processedRange, chain, bypassed),
+                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                    processed, SampleRate, lowHz, highHz, processedRange),
+                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                    processed, SampleRate, probeLowHz, highHz, processedRange));
+        }
     }
 
     // For a driver roll-off the allowance must cover the skew, or the probe convicts a channel for its own crossover.
@@ -356,12 +363,9 @@ public sealed class ShapedFrontProbe
     [InlineData("driver HP 120")]
     public void ArrivalProbeTolerance_CoversARealisticShapedSkew(string sourceName)
     {
-        foreach ((DspChannelChain chain, double lowHz, double highHz) in
-            ToleranceCases())
+        foreach ((double lowHz, double highHz, double honestSkewMs,
+            double toleranceMs, _) in TolerancesFor(sourceName))
         {
-            (double honestSkewMs, double toleranceMs, _) =
-                MeasureTolerance(sourceName, chain, lowHz, highHz);
-
             Assert.True(honestSkewMs <= toleranceMs,
                 $"{sourceName} in {lowHz:0}-{highHz:0} Hz: honest skew " +
                 $"{honestSkewMs:0.000} ms exceeds the allowance " +
@@ -377,6 +381,20 @@ public sealed class ShapedFrontProbe
         yield return (
             HighPass(80, 48, CrossoverFilterFamily.LinkwitzRiley), 40.0, 160.0);
     }
+
+    private static readonly ConcurrentDictionary<string, Lazy<(double LowHz, double HighHz,
+        double HonestSkewMs, double ToleranceMs, double BaseToleranceMs)[]>> Tolerances = new();
+
+    private static (double LowHz, double HighHz, double HonestSkewMs,
+        double ToleranceMs, double BaseToleranceMs)[] TolerancesFor(string sourceName) =>
+        Tolerances.GetOrAdd(sourceName, name => new(() => ToleranceCases()
+            .Select(c =>
+            {
+                (double honestSkewMs, double toleranceMs, double baseToleranceMs) =
+                    MeasureTolerance(name, c.Chain, c.LowHz, c.HighHz);
+                return (c.LowHz, c.HighHz, honestSkewMs, toleranceMs, baseToleranceMs);
+            })
+            .ToArray())).Value;
 
     private static (double HonestSkewMs, double ToleranceMs, double BaseToleranceMs)
         MeasureTolerance(

@@ -30,6 +30,7 @@ public sealed class OverlayPanelWiringTests
     });
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void TheOffsetField_MovesTheCurve_AndSavesAfterAPause() => StaTest.Run(() =>
     {
         using var live = new LivePanel();

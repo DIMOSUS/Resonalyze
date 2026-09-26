@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Numerics;
 using System.Text;
@@ -55,8 +56,13 @@ public sealed class StereoAlignmentTests
         AlignmentSnapshot lower, AlignmentSnapshot upper, double fc) =>
         new(lower, upper, fc, Math.Max(20, fc / 2), Math.Min(20_000, fc * 2));
 
+    private static readonly ConcurrentDictionary<string, Lazy<(TestChannel Sub,
+        TestChannel[] Left, TestChannel[] Right,
+        Dictionary<IAlignmentChannel, AlignmentOverride> Alignment,
+        StringBuilder Log, int ReprocessCount)>> StereoRuns = new();
+
     /// <summary>Mono sub plus woof/mid/twr per side; the right side arrives 1.5 ms later. <paramref name="rightMidEchoMs"/> adds a stronger
-    /// later lobe (correlation chases it, the scene follows the first); <paramref name="reprocessCount"/>[0] counts reprocesses.</summary>
+    /// later lobe (correlation chases it, the scene follows the first); <paramref name="reprocessCount"/>[0] receives the reprocess count.</summary>
     private static (TestChannel Sub,
         TestChannel[] Left, TestChannel[] Right,
         Dictionary<IAlignmentChannel, AlignmentOverride> Alignment,
@@ -74,6 +80,40 @@ public sealed class StereoAlignmentTests
             double globalLateMs = 0,
             bool mirrorPlan = false)
     {
+        string key = string.Join(";", new object[]
+        {
+            sceneOffsetMs, rightLateMs, leftTopAmplitude, rightTopAmplitude,
+            linkBands == null ? "-" : string.Join(",", linkBands.Select(band => band?.ToString() ?? "null")),
+            rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan
+        });
+        var run = StereoRuns.GetOrAdd(key, _ => new(() => RunStereoOnce(
+            sceneOffsetMs, rightLateMs, leftTopAmplitude, rightTopAmplitude, linkBands,
+            rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan))).Value;
+        if (reprocessCount != null)
+        {
+            reprocessCount[0] = run.ReprocessCount;
+        }
+
+        return (run.Sub, run.Left, run.Right, run.Alignment, run.Log);
+    }
+
+    private static (TestChannel Sub,
+        TestChannel[] Left, TestChannel[] Right,
+        Dictionary<IAlignmentChannel, AlignmentOverride> Alignment,
+        StringBuilder Log, int ReprocessCount)
+        RunStereoOnce(
+            double sceneOffsetMs,
+            double rightLateMs,
+            double leftTopAmplitude,
+            double rightTopAmplitude,
+            (double LowHz, double HighHz)?[]? linkBands,
+            double rightMidEchoMs,
+            double leftLateMs,
+            double rightMidAmplitude,
+            double globalLateMs,
+            bool mirrorPlan)
+    {
+        int reprocessCount = 0;
         var sub = new TestChannel(
             "sub", ImpulseAtMs(2.0 + leftLateMs + globalLateMs));
         var leftWoof = new TestChannel(
@@ -127,11 +167,7 @@ public sealed class StereoAlignmentTests
         IReadOnlyList<AlignmentSnapshot> Reprocess(
             IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides)
         {
-            if (reprocessCount != null)
-            {
-                reprocessCount[0]++;
-            }
-
+            reprocessCount++;
             return all.Select(channel =>
                 Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
         }
@@ -176,7 +212,7 @@ public sealed class StereoAlignmentTests
         return (sub,
             [leftWoof, leftMid, leftTwr],
             [rightWoof, rightMid, rightTwr],
-            alignment, log);
+            alignment, log, reprocessCount);
     }
 
     private static double FinalArrivalMs(
@@ -186,7 +222,8 @@ public sealed class StereoAlignmentTests
         naturalMs + alignment.GetValueOrDefault(channel).DelayMs;
 
     // The slow cascades sit in nested classes so xUnit runs them beside each other; it runs one class's tests in turn.
-    /// <summary>The top-pair bridge, and the polarity the far side inherits across it.</summary>
+    /// <summary>The top-pair bridge: the scene offset it carries, and the bridges it refuses.</summary>
+    [Trait("Category", "Slow")]
     public sealed class Bridge
     {
         [Fact]
@@ -318,78 +355,6 @@ public sealed class StereoAlignmentTests
         }
 
         [Fact]
-        public void ComputeStereo_RightTopInheritsTheLeftTopsPolarityNeverAsymmetric()
-        {
-            // Auto delay never inverts one side of a pair alone: the right top inherits the left top's sign.
-            (TestChannel _, TestChannel[] left, TestChannel[] right,
-                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
-                RunStereo(
-                    sceneOffsetMs: 0.25,
-                    rightTopAmplitude: -1.0,
-                    linkBands: UserLinkBands);
-
-            Assert.False(alignment.GetValueOrDefault(left[2]).InvertPolarity);
-            Assert.False(alignment.GetValueOrDefault(right[2]).InvertPolarity);
-            Assert.Equal(
-                alignment.GetValueOrDefault(left[2]).InvertPolarity,
-                alignment.GetValueOrDefault(right[2]).InvertPolarity);
-            Assert.False(alignment.GetValueOrDefault(right[1]).InvertPolarity);
-        }
-
-        [Fact]
-        public void ComputeStereo_BridgeFollowsAnInvertedLeftTop()
-        {
-            // Both tops backwards: effective signs (raw sign XOR invert) must agree.
-            (TestChannel _, TestChannel[] left, TestChannel[] right,
-                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
-                RunStereo(
-                    sceneOffsetMs: 0.25,
-                    leftTopAmplitude: -1.0,
-                    rightTopAmplitude: -1.0);
-
-            bool leftInvert = alignment.GetValueOrDefault(left[2]).InvertPolarity;
-            bool rightInvert = alignment.GetValueOrDefault(right[2]).InvertPolarity;
-            Assert.True(leftInvert);
-            Assert.Equal(leftInvert, rightInvert);
-        }
-
-        [Fact]
-        public void ComputeStereo_RightDriverInheritsItsLeftCounterpartsPolarity()
-        {
-            // Right mid backwards would flip on its own; it inherits the left mid's sign and searches only delay.
-            (TestChannel _, TestChannel[] left, TestChannel[] right,
-                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
-                RunStereo(
-                    sceneOffsetMs: 0.25,
-                    linkBands: UserLinkBands,
-                    rightMidAmplitude: -1.0);
-
-            Assert.False(alignment.GetValueOrDefault(left[1]).InvertPolarity);
-            Assert.Equal(
-                alignment.GetValueOrDefault(left[1]).InvertPolarity,
-                alignment.GetValueOrDefault(right[1]).InvertPolarity);
-        }
-
-        [Fact]
-        public void ComputeStereo_AutoDelayNeverInvertsAPairAsymmetrically()
-        {
-            (TestChannel _, TestChannel[] left, TestChannel[] right,
-                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
-                RunStereo(
-                    sceneOffsetMs: 0.25,
-                    rightTopAmplitude: -1.0,
-                    linkBands: UserLinkBands,
-                    rightMidAmplitude: -1.0);
-
-            for (int i = 0; i < 3; i++)
-            {
-                Assert.Equal(
-                    alignment.GetValueOrDefault(left[i]).InvertPolarity,
-                    alignment.GetValueOrDefault(right[i]).InvertPolarity);
-            }
-        }
-
-        [Fact]
         public void ComputeStereo_RefusesAnUnmeasurableBridgeWithoutTouchingTheRightSide()
         {
             // A silent top would time the whole side by garbage: refuse, with no applicable proposals.
@@ -473,6 +438,83 @@ public sealed class StereoAlignmentTests
         }
     }
 
+    /// <summary>The polarity the far side inherits across the bridge.</summary>
+    [Trait("Category", "Slow")]
+    public sealed class Polarity
+    {
+        [Fact]
+        public void ComputeStereo_RightTopInheritsTheLeftTopsPolarityNeverAsymmetric()
+        {
+            // Auto delay never inverts one side of a pair alone: the right top inherits the left top's sign.
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+                RunStereo(
+                    sceneOffsetMs: 0.25,
+                    rightTopAmplitude: -1.0,
+                    linkBands: UserLinkBands);
+
+            Assert.False(alignment.GetValueOrDefault(left[2]).InvertPolarity);
+            Assert.False(alignment.GetValueOrDefault(right[2]).InvertPolarity);
+            Assert.Equal(
+                alignment.GetValueOrDefault(left[2]).InvertPolarity,
+                alignment.GetValueOrDefault(right[2]).InvertPolarity);
+            Assert.False(alignment.GetValueOrDefault(right[1]).InvertPolarity);
+        }
+
+        [Fact]
+        public void ComputeStereo_BridgeFollowsAnInvertedLeftTop()
+        {
+            // Both tops backwards: effective signs (raw sign XOR invert) must agree.
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+                RunStereo(
+                    sceneOffsetMs: 0.25,
+                    leftTopAmplitude: -1.0,
+                    rightTopAmplitude: -1.0);
+
+            bool leftInvert = alignment.GetValueOrDefault(left[2]).InvertPolarity;
+            bool rightInvert = alignment.GetValueOrDefault(right[2]).InvertPolarity;
+            Assert.True(leftInvert);
+            Assert.Equal(leftInvert, rightInvert);
+        }
+
+        [Fact]
+        public void ComputeStereo_RightDriverInheritsItsLeftCounterpartsPolarity()
+        {
+            // Right mid backwards would flip on its own; it inherits the left mid's sign and searches only delay.
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+                RunStereo(
+                    sceneOffsetMs: 0.25,
+                    linkBands: UserLinkBands,
+                    rightMidAmplitude: -1.0);
+
+            Assert.False(alignment.GetValueOrDefault(left[1]).InvertPolarity);
+            Assert.Equal(
+                alignment.GetValueOrDefault(left[1]).InvertPolarity,
+                alignment.GetValueOrDefault(right[1]).InvertPolarity);
+        }
+
+        [Fact]
+        public void ComputeStereo_AutoDelayNeverInvertsAPairAsymmetrically()
+        {
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+                RunStereo(
+                    sceneOffsetMs: 0.25,
+                    rightTopAmplitude: -1.0,
+                    linkBands: UserLinkBands,
+                    rightMidAmplitude: -1.0);
+
+            for (int i = 0; i < 3; i++)
+            {
+                Assert.Equal(
+                    alignment.GetValueOrDefault(left[i]).InvertPolarity,
+                    alignment.GetValueOrDefault(right[i]).InvertPolarity);
+            }
+        }
+    }
+
     private static readonly (double LowHz, double HighHz)?[] UserLinkBands =
         [(80, 175), (400, 2_500), (2_500, 12_000)];
 
@@ -489,6 +531,7 @@ public sealed class StereoAlignmentTests
     }
 
     /// <summary>The scene offset held through the link bands, and the reference side's independence of the far side.</summary>
+    [Trait("Category", "Slow")]
     public sealed class Scene
     {
         [Fact]
@@ -717,6 +760,7 @@ public sealed class StereoAlignmentTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void RebalanceJunctionBranches_AdoptedMove_DelaysAndFlipsTheStackAbove()
     {
         // The move is half a period AND a flip of the tweeters on both sides; the delay alone would be the worst of
@@ -739,6 +783,7 @@ public sealed class StereoAlignmentTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void RebalanceJunctionBranches_RendersAndWritesTheMoveOnTheDspGrid()
     {
         // Eleven samples at 48 kHz is 0.229 ms: the scan's own grid lands on 0.225, which no processor can play.
@@ -759,6 +804,7 @@ public sealed class StereoAlignmentTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void RebalanceJunctionBranches_DeclinesAMoveThatWouldPassTheDelayCeiling()
     {
         // The stack already sits 49.9 ms above the field's floor: the same move would span past the 50 ms ceiling
@@ -775,6 +821,7 @@ public sealed class StereoAlignmentTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Compute_UntrustedSeedWindow_IsKeyedToTheJunctionNotTheChannel()
     {
         // sub/woof untrusted (echo a period out), woof/mid trusted; the walk descends.
@@ -1066,6 +1113,7 @@ public sealed class StereoAlignmentTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void ComputeStereo_IsInvariantToAGlobalTimeOffset()
     {
         // A uniform acoustic offset must give the identical normalized proposal.

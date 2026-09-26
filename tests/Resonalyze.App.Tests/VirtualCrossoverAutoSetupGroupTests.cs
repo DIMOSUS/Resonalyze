@@ -4,6 +4,7 @@ using static Resonalyze.App.Tests.AutoSetupWizardFixtures;
 
 namespace Resonalyze.App.Tests;
 
+[Trait("Category", "Slow")]
 public sealed class VirtualCrossoverAutoSetupGroupTests
 {
     [Fact]
@@ -37,24 +38,28 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
         });
     }
 
-    private static IReadOnlyList<int>? ChainOrder(IReadOnlyList<AutoSetupWizardChannel> channels, bool reorder)
-    {
-        AutoSetupWizardSession session = Session(channels);
-        session.ReorderBlocks = reorder;
-        Proposals(session);
-        return session.RequestedChainOrder();
-    }
+    // One fit shared by the class; every test that takes it only reads it.
+    private static readonly Lazy<(AutoSetupWizardSession Session, CrossoverProposal[] Proposals)> ReferenceFit =
+        new(() =>
+        {
+            AutoSetupWizardSession session = Session(ReferenceCar());
+            return (session, Proposals(session));
+        });
 
     [Fact]
     public void Apply_AsksForTheBlocksInTheOrderTheDialogCrossedThem()
     {
-        Assert.Equal([6, 5, 2, 1, 0, 3, 4], ChainOrder(ReferenceCar(), reorder: true));
+        Assert.True(ReferenceFit.Value.Session.ReorderBlocks);
+        Assert.Equal([6, 5, 2, 1, 0, 3, 4], ReferenceFit.Value.Session.RequestedChainOrder());
     }
 
     [Fact]
     public void Apply_AsksForNothingWhenTheUserClearedTheReorder()
     {
-        Assert.Null(ChainOrder(ReferenceCar(), reorder: false));
+        AutoSetupWizardSession session = Session(ReferenceCar());
+        session.ReorderBlocks = false;
+
+        Assert.Null(session.RequestedChainOrder());
     }
 
     [Fact]
@@ -90,11 +95,9 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
     public void Apply_ReturnsOneProposalPerChannel_InTheOrderTheyWereHandedIn()
     {
         // The panel writes back by position, so proposals come out in INPUT order.
-        IReadOnlyList<AutoSetupWizardChannel> channels = ReferenceCar();
+        CrossoverProposal[] proposals = ReferenceFit.Value.Proposals;
 
-        CrossoverProposal[] proposals = Proposals(Session(channels));
-
-        Assert.Equal(channels.Count, proposals.Length);
+        Assert.Equal(ReferenceCar().Count, proposals.Length);
         Assert.All(proposals, Assert.NotNull);
         Assert.Equal(CrossoverKind.HighPass, proposals[0].Kind);
         Assert.Equal(CrossoverKind.BandPass, proposals[2].Kind);
@@ -103,7 +106,7 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
     [Fact]
     public void Apply_CrossesTheFrontChainThroughBothSubwoofers()
     {
-        CrossoverProposal[] proposals = Proposals(Session(ReferenceCar()));
+        CrossoverProposal[] proposals = ReferenceFit.Value.Proposals;
 
         int[] chain = [6, 5, 2, 1, 0];
         for (int i = 0; i + 1 < chain.Length; i++)
@@ -122,7 +125,7 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
     [Fact]
     public void Apply_GivesTheRearAndCentreAProtectiveHighPassAndNoJunction()
     {
-        CrossoverProposal[] proposals = Proposals(Session(ReferenceCar()));
+        CrossoverProposal[] proposals = ReferenceFit.Value.Proposals;
 
         foreach (int index in new[] { 3, 4 })
         {
@@ -137,7 +140,7 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
     [Fact]
     public void Apply_CutsALoudRearOntoTheFrontStage()
     {
-        CrossoverProposal[] proposals = Proposals(Session(ReferenceCar()));
+        CrossoverProposal[] proposals = ReferenceFit.Value.Proposals;
 
         Assert.InRange(proposals[3].GainDb, -7.5, -4.5);
     }

@@ -46,6 +46,7 @@ public sealed class SplCalibrationSessionTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void ACleanToneMakesAnAnchorPinnedToTheInput() => StaTest.Run(() =>
     {
         AudioSessionRequest request = SplRequest(AudioBackend.WasapiShared) with
@@ -92,6 +93,7 @@ public sealed class SplCalibrationSessionTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void TheLevelIsReadWhenTheListenStarts() => StaTest.Run(() =>
     {
         SplCalibrationSession session = Session();
@@ -105,6 +107,7 @@ public sealed class SplCalibrationSessionTests
     });
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void AFailedListenExplainsItselfAndLeavesNoResult() => StaTest.Run(() =>
     {
         using var culture = new InvariantCultureScope();
@@ -131,6 +134,7 @@ public sealed class SplCalibrationSessionTests
     });
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void ANewListenDropsThePreviousResult() => StaTest.Run(() =>
     {
         SplCalibrationSession session = Session();
@@ -173,7 +177,8 @@ public sealed class SplCalibrationSessionTests
     [Fact]
     public void TheProgressFollowsTheTimeListened() => StaTest.Run(() =>
     {
-        SplCalibrationSession session = Session();
+        // Progress is wall-clock time: a loaded machine must not run out the listen before the sixth frame.
+        var session = new SplCalibrationSession(SplRequest(), null, () => Now, TimeSpan.FromSeconds(10));
         var stream = new ToneStream(1_000, Frames(0.1)) { FrameGap = TimeSpan.FromMilliseconds(60) };
         var percents = new List<int>();
 

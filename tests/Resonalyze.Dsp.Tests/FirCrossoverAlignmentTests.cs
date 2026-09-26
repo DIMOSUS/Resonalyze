@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Numerics;
 using System.Text;
 
@@ -6,6 +7,7 @@ namespace Resonalyze.Dsp.Tests;
 /// <summary>Auto delay across linear-phase FIR crossovers: a symmetric kernel pre-rings and delays its channel by half its length.</summary>
 /// <remarks>Ideal co-located drivers, so the truth is the latency difference plus the fixture's offset. Placement is a
 /// parameter: the arrival read of long kernels depended on it (see AutoAlignmentEngine.LinearPhaseKernelOf).</remarks>
+[Trait("Category", "Slow")]
 public sealed class FirCrossoverAlignmentTests
 {
     private const int SampleRate = 48_000;
@@ -73,25 +75,33 @@ public sealed class FirCrossoverAlignmentTests
             alignment.GetValueOrDefault(upper.Channel).InvertPolarity);
     }
 
-    [Theory]
-    [InlineData(4_095, 480)]
-    [InlineData(4_095, 2_880)]
-    [InlineData(8_191, 480)]
-    public void TheStereoCascade_TimesAFullLinearPhaseSystem_AsItTimesTheSameSystemUnfiltered(
-        int taps, int basePosition)
+    // The slow stereo cascade sits in its own class so xUnit runs it beside the pair tests.
+    [Trait("Category", "Slow")]
+    public sealed class StereoCascade
     {
-        // Matched kernels everywhere sum flat, so the proposal must equal the unfiltered one.
-        Dictionary<string, double> unfiltered = RunStereo(taps: 0, basePosition);
-        Dictionary<string, double> filtered = RunStereo(taps, basePosition);
+        private static readonly ConcurrentDictionary<int, Lazy<Dictionary<string, double>>> Unfiltered = new();
 
-        foreach ((string name, double delayMs) in filtered)
+        [Theory]
+        [InlineData(4_095, 480)]
+        [InlineData(4_095, 2_880)]
+        [InlineData(8_191, 480)]
+        public void TheStereoCascade_TimesAFullLinearPhaseSystem_AsItTimesTheSameSystemUnfiltered(
+            int taps, int basePosition)
         {
-            // Relative to the sub: the final zero-minimum rebase moves every delay together.
-            double relative = delayMs - filtered["sub"];
-            double reference = unfiltered[name] - unfiltered["sub"];
-            Assert.True(
-                Math.Abs(relative - reference) <= 0.3,
-                $"{name}: {relative:0.000} ms against the sub with FIR crossovers, {reference:0.000} ms without");
+            // Matched kernels everywhere sum flat, so the proposal must equal the unfiltered one.
+            Dictionary<string, double> unfiltered = Unfiltered.GetOrAdd(
+                basePosition, position => new(() => RunStereo(taps: 0, position))).Value;
+            Dictionary<string, double> filtered = RunStereo(taps, basePosition);
+
+            foreach ((string name, double delayMs) in filtered)
+            {
+                // Relative to the sub: the final zero-minimum rebase moves every delay together.
+                double relative = delayMs - filtered["sub"];
+                double reference = unfiltered[name] - unfiltered["sub"];
+                Assert.True(
+                    Math.Abs(relative - reference) <= 0.3,
+                    $"{name}: {relative:0.000} ms against the sub with FIR crossovers, {reference:0.000} ms without");
+            }
         }
     }
 

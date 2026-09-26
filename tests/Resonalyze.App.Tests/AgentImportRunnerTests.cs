@@ -261,6 +261,7 @@ public sealed class AgentImportRunnerTests : IDisposable
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task JunctionTune_WritesOneCrossoverToBothSidesOfBothBlocks_AndUndoPutsItBack()
     {
         import.Measure(2);
@@ -372,6 +373,7 @@ public sealed class AgentImportRunnerTests : IDisposable
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task AutoDelay_RunsWithThePanelDisabled_AndCommitsThroughIt()
     {
         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
@@ -388,6 +390,7 @@ public sealed class AgentImportRunnerTests : IDisposable
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task AutoDelay_ForAPanelClosedDuringTheRun_WritesNothing()
     {
         import.MeasuredJunction();
@@ -522,6 +525,7 @@ public sealed class AgentImportRunnerTests : IDisposable
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task Probe_TurnsAReadingThatThrowsIntoItsOwnUnavailableEntry()
     {
         (VirtualCrossoverChannel lower, VirtualCrossoverChannel upper) = import.MeasuredJunction();
@@ -567,6 +571,7 @@ public sealed class AgentImportRunnerTests : IDisposable
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task Probe_DeclaresATuneThatMovedBetweenReadings()
     {
         import.MeasuredJunction();

@@ -173,6 +173,7 @@ public sealed class EqWizardPanelWiringTests
     });
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void AFit_KeepsALockedBand_AndFillsOnlyTheSlotsLeft() => StaTest.Run(() =>
     {
         using var live = FitReady();
@@ -360,6 +361,7 @@ public sealed class EqWizardPanelWiringTests
     });
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void AHandoff_LocksItsProcessor_NarrowsTheLevel_AndReturnsTheEditedBank() => StaTest.Run(() =>
     {
         using var live = new LivePanel();
@@ -394,6 +396,7 @@ public sealed class EqWizardPanelWiringTests
     });
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void AGatedSource_DrawsItsCorrectedCurveOnceItLands() => StaTest.Run(() =>
     {
         using var live = new LivePanel();
@@ -407,6 +410,7 @@ public sealed class EqWizardPanelWiringTests
     });
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void ACorrectedCurveDroppedByANewSmoothing_IsRenderedAgain() => StaTest.Run(() =>
     {
         using var live = new LivePanel();
@@ -420,6 +424,7 @@ public sealed class EqWizardPanelWiringTests
     });
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void AHandoffsCrossover_ShapesTheTarget_AndTheWindowFollowsTheBox() => StaTest.Run(() =>
     {
         using var live = new LivePanel();
@@ -482,6 +487,7 @@ public sealed class EqWizardPanelWiringTests
     });
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void LoweringMaxFiltersDuringAFit_DropsTheFit() => StaTest.Run(() =>
     {
         using var live = FitReady();

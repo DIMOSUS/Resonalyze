@@ -39,6 +39,7 @@ public sealed class LogarithmicPowerBandResampleTests
     // Lower bounds are the N=2048 main-lobe crossovers with margin: Hann ~1.6 kHz, Flat Top ~4.1 kHz.
     [InlineData(WindowType.Hann, 1_800.0)]
     [InlineData(WindowType.FlatTop, 4_400.0)]
+    [Trait("Category", "Slow")]
     public void PowerBandLevels_AreFftLengthInvariant_AboveResolution_ForWideLobeWindows(
         WindowType windowType,
         double lowerFrequency)
@@ -107,6 +108,7 @@ public sealed class LogarithmicPowerBandResampleTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void PowerBandLevel_WindowEnbwRemovesTheNoiseOverEstimate()
     {
         // Hann over-states a noise band by ENBW (~1.5).

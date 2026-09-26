@@ -33,6 +33,7 @@ public sealed class VirtualCrossoverTwoWayGroupTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void SettleWithinGroup_HandsBackTheEnginesSparseMapAndComposesWithoutThrowing()
     {
         // The engine's override map omits its reference channel; copying it with an indexer threw for two-driver later groups.

@@ -10,50 +10,15 @@ namespace Resonalyze.App.Tests;
 /// <summary>
 /// A shown wizard driven through its controls, beside a session the test changes the same way: what the dialog shows
 /// and what Apply hands back must be what the readers make of that session. The readers have their own tests; these
-/// pin the binding.
+/// pin the binding. Each control's reach into Apply is <see cref="AutoSetupControlWiring"/>.
 /// </summary>
+[Trait("Category", "Slow")]
 public sealed class VirtualCrossoverAutoSetupDialogWiringTests
 {
-    public static TheoryData<string> Changes =>
-    [
-        "type", "families", "floor", "ceiling", "tied slopes", "elevation",
-        "junction floor", "junction ceiling", "steepest slope", "split"
-    ];
-
-    // Every case starts from this session; a fit costs about a second, so its preview and proposals are read once.
-    private static readonly Lazy<(AutoSetupPreview Preview, CrossoverProposal[] Proposals)> Untouched = new(() =>
-    {
-        AutoSetupWizardSession session = Session(LoudSub());
-        return (Preview(session)!, Proposals(session));
-    });
-
-    [Theory]
-    [MemberData(nameof(Changes))]
-    public void EachControl_ReachesTheProposalApplyWrites(string change) => StaTest.Run(() =>
-    {
-        using var wizard = new Wizard(LoudSub());
-        AutoSetupWizardSession expected = Session(LoudSub());
-        expected.TakeElevation(Untouched.Value.Preview.ElevationCeiling, Untouched.Value.Preview.ElevationValue);
-        CrossoverProposal[] untouched = Untouched.Value.Proposals;
-
-        Change(change, wizard, expected);
-        AutoSetupPreview preview = Preview(expected)!;
-        wizard.Settle();
-
-        AssertShows(wizard, expected, preview);
-        CrossoverProposal[] applied = wizard.Apply();
-        Assert.Equal(Proposals(expected), applied);
-        Assert.NotEqual(untouched, applied);
-        Assert.Equal(expected.RequestedChainOrder(), wizard.Dialog.ChainOrder);
-    });
-
     [Fact]
     public void ClearingTheReorder_AsksForNoBlockOrder() => StaTest.Run(() =>
     {
-        using var wizard = new Wizard(FourWay());
-        wizard.Apply();
-        Assert.Equal([0, 1, 2, 3], wizard.Dialog.ChainOrder);
-
+        // With the reorder kept, every EachControl_ReachesTheProposalApplyWrites case applies the chain's order.
         using var cleared = new Wizard(FourWay());
         Task? preview = cleared.Dialog.PendingPreview;
         cleared.Find<CheckBox>("reorderBlocks").Checked = false;
@@ -82,9 +47,10 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
     [Fact]
     public void TheRows_ShowWhatTheReadersMakeOfTheSession() => StaTest.Run(() =>
     {
-        using var wizard = new Wizard(FourWay());
         AutoSetupWizardSession expected = Session(FourWay());
-        AssertShows(wizard, expected, Preview(expected)!);
+        Task<AutoSetupPreview?> untouched = Task.Run(() => Preview(expected));
+        using var wizard = new Wizard(FourWay());
+        AssertShows(wizard, expected, untouched.GetAwaiter().GetResult()!);
 
         // 24 dB/oct stays in every window, so a gentlest slope of 30 changes no fit: only the row can show it held.
         // A floor no driver reaches is moved and noted, but the field keeps what was typed; its ceiling is untouched.
@@ -92,15 +58,16 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
         wizard.Split(1).Checked = true;
         wizard.MinSlope(0).SelectedItem = 30;
         wizard.MinHz(1).Value = AutoSetupWizardPlan.FieldMinimumHz;
-        wizard.Settle();
         AutoSetupWizardJunction top = expected.Junctions()[2];
         expected.Edit(top, expected.EditsOf(top) with { MinHz = 4_000m });
         AutoSetupWizardJunction middle = expected.Junctions()[1];
         expected.Edit(middle, expected.EditsOf(middle) with { MinHz = AutoSetupWizardPlan.FieldMinimumHz, Split = true });
         AutoSetupWizardJunction bottom = expected.Junctions()[0];
         expected.Edit(bottom, expected.EditsOf(bottom) with { MinSlope = 30 });
+        Task<AutoSetupPreview?> edited = Task.Run(() => Preview(expected));
+        wizard.Settle();
 
-        AssertShows(wizard, expected, Preview(expected)!);
+        AssertShows(wizard, expected, edited.GetAwaiter().GetResult()!);
         Assert.Equal(4_000m, wizard.MinHz(2).Value);
         Assert.Equal(AutoSetupWizardPlan.FieldMinimumHz, wizard.MinHz(1).Value);
         Assert.True(wizard.Notes(1).Visible, "The moved floor was not noted.");
@@ -110,6 +77,17 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
     [Fact]
     public void AnArrow_ReordersTheChain_MarksTheDoubtfulRows_AndKeepsAWindowSetByHand() => StaTest.Run(() =>
     {
+        AutoSetupWizardSession expected = Session(FourWay());
+        expected.Edit(
+            expected.Junctions()[2],
+            new AutoSetupJunctionEdits(4_000m, 6_000m, null, null, Split: true));
+        expected.MoveInChain(expected.Rows[0], +1);
+        // The first preview takes the elevation, as the dialog's does; both run beside the dialog's.
+        Task<AutoSetupPreview?> readers = Task.Run(() =>
+        {
+            Preview(expected);
+            return Preview(expected);
+        });
         using var wizard = new Wizard(FourWay());
         wizard.MinHz(2).Value = 4_000m;
         wizard.MaxHz(2).Value = 6_000m;
@@ -118,12 +96,7 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
         wizard.Arrow(0, up: false).PerformClick();
         wizard.Settle();
 
-        AutoSetupWizardSession expected = Session(FourWay());
-        expected.Edit(
-            expected.Junctions()[2],
-            new AutoSetupJunctionEdits(4_000m, 6_000m, null, null, Split: true));
-        expected.MoveInChain(expected.Rows[0], +1);
-        Preview(expected);
+        AutoSetupPreview preview = readers.GetAwaiter().GetResult()!;
         Assert.Equal(
             expected.Rows.Select(row => row.Source.Name),
             Enumerable.Range(0, 4).Select(line => wizard.ChannelCell(1, line).Text));
@@ -142,7 +115,7 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
         Assert.Equal(4_000m, wizard.MinHz(2).Value);
         Assert.Equal(6_000m, wizard.MaxHz(2).Value);
         Assert.True(wizard.Split(2).Checked);
-        AssertShows(wizard, expected, Preview(expected)!);
+        AssertShows(wizard, expected, preview);
     });
 
     [Fact]
@@ -194,67 +167,10 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
     });
 
     // A sub 8 dB up, so the measured bass elevation is there to be lowered.
-    private static List<AutoSetupWizardChannel> LoudSub() =>
+    internal static List<AutoSetupWizardChannel> LoudSub() =>
         [Channel("A sub", VirtualCrossoverAlignmentStage.FrontChain, 20, 90, levelDb: 8), .. FourWay().Skip(1)];
 
-    private static void Change(string change, Wizard wizard, AutoSetupWizardSession expected)
-    {
-        AutoSetupWizardJunction middle = expected.Junctions()[1];
-        AutoSetupWizardJunction top = expected.Junctions()[2];
-        switch (change)
-        {
-            case "type":
-                wizard.TypeBox(2).SelectedItem = DriverType.Midbass;
-                expected.Rows[2].Type = DriverType.Midbass;
-                break;
-            case "families":
-                wizard.Find<CheckBox>("checkLinkwitzRiley").Checked = false;
-                wizard.Find<CheckBox>("checkBessel").Checked = false;
-                expected.SetFamily(CrossoverFilterFamily.LinkwitzRiley, false);
-                expected.SetFamily(CrossoverFilterFamily.Bessel, false);
-                break;
-            case "floor":
-                wizard.Find<ThemedNumericUpDown>("minCrossover").Value = 60m;
-                expected.MinCrossoverHz = 60m;
-                break;
-            case "ceiling":
-                wizard.Find<ThemedNumericUpDown>("maxCrossover").Value = 9_000m;
-                expected.MaxCrossoverHz = 9_000m;
-                break;
-            case "tied slopes":
-                wizard.Find<CheckBox>("independentSlopes").Checked = false;
-                expected.IndependentSlopes = false;
-                break;
-            case "elevation":
-                var elevation = wizard.Find<ThemedNumericUpDown>("subElevation");
-                Assert.Equal(expected.ElevationRange.Maximum, elevation.Maximum);
-                Assert.Equal(expected.SubElevationDb, elevation.Value);
-                elevation.Value = expected.SubElevationDb - 4m;
-                expected.SubElevationDb -= 4m;
-                break;
-            case "junction floor":
-                wizard.MinHz(2).Value = 4_000m;
-                expected.Edit(top, expected.EditsOf(top) with { MinHz = 4_000m });
-                break;
-            case "junction ceiling":
-                wizard.MaxHz(1).Value = 200m;
-                expected.Edit(middle, expected.EditsOf(middle) with { MaxHz = 200m });
-                break;
-            case "steepest slope":
-                wizard.MaxSlope(1).SelectedItem = 18;
-                expected.Edit(middle, expected.EditsOf(middle) with { MaxSlope = 18 });
-                break;
-            case "split":
-                // Split moves this fit only with the slopes tied.
-                wizard.Find<CheckBox>("independentSlopes").Checked = false;
-                wizard.Split(1).Checked = true;
-                expected.IndependentSlopes = false;
-                expected.Edit(middle, expected.EditsOf(middle) with { Split = true });
-                break;
-        }
-    }
-
-    private static void AssertShows(Wizard wizard, AutoSetupWizardSession expected, AutoSetupPreview preview)
+    internal static void AssertShows(Wizard wizard, AutoSetupWizardSession expected, AutoSetupPreview preview)
     {
         foreach ((AutoSetupWizardJunction junction, JunctionWindowResolution window)
                  in AutoSetupWizardPlan.ResolvedWindows(expected))
@@ -297,7 +213,7 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
     }
 
     /// <summary>A wizard on a single chain, so every table line is a row: no group headers.</summary>
-    private sealed class Wizard : IDisposable
+    internal sealed class Wizard : IDisposable
     {
         public Wizard(IReadOnlyList<AutoSetupWizardChannel> channels)
         {
@@ -341,10 +257,11 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
         }
 
         // A preview writes the session back into the controls as it lands; that is not the user, so none follows.
+        // Generous: the fits share the machine with the whole suite and with the test's own readers.
         public void Settle()
         {
             Task? pending = Dialog.PendingPreview;
-            StaTest.Settle(pending);
+            StaTest.Settle(pending, timeoutMilliseconds: 120_000);
             StaTest.Pump();
             Assert.Same(pending, Dialog.PendingPreview);
         }

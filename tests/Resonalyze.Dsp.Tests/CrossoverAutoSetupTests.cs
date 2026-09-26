@@ -147,6 +147,7 @@ public sealed class CrossoverAutoSetupTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Propose_PrefersTheStandardSlopeOverDraggingTheTweeterLow()
     {
         // A clean tweeter does not justify leaving the 24 dB/oct standard.
@@ -745,6 +746,7 @@ public sealed class CrossoverAutoSetupTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Propose_WalksTheCallersOrder_NotTheDriverTypes()
     {
         // Shuffled input is walked in the given order: with two drivers of one class only the caller knows which plays lower.
@@ -760,6 +762,7 @@ public sealed class CrossoverAutoSetupTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Propose_IndependentSlopes_MayDifferAcrossAJunction()
     {
         // Three ways, because the rule binds a CHANNEL's two shoulders and a two-way has no channel with two of them:

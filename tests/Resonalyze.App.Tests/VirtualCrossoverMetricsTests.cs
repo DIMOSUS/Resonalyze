@@ -297,6 +297,7 @@ public sealed class VirtualCrossoverMetricsTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void BuildPhaseEntries_ReadsTheJunctionAndRecoversAMisalignment()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
@@ -724,6 +725,7 @@ public sealed class VirtualCrossoverMetricsTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task ComputeStereoDeltasAsync_APairCentredAboveTheOnsetRegionReadsFirstPeaks()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
@@ -1106,6 +1108,7 @@ public sealed class VirtualCrossoverMetricsTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task ComputeGroupDeltas_ReportOneRowPerComparedGroup()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();

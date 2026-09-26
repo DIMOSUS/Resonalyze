@@ -149,6 +149,7 @@ public sealed class TimeAlignmentAnalysisTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Analyze_KeepsTheTwoPeakTrapGeometryUnderChainLatency()
     {
         // The classic trap shifted by 160 ms latency must read identically in the re-anchored frame.
@@ -263,6 +264,7 @@ public sealed class TimeAlignmentAnalysisTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Analyze_ReverberantBassKeepsTheGenuineDirectArrival()
     {
         // Direct sound ~9 dB under a reflection cluster whose mirror position is energized:

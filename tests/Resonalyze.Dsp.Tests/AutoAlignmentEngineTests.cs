@@ -239,6 +239,7 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(0.0, 1.0)]
     [InlineData(1.0, 0.0)]
     public void Compute_AnchorsOnTheTopChannel_WhicheverArrivesLater(
@@ -352,6 +353,7 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Compute_SeedErrorAtASharpJunction_OnsetLockRecoversDirectly()
     {
         // Periodic front: PHAT and the direct cut both tie, the envelope seeds 1.2 periods off, the onset lock re-anchors.
@@ -381,6 +383,7 @@ public sealed class AutoAlignmentEngineTests
     [InlineData(CrossoverFilterFamily.Butterworth, 12, true)]
     [InlineData(CrossoverFilterFamily.LinkwitzRiley, 24, false)]
     [InlineData(CrossoverFilterFamily.LinkwitzRiley, 48, false)]
+    [Trait("Category", "Slow")]
     public void Compute_MatchedSplit_TakesThePolarityItsFiltersAskFor(
         CrossoverFilterFamily family,
         int slopeDbPerOctave,
@@ -698,6 +701,7 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Compute_UntrustedPhatAtAHighJunction_DirectCutWitnessSeeds()
     {
         // A stronger copy one period behind ties the PHAT rivals; the direct cut resolves the lobe.
@@ -895,6 +899,7 @@ public sealed class AutoAlignmentEngineTests
 
     // 0.20 reads -14.8 dB of prominence, 0.30 reads -11.6 dB: either side of half the search depth.
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(0.20, true)]
     [InlineData(0.30, false)]
     public void Compute_ArrivalPickedFarUnderItsBandEnergy_CannotVetoTheExtremum(
@@ -932,6 +937,7 @@ public sealed class AutoAlignmentEngineTests
 
     // Signed skew from the chains alone: zero for identical chains, null when one side is unreadable (unknown, not zero).
     [Fact]
+    [Trait("Category", "Slow")]
     public void PairChainArrivalSkew_ReadsTheChainsAlone()
     {
         const int Length = 32_768;
@@ -1098,6 +1104,7 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Compute_DeepArrivalPickWithAContradictingDirectCut_KeepsTheReachVeto()
     {
         // Deep pick plus a dominant reflection lobe: the cut refuses to corroborate, so the veto stands.
@@ -1174,6 +1181,7 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Compute_SamePolarityRivalNearTie_IsNotTrustedAsTheSeed()
     {
         // Two same-polarity lobes a period apart, far one stronger: the rival rule (not the trough rules) must refuse.
@@ -1448,6 +1456,7 @@ public sealed class AutoAlignmentEngineTests
 
     // Refiltering the chain-free front through the chain reproduces the processed arrival (analytic GD missed by 3.8 / 2.3 ms).
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData("LR48 HP 80", 40, 160)]
     [InlineData("BW36 BP 70-200", 100, 400)]
     [InlineData("BW12 LP 200", 100, 400)]
@@ -1688,6 +1697,7 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void Compute_KeepsTheConservativePathWhenTheLobeGeometryIsUnmeasured()
     {
         // 55 Hz, 36 dB/oct: lobes ~9 ms apart, equal to the arrival allowance.
@@ -1835,6 +1845,7 @@ public sealed class AutoAlignmentEngineTests
     // The sub read latches 1.9 allowances late; the whitened comb is the second witness.
     // Unconvicted the sub ends at 30.0 ms inverted; convicted, 18.0 ms upright.
     [Fact]
+    [Trait("Category", "Slow")]
     public void Compute_DeadZoneLatch_IsConvictedByTheWhitenedCombArbitration()
     {
         const int Length = 32_768;
@@ -1882,6 +1893,7 @@ public sealed class AutoAlignmentEngineTests
     // Woofer rings at 90 Hz where the sub is 48 dB/oct down: comb r 0.85 at the prediction vs 0.98 at the measured family.
     // Held by the advantage arm, not the 0.6 floor.
     [Fact]
+    [Trait("Category", "Slow")]
     public void Compute_DeadZoneLatch_ArbitrationStandsDownWithoutASecondWitness()
     {
         const int Length = 32_768;
@@ -2110,6 +2122,7 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(false)]
     [InlineData(true)]
     public void Compute_LowJunctionCrests_ReadTheSubAgainstAnInvertedWooferOnce(bool invertSub)

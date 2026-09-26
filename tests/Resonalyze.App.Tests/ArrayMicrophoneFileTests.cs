@@ -47,6 +47,7 @@ public sealed class ArrayMicrophoneFileTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task TheArrayMakesTheRoundTrip()
     {
         using ExpSweepMeasurement measurement = CreateMeasurement(
@@ -147,6 +148,7 @@ public sealed class ArrayMicrophoneFileTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task TheFormatVersionDoesNotMoveForTheseSections()
     {
         using ExpSweepMeasurement measurement = CreateMeasurement(

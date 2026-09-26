@@ -174,6 +174,7 @@ public sealed class FileDropTargetTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void ThePanelsTheShellShowsAllTakeBeingMadeDropTargets() => StaTest.Run(() =>
     {
         using Form form = ShownForm();

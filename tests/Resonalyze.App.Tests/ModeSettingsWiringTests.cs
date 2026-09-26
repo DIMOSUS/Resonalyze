@@ -40,6 +40,7 @@ public sealed class ModeSettingsWiringTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void TheAutoGateFollowsANewMeasurement_WithoutApplying()
     {
         StaTest.Run(() =>
@@ -153,6 +154,7 @@ public sealed class ModeSettingsWiringTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void TheRateAndCaptureTimeFollowTheOpenMeasurement()
     {
         StaTest.Run(() =>
@@ -211,6 +213,7 @@ public sealed class ModeSettingsWiringTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void TheAutoTauIsNotReadWhileTheDocumentIsBusy()
     {
         StaTest.Run(() =>
@@ -249,6 +252,7 @@ public sealed class ModeSettingsWiringTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void TheTauButtonsTakeAnEstimateAsTheUsersValue_OrRefuse()
     {
         StaTest.Run(() =>

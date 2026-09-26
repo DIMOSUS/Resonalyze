@@ -30,6 +30,7 @@ public sealed class LiveAnalysisModeTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task RtaModeWithLoopback_UsesMicOnlyAnalysisAndKeepsTheExcitation()
     {
         RecordingStreamingSession? session = null;

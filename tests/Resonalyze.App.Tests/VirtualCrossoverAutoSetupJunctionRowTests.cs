@@ -65,6 +65,7 @@ public sealed class VirtualCrossoverAutoSetupJunctionRowTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void NarrowingAJunction_MovesWhereThatJunctionLands()
     {
         // The window has to reach the search, not just the screen.
@@ -162,6 +163,7 @@ public sealed class VirtualCrossoverAutoSetupJunctionRowTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void ANoteAppearingAfterShow_PushesTheOptionsDown()
     {
         // The notes line under a row shows up on an edit, long after the first layout, and grows the table.
@@ -207,6 +209,7 @@ public sealed class VirtualCrossoverAutoSetupJunctionRowTests
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void ASplitVerdict_FitsInsideTheWindow()
     {
         // A split junction prints both corners and may add "inverted", which is the longest the column ever gets.

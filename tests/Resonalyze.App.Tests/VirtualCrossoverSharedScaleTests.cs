@@ -2,6 +2,7 @@ using System.Numerics;
 
 namespace Resonalyze.App.Tests;
 
+[Trait("Category", "Slow")]
 public sealed class VirtualCrossoverSharedScaleTests : IDisposable
 {
     private readonly VirtualCrossoverProcessingCoordinator coordinator = new();

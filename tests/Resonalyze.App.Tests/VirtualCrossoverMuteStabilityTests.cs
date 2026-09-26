@@ -75,6 +75,7 @@ public sealed class VirtualCrossoverMuteStabilityTests
             .ToList();
 
     [Fact]
+    [Trait("Category", "Slow")]
     public void TheSetOffsetIsTheSameWhicheverChannelsAreDrawn()
     {
         VirtualCrossoverChannel[] channels =

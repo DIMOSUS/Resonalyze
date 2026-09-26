@@ -33,7 +33,7 @@ public sealed class OverlaySlotStateTests
                 BakedSmoothingCode: 12,
                 SampleRateHz: 96_000,
                 Impulse: new ImpulseOverlayCapture(
-                    [new SignalPoint(0, 0.5), new SignalPoint(1, -0.25)],
+                    [new SignalPoint(-1, 0.25), new SignalPoint(0, 0.5), new SignalPoint(1, -0.25), new SignalPoint(2, 0.125), new SignalPoint(3, 0.0625)],
                     AnalysisCurveKind.ImpulseStep,
                     0.75,
                     96_000)));
@@ -54,6 +54,64 @@ public sealed class OverlaySlotStateTests
         Assert.Equal((12, 96_000), (captured.BakedSmoothingCode, captured.SampleRateHz));
         Assert.Equal(state.Captured.Impulse!.Value.Samples, captured.Impulse!.Value.Samples);
         Assert.Equal(0.75, captured.Impulse.Value.PeakReference);
+    }
+
+    [Theory]
+    [InlineData(AnalysisCurveKind.Primary)]
+    [InlineData(AnalysisCurveKind.ImpulseStep)]
+    public void AnImpulseSlotSavedFromRecordStart_LoadsWithItsSecondHalfBeforeZero(AnalysisCurveKind kind)
+    {
+        // Written before the view drew negative time: indices 0..7 of an 8-sample record, no signed-lag flag.
+        double[] values = [0.0, 1.0, 1.5, 1.25, 1.0, 0.75, 0.5, 0.25];
+        var state = new OverlaySlotState(
+            Mode.ImpulseResponse,
+            "Legacy",
+            0m,
+            Appearance,
+            0,
+            Captured: new CapturedCurve(
+                [new DataPoint(0, 0), new DataPoint(7, 0)],
+                MagnitudeScale.Relative,
+                null,
+                PhaseUnwrapped: null,
+                CurveKind: kind,
+                RawSpectrum: null,
+                RawCalibrationCorrectionDb: null,
+                MeasuredBand: default,
+                PointsCalibrationCorrectionDb: null,
+                BakedSmoothingCode: 0,
+                SampleRateHz: 48_000,
+                Impulse: new ImpulseOverlayCapture(
+                    values.Select((value, index) => new SignalPoint(index, value)).ToArray(),
+                    kind,
+                    1.0,
+                    48_000)));
+        string root = Directory.CreateTempSubdirectory("resonalyze-overlay-state-").FullName;
+        try
+        {
+            state.ToFile(2).Save(root);
+            string path = OverlayFile.GetPath(Mode.ImpulseResponse, 2, root);
+            File.WriteAllLines(
+                path,
+                File.ReadAllLines(path).Where(line => !line.Contains("rawImpulseSignedLags")).ToArray());
+
+            ImpulseOverlayCapture loaded = OverlaySlotState
+                .FromFile(OverlayFile.Load(Mode.ImpulseResponse, 2, root)!, OffsetRange)
+                .Captured!.Impulse!.Value;
+
+            // A step summed from record start is re-anchored to zero just before time zero: the moved part loses the total, 0.25.
+            double moved = kind == AnalysisCurveKind.ImpulseStep ? 0.25 : 0.0;
+            Assert.Equal(
+                [-3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0],
+                loaded.Samples.Select(point => point.X));
+            Assert.Equal(
+                [0.75 - moved, 0.5 - moved, 0.25 - moved, 0.0, 1.0, 1.5, 1.25, 1.0],
+                loaded.Samples.Select(point => point.Y));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]

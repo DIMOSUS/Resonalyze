@@ -3,7 +3,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>Impulse trace stored framing-free (absolute sample index, raw linear value), because the view's origin, unit and level scale change;
+/// <summary>Impulse trace stored framing-free (signed sample index, raw linear value), because the view's origin, unit and level scale change;
 /// <see cref="ImpulseOverlayFrame"/> re-frames it. Band filter and envelope smoothing stay baked in. Steps are stored as the raw integral.</summary>
 internal readonly record struct ImpulseOverlayCapture(
     IReadOnlyList<SignalPoint> Samples,
@@ -138,5 +138,37 @@ internal static class ImpulseOverlayRenderer
         }
 
         return points;
+    }
+}
+
+/// <summary>Overlay files written before the view drew negative time.</summary>
+internal static class ImpulseOverlayLegacy
+{
+    /// <summary>A capture stored as indices 0..N-1 from record start, redrawn as the live view draws it: the second half before zero,
+    /// and a step there re-anchored to be zero just before time zero. N is read off the last index, which thinning keeps within a bucket.</summary>
+    public static IReadOnlyList<SignalPoint> FromRecordStartIndices(
+        IReadOnlyList<SignalPoint> samples,
+        AnalysisCurveKind kind)
+    {
+        SignalPoint last = samples.MaxBy(point => point.X);
+        int length = (int)Math.Round(last.X) + 1;
+        double stepTotal = kind == AnalysisCurveKind.ImpulseStep ? last.Y : 0.0;
+        var before = new List<SignalPoint>();
+        var after = new List<SignalPoint>();
+        foreach (SignalPoint point in samples.OrderBy(point => point.X))
+        {
+            double lag = DspMath.ToSignedLag(point.X, length);
+            if (lag < 0)
+            {
+                before.Add(new SignalPoint(lag, point.Y - stepTotal));
+            }
+            else
+            {
+                after.Add(point);
+            }
+        }
+
+        before.AddRange(after);
+        return before;
     }
 }

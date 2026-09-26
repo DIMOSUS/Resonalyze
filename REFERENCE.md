@@ -1091,6 +1091,8 @@ what is being measured now stays readable. Two things cannot be undone that way 
 travel baked in: the band filter and the ETC smoothing are part of the values. A very
 long record is stored thinned to its extremes, so zooming an overlay to sample level
 shows the thinned outline where the live trace shows samples.
+A snapshot saved by a version that drew the record from sample 0 is moved the same way
+when it loads, its second half before zero.
 
 Two markers name the instants the rest of the app acts on: the estimated
 **arrival** — the same shared figure the Auto gate offsets are anchored on — and

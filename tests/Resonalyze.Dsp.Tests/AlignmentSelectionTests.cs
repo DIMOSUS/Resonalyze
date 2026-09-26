@@ -448,6 +448,18 @@ public sealed class AlignmentSelectionTests
     }
 
     [Fact]
+    public void LobeContinuation_LooksPastTheWall_NotBackIntoTheWindow()
+    {
+        // A same-polarity lobe the original window already held sits nearer to the wall pick than the completed lobe does.
+        var wallPick = new AlignmentCandidate(-0.95, false, -2.0);
+        var inside = new AlignmentCandidate(-0.7, false, -2.4);
+        var continuation = new AlignmentCandidate(-1.3, false, -1.9);
+
+        Assert.Equal(continuation, AlignmentSelection.LobeContinuation([inside, continuation], wallPick, -2.0, 2.0));
+        Assert.Null(AlignmentSelection.LobeContinuation([inside], wallPick, -2.0, 2.0));
+    }
+
+    [Fact]
     public void SelectWithEdgeRetry_TakesTheContinuationAndFallsBackToSelection()
     {
         // The far lobe wins plain selection outright (0.3 dB, same polarity), so only the continuation rule can return the near one.
@@ -457,11 +469,28 @@ public sealed class AlignmentSelectionTests
         var atTheWiderWall = new AlignmentCandidate(-1.98, false, -1.9);
 
         AlignmentCandidate? completed = AlignmentSelection.SelectWithEdgeRetry(
-            half => half > 1.0 ? [far, continuation] : [wallPick], centerMs: 0, halfWindowMs: 1.0);
+            half => half > 1.0 ? ([far, continuation], [far, continuation]) : ([wallPick], [wallPick]),
+            centerMs: 0, halfWindowMs: 1.0);
         AlignmentCandidate? reselected = AlignmentSelection.SelectWithEdgeRetry(
-            half => half > 1.0 ? [far, atTheWiderWall] : [wallPick], centerMs: 0, halfWindowMs: 1.0);
+            half => half > 1.0 ? ([far, atTheWiderWall], [far, atTheWiderWall]) : ([wallPick], [wallPick]),
+            centerMs: 0, halfWindowMs: 1.0);
 
         Assert.Equal(continuation, completed);
         Assert.Equal(far, reselected);
+    }
+
+    [Fact]
+    public void SelectWithEdgeRetry_CompletesALobeTheCandidateGapCutFromTheWidenedList()
+    {
+        // The completed lobe trails the widened best by more than the candidate gap, so it is an optimum but not a candidate.
+        var wallPick = new AlignmentCandidate(-0.95, false, -3.5);
+        var far = new AlignmentCandidate(1.2, false, -1.6);
+        var continuation = new AlignmentCandidate(-1.1, false, -3.4);
+
+        AlignmentCandidate? completed = AlignmentSelection.SelectWithEdgeRetry(
+            half => half > 1.0 ? ([far], [far, continuation]) : ([wallPick], [wallPick]),
+            centerMs: 0, halfWindowMs: 1.0);
+
+        Assert.Equal(continuation, completed);
     }
 }

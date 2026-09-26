@@ -1264,8 +1264,9 @@ public static class CrossoverAutoSetup
             bool? forcedFlip = AutoAlignmentEngine.SettledRelativeInversion(
                 orderedProposals[j].LowPassEdge, orderedProposals[j + 1].HighPassEdge, processorSampleRate);
 
-            IReadOnlyList<AlignmentCandidate> Search(double half) =>
-                VirtualCrossoverAnalysis.FindAlignmentCandidates(
+            (IReadOnlyList<AlignmentCandidate>, IReadOnlyList<AlignmentCandidate>) Search(double half)
+            {
+                IReadOnlyList<AlignmentCandidate> found = VirtualCrossoverAnalysis.FindAlignmentCandidates(
                     processed[j + 1],
                     [processed[j]],
                     sampleRate,
@@ -1275,7 +1276,11 @@ public static class CrossoverAutoSetup
                     center + half,
                     priorDelayMs: anchored ? center : null,
                     priorSigmaMs: half / 2.0,
-                    forcedPolarity: forcedFlip);
+                    forcedPolarity: forcedFlip,
+                    levelMatch: false,
+                    out IReadOnlyList<AlignmentCandidate> optima);
+                return (found, optima);
+            }
 
             if (AlignmentSelection.SelectWithEdgeRetry(Search, center, halfWindow) is not { } chosen)
             {

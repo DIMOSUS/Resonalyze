@@ -2582,8 +2582,13 @@ public static class VirtualCrossoverAnalysis
         }
 
         // The window only bounds the search, so a widened retry reads the same bins.
-        IReadOnlyList<AlignmentCandidate> Search(double half) => SearchAlignmentCandidatesByLoss(
-            bins, -half, half, maxFrequencyHz, priorDelayMs: 0, priorSigmaMs: half / 2.0, forcedFlip, out _);
+        (IReadOnlyList<AlignmentCandidate>, IReadOnlyList<AlignmentCandidate>) Search(double half)
+        {
+            IReadOnlyList<AlignmentCandidate> found = SearchAlignmentCandidatesByLoss(
+                bins, -half, half, maxFrequencyHz, priorDelayMs: 0, priorSigmaMs: half / 2.0, forcedFlip,
+                out IReadOnlyList<AlignmentCandidate> optima);
+            return (found, optima);
+        }
 
         return AlignmentSelection.SelectWithEdgeRetry(Search, 0, halfWindowMs) is { } chosen
             ? (ReadAt(bins, chosen.DelayMs, chosen.InvertPolarity), chosen)
@@ -2626,8 +2631,13 @@ public static class VirtualCrossoverAnalysis
             return null;
         }
 
-        IReadOnlyList<AlignmentCandidate> Search(double half) => SearchAlignmentCandidatesByLoss(
-            voters, -half, half, maxFrequencyHz, priorDelayMs: 0, priorSigmaMs: half / 2.0, forcedFlip, out _);
+        (IReadOnlyList<AlignmentCandidate>, IReadOnlyList<AlignmentCandidate>) Search(double half)
+        {
+            IReadOnlyList<AlignmentCandidate> found = SearchAlignmentCandidatesByLoss(
+                voters, -half, half, maxFrequencyHz, priorDelayMs: 0, priorSigmaMs: half / 2.0, forcedFlip,
+                out IReadOnlyList<AlignmentCandidate> optima);
+            return (found, optima);
+        }
 
         if (AlignmentSelection.SelectWithEdgeRetry(Search, 0, halfWindowMs) is not { } chosen)
         {

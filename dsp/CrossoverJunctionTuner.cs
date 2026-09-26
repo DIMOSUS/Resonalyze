@@ -822,7 +822,7 @@ public static class CrossoverJunctionTuner
                 out ValidSampleRange upperRange);
             bool? forcedFlip = PostCheckPolarity.ForcedFlip(side.LowerChain, side.UpperChain, processorSampleRateHz);
             IReadOnlyList<AlignmentCandidate> allOptima = [];
-            IReadOnlyList<AlignmentCandidate> Search(double half)
+            (IReadOnlyList<AlignmentCandidate>, IReadOnlyList<AlignmentCandidate>) Search(double half)
             {
                 IReadOnlyList<AlignmentCandidate> found = VirtualCrossoverAnalysis.FindAlignmentCandidates(
                     upper, [lower], side.SampleRate, bandLowHz, bandHighHz,
@@ -841,7 +841,7 @@ public static class CrossoverJunctionTuner
                     allOptima = optima;
                 }
 
-                return found;
+                return (found, optima);
             }
 
             if (AlignmentSelection.SelectWithEdgeRetry(Search, 0, halfWindowMs) is not { } chosen)
@@ -1608,14 +1608,21 @@ public static class CrossoverJunctionTuner
             (Complex[] lower, ValidSampleRange lowerRange) = Processed(side, upper: false, lowerChain);
             (Complex[] upper, ValidSampleRange upperRange) = Processed(side, upper: true, upperChain);
             bool? forcedFlip = ForcedFlip(lowerChain, upperChain);
-            IReadOnlyList<AlignmentCandidate> Search(double half) => VirtualCrossoverAnalysis.FindAlignmentCandidates(
-                upper, [lower], sides[side].SampleRate, bandLowHz, bandHighHz,
-                -half, half,
-                priorDelayMs: 0,
-                priorSigmaMs: half / 2.0,
-                forcedPolarity: forcedFlip,
-                variableValidRange: upperRange,
-                fixedValidRanges: [lowerRange]);
+            (IReadOnlyList<AlignmentCandidate>, IReadOnlyList<AlignmentCandidate>) Search(double half)
+            {
+                IReadOnlyList<AlignmentCandidate> found = VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                    upper, [lower], sides[side].SampleRate, bandLowHz, bandHighHz,
+                    -half, half,
+                    priorDelayMs: 0,
+                    priorSigmaMs: half / 2.0,
+                    forcedPolarity: forcedFlip,
+                    levelMatch: false,
+                    out IReadOnlyList<AlignmentCandidate> optima,
+                    gateAnchorSample: null,
+                    variableValidRange: upperRange,
+                    fixedValidRanges: [lowerRange]);
+                return (found, optima);
+            }
 
             return AlignmentSelection.SelectWithEdgeRetry(Search, 0, halfWindowMs) is { } chosen
                 ? new JunctionTuneAlignment(

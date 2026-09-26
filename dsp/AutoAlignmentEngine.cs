@@ -1870,7 +1870,7 @@ public static class AutoAlignmentEngine
                 {
                     // The cut-off lobe completed where the widened window holds it; otherwise the same selection rules
                     // (retried[0] raw could be a flip + half-period impostor).
-                    chosen = AlignmentSelection.LobeContinuation(retried, chosen, retryLow, retryHigh)
+                    chosen = AlignmentSelection.LobeContinuation(retriedAll, chosen, retryLow, retryHigh)
                         ?? AlignmentSelection.Select(retried, anchorMs,
                             neighborInverted: neighborInverted,
                             expectedRelativeInversion: expectsInversion);

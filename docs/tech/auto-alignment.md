@@ -649,9 +649,10 @@ the coarse base(s) ± the period-scaled range.
   when supplied.
 - **Edge retry.** A result pinned to the window edge is retried once with range
   min(1.8 × half period, 3 ms) and a relaxed prior, since the base is suspect. The retry completes
-  the lobe the window cut off (`AlignmentSelection.LobeContinuation`: the retried candidate of the
-  wall pick's polarity nearest to it, provided it is not at the widened window's own wall); lobe
-  choice stays with the original window's rules. Only where the lobe is still not found does the
+  the lobe the window cut off (`AlignmentSelection.LobeContinuation`: of the widened window's optima,
+  uncapped because a completed lobe may trail the widened best by more than the candidate gap, the
+  one of the wall pick's polarity nearest to it on the far side of the wall, provided it is not at
+  the widened window's own wall); lobe choice stays with the original window's rules. Only where the lobe is still not found does the
   retry go through the same selection rules, because the raw best could be a flip + half-period
   impostor. Re-selecting over the widened window let the prior hop lobes: on 3RC's sub junction the
   wall pick at −0.62 ms continued to −0.83 ms, but a lobe 2.87 ms off, inverted, tied it on the

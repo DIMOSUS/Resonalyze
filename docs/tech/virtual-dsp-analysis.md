@@ -292,9 +292,9 @@ Search mechanics (`SearchBestDelay`, `SearchAlignmentCandidatesByLoss`):
   the prior 3 ms off (0.63 ms at 6 ms off) and by 0.10 ms at 350 Hz, so the engine's prior-free
   score still carried the window. A lobe the window cuts off now lands on the wall, where the prior
   used to pull it inside, so the post-check reads (`MeasureAlignedJunctionSpectrum`,
-  `MeasureJointlyAlignedJunctionSpectra`) retry a wall pick at double width, completing that lobe
-  (`AlignmentSelection.SelectWithEdgeRetry`, `LobeContinuation`; the engine's own edge retry does the
-  same). Measured on the archive (13 sessions) against the placing prior: Auto delay's proposals,
+  `MeasureJointlyAlignedJunctionSpectra`, the junction tuner's after-delay report and `ProbeAlignment`)
+  retry a wall pick at double width, completing that lobe (`AlignmentSelection.SelectWithEdgeRetry`,
+  `LobeContinuation`; the engine's own edge retry does the same). Measured on the archive (13 sessions) against the placing prior: Auto delay's proposals,
   judged by the panel, improve on average (mono, 36 junctions: +0.018 dB loss, +0.062 dB dip, 14
   better / 15 worse by loss + ½ dip; stereo, 72: +0.014 / +0.16, 34 / 27). The junction tuner
   (`AcousticTargetBattery`, 46 reads per arm) gains on every arm on its own objective, the sums read

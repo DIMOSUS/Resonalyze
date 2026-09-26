@@ -996,6 +996,15 @@ position while the averages sit unused. Tick it.
 
 ![Each channel's MMM button, and the Hybrid toggle they enable](assets/images/manual/hybrid-enable.png)
 
+**Averaged somewhere else?** A response averaged in REW (moving mic, array or several
+positions by hand) attaches the same way: export it with *Export measurement as text*
+and pick the `.txt` in **Attach capture...**. A window asks which calibration file REW
+applied (for an array or several microphones, each through its own file, answer
+**Already correct**) and whether the protective high-pass was in the path; the button then reads
+**File ✓**. Measure each driver alone with its DSP in bypass, keep one input gain for
+the whole set, and leave REW's *Align SPL* off — the hybrid compares the channels'
+levels, and nothing downstream can restore a balance the export erased.
+
 With Hybrid on, each channel's magnitude is drawn from its spatial average with that
 channel's own DSP chain added analytically — exact, since a filter does not depend on
 where the microphone was — so the curve you equalize stops carrying the dips of one

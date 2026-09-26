@@ -190,12 +190,16 @@ public sealed class VirtualCrossoverChannelSettings
     /// <summary>Source path relative to the imported session's folder; each write decides its own value. See docs/tech/virtual-dsp-session-file.md#source-paths.</summary>
     public string? SourceRelativePath { get; set; }
 
-    /// <summary>Moving-mic capture by path; not embedded (~900 kB per side through the debounced autosave).</summary>
+    /// <summary>Moving-mic capture or response file by path; not embedded (~900 kB per side through the debounced autosave).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SpatialAveragePath { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SpatialAverageRelativePath { get; set; }
+
+    /// <summary>Set when <see cref="SpatialAveragePath"/> is a response file: what the user stated about it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SpatialAverageFileSettings? SpatialAverageFile { get; set; }
 
     public Guid? HistoryEntryId { get; set; }
 
@@ -372,6 +376,7 @@ public sealed class VirtualCrossoverChannelSettings
         // A goal is held to the slopes an electrical edge of its family could have.
         ValidateAcoustic(AcousticLowPass);
         ValidateAcoustic(AcousticHighPass);
+        SpatialAverageFile?.Validate();
         // Range only, not the hardware's 5.625° grid: editors snap, and a hand-written angle still builds.
         if (!VirtualCrossoverLimits.PhaseRotation.Includes(PhaseRotationDegrees))
         {
@@ -578,7 +583,7 @@ public sealed class VirtualCrossoverProjectFile
     public const string CurrentFormat = "resonalyze-virtual-crossover";
 
     // Bump on an incompatible change and add a Migrate step. Newer files are never migrated: LoadOrDefault backs up, LoadFrom rejects.
-    public const int CurrentVersion = 11;
+    public const int CurrentVersion = 12;
 
     // Channel letters and the plot palette go up to this count.
     public const int MaximumChannelCount = 12;
@@ -1264,6 +1269,11 @@ public sealed class VirtualCrossoverProjectFile
         {
             // Bumped for the same reason as v10, for FIR kernels.
             file.Version = 11;
+        }
+        if (file.Version == 11)
+        {
+            // Bumped so an older build refuses a response file's answers rather than resaving its path as a capture's.
+            file.Version = 12;
         }
 
         // Re-align the wire sign and layout flag for files carrying only one; a negative sign wins over a missing flag.

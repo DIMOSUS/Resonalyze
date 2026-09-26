@@ -10,10 +10,11 @@ public partial class VirtualCrossoverChannelControl
         double? integratedSeconds,
         bool resolved,
         VirtualCrossoverSpatialAverageMode mode,
-        DateTimeOffset? measuredAtUtc = null)
+        DateTimeOffset? measuredAtUtc = null,
+        bool file = false)
     {
         VirtualCrossoverChannelAverageReadout readout = VirtualCrossoverChannelAverageReadout.Read(
-            title, integratedSeconds, resolved, mode, measuredAtUtc);
+            title, integratedSeconds, resolved, mode, measuredAtUtc, file);
         buttonSpatialAverage.Text = readout.Text;
         buttonSpatialAverage.ForeColor = readout.Color;
         spatialAverageTooltip = readout.Tooltip;

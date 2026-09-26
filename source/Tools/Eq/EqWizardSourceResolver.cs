@@ -322,9 +322,12 @@ internal sealed class EqWizardSourceResolver
     {
         ArgumentNullException.ThrowIfNull(document);
         LiveCaptureRecipe recipe = document.Recipe;
-        string method = document.Method == SpatialAverageMethod.MovingMic
-            ? "Moving microphone"
-            : document.Method.ToString();
+        string method = document.Method switch
+        {
+            SpatialAverageMethod.MovingMic => "Moving microphone",
+            SpatialAverageMethod.File => "Imported",
+            _ => document.Method.ToString()
+        };
         return
             $"{path}\r\n{method} spatial average" +
             (recipe.IntegratedSeconds > 0

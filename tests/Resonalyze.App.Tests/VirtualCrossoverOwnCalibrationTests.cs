@@ -74,6 +74,32 @@ public sealed class VirtualCrossoverOwnCalibrationTests
     }
 
     [Fact]
+    public void AResponseFileStatedAsAlreadyCorrect_IsNamedWhenACalibrationChoiceCannotReachIt()
+    {
+        var project = new VirtualCrossoverProjectFile
+        {
+            SpatialAverageMode = VirtualCrossoverSpatialAverageMode.MovingMic
+        };
+        var channel = new VirtualCrossoverChannel("left");
+        channel.SideState(false).SpatialAverage = new LiveCaptureDocument
+        {
+            Title = "rew array",
+            Method = SpatialAverageMethod.File,
+            CalibrationFixed = true,
+            CurveDb = [70.0, 70.0],
+            GridStartHz = 20,
+            GridStopHz = 20_000
+        };
+        IReadOnlyList<ProcessedChannel> drawn = [Channel("left", CapsuleA) with { Channel = channel }];
+
+        Assert.Contains("left", Warnings(own: false, project).DescribeFixedCalibration(drawn));
+        Assert.Null(Warnings(own: true, project).DescribeFixedCalibration(drawn));
+
+        channel.SideState(false).SpatialAverage!.CalibrationFixed = false;
+        Assert.Null(Warnings(own: false, project).DescribeFixedCalibration(drawn));
+    }
+
+    [Fact]
     public void ANamedCalibrationAnAggregateCannotTakeIsSaidOutLoud()
     {
         // A multi-capsule capture has no single mic to swap, so it keeps its own and the note must say so.

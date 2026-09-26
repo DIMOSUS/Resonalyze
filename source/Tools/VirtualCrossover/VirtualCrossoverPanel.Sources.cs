@@ -274,6 +274,7 @@ public partial class VirtualCrossoverPanel
         // Without a measurement the spatial average refines nothing; a kept reference would only warn.
         settings.SpatialAveragePath = null;
         settings.SpatialAverageRelativePath = null;
+        settings.SpatialAverageFile = null;
         UpdateSourceButton(channel);
         UpdateSideRadioTexts();
     }

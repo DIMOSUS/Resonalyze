@@ -74,6 +74,63 @@ public static class SpatialAverage
         return levels;
     }
 
+    /// <summary>A level table on any ascending grid (linear or logarithmic) onto <see cref="BuildGrid"/>: band mean of
+    /// power where points fall in a band, linear-in-log interpolation between the neighbours where none do, NaN
+    /// outside the table. See docs/tech/spatial-average.md#imported-text-files.</summary>
+    public static double[] FromLevels(
+        IReadOnlyList<double> frequenciesHz,
+        IReadOnlyList<double> levelsDb)
+    {
+        ArgumentNullException.ThrowIfNull(frequenciesHz);
+        ArgumentNullException.ThrowIfNull(levelsDb);
+        if (frequenciesHz.Count != levelsDb.Count)
+        {
+            throw new ArgumentException("Every frequency needs a level.", nameof(levelsDb));
+        }
+
+        IReadOnlyList<double> grid = BuildGrid();
+        var levels = new double[grid.Count];
+        double halfStep = Math.Sqrt(grid[1] / grid[0]);
+        int count = frequenciesHz.Count;
+        int next = 0;
+        for (int band = 0; band < grid.Count; band++)
+        {
+            double low = grid[band] / halfStep;
+            double high = grid[band] * halfStep;
+            while (next < count && frequenciesHz[next] < low)
+            {
+                next++;
+            }
+
+            double power = 0.0;
+            int inside = 0;
+            for (int point = next; point < count && frequenciesHz[point] < high; point++)
+            {
+                power += Math.Pow(10.0, levelsDb[point] / 10.0);
+                inside++;
+            }
+
+            if (inside > 0)
+            {
+                levels[band] = 10.0 * Math.Log10(power / inside);
+                continue;
+            }
+
+            // No point in the band: bridge the neighbours, never extrapolate past the table.
+            if (next == 0 || next >= count)
+            {
+                levels[band] = double.NaN;
+                continue;
+            }
+
+            double fraction = Math.Log(grid[band] / frequenciesHz[next - 1]) /
+                Math.Log(frequenciesHz[next] / frequenciesHz[next - 1]);
+            levels[band] = levelsDb[next - 1] + fraction * (levelsDb[next] - levelsDb[next - 1]);
+        }
+
+        return levels;
+    }
+
     /// <summary>Levels every microphone to the anchor (not the set mean), then averages.
     /// See docs/tech/spatial-average.md#levelling-to-the-anchor.</summary>
     public static SpatialAverageResult Average(

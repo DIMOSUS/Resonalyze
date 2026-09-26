@@ -5,18 +5,20 @@ namespace Resonalyze;
 internal sealed record VirtualCrossoverChannelAverageReadout(string Text, Color Color, string Tooltip)
 {
     /// <param name="resolved">False for a capture the session refers to but could not read.</param>
+    /// <param name="file">The attachment is a response file rather than a moving-microphone capture.</param>
     public static VirtualCrossoverChannelAverageReadout Read(
         string? title,
         double? integratedSeconds,
         bool resolved,
         VirtualCrossoverSpatialAverageMode mode,
-        DateTimeOffset? measuredAtUtc)
+        DateTimeOffset? measuredAtUtc,
+        bool file = false)
     {
         bool present = !string.IsNullOrWhiteSpace(title);
         string label = mode switch
         {
             VirtualCrossoverSpatialAverageMode.MicArray => "Array",
-            VirtualCrossoverSpatialAverageMode.MovingMic => "MMM",
+            VirtualCrossoverSpatialAverageMode.MovingMic => present && file ? "File" : "MMM",
             _ => "Avg off"
         };
         string text = mode == VirtualCrossoverSpatialAverageMode.Off
@@ -42,11 +44,12 @@ internal sealed record VirtualCrossoverChannelAverageReadout(string Text, Color 
                     "Click to change the method it reads.",
                 _ =>
                     "No spatial average for this channel." + newLine + newLine +
-                    "Click to attach a moving-microphone capture. The hybrid view " +
-                    "needs one on every channel that plays."
+                    "Click to attach a moving-microphone capture, or a response file " +
+                    "averaged elsewhere (REW's text export). The hybrid view needs one " +
+                    "on every channel that plays."
             }
             : resolved
-            ? $"Spatial average: {title}" +
+            ? (file ? $"Response file: {title}" : $"Spatial average: {title}") +
                 (integratedSeconds is { } seconds
                     ? $"{newLine}{seconds:0} s integrated"
                     : string.Empty) +
@@ -54,7 +57,9 @@ internal sealed record VirtualCrossoverChannelAverageReadout(string Text, Color 
                     ? $"{newLine}measured {measured.ToLocalTime():g}"
                     : string.Empty) +
                 newLine + newLine +
-                "Click to replace it, or to detach it."
+                (file
+                    ? "Click to change what it carries, replace it, or detach it."
+                    : "Click to replace it, or to detach it.")
             : $"Missing spatial average: {title}" + newLine +
                 "The session still refers to it, but the file could not be read." +
                 newLine + newLine +

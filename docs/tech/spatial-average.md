@@ -40,7 +40,11 @@ is identical for both, and no consumer branches on it. The method is recorded be
   fixed by the same reference the impulse responses use. Channels measured minutes or days apart are
   comparable by construction.
 
-A set may not mix the two methods (`LiveCaptureDocument.JudgeSet`). Mixing would need a per-channel
+A third method, **File**, is a response averaged elsewhere and imported as text; see
+[Imported text files](#imported-text-files). It is attached where moving-microphone
+captures are and read the same way.
+
+A set may not mix methods (`LiveCaptureDocument.JudgeSet`). Mixing would need a per-channel
 offset, and the per-channel offsets are exactly the spread detector: drawing with them would give a
 set that can never disagree with itself and a diagnostic that is identically zero.
 
@@ -73,7 +77,51 @@ the only hint a later relink has, and it tells the button to warn instead of sho
 never had an average. Once read, the actual path is pinned, because the project becomes the internal
 autosave right after import and that copy has no session file beside it to search from. Replacing a
 capture clears the relative path, which named the previously imported file. Arrays are not attached
-by path, so only moving-microphone captures can go missing.
+by path, so only attached captures and response files can go missing.
+
+## Imported text files
+
+`SpatialAverageFileImport` (`source/Tools/VirtualCrossover/SpatialAverageFile.cs`) turns a text
+response (`FrequencyResponseTextFile`, `dsp/`) into a `LiveCaptureDocument` with
+`SpatialAverageMethod.File`, so every consumer (hybrid, datum, audition, EQ Wizard handoff) reads it
+unchanged. Only the curve is filled: there is no analyzer frame and no bins, so `Validate` skips those
+checks for this method, and the document is built in memory and never saved as a capture.
+
+**What the user states.** A text file records none of what the capture recipe does, so the attach
+dialog (`VirtualCrossoverSpatialAverageFileDialog`) asks, and `SpatialAverageFileSettings` keeps the
+answers on the side beside the path. The file is re-read and rebuilt from them on every project load.
+
+- *Calibration in the levels*, stated as a curve (none, the channel measurement's file, one from the
+  list, or a file picked by hand). It is recorded as `CalibrationCorrectionDb` on the grid, exactly as
+  a capture records its own, so *Off* and *Specific* stay exact.
+- *Already correct* (`CalibratedAsIs`, the first choice and the default): a REW array or multi-position average went in with each
+  microphone through its own file, so no single curve can be undone or swapped. The document is marked
+  `CalibrationFixed` and `SpatialAverageHybrid.BuildChannelCurve` reads it as stored under every
+  calibration mode, which covers the plot, the datum, the audition and the EQ Wizard handoff at once.
+  It is a flag of its own rather than `CalibrationIsAggregate`, whose warnings speak of array
+  positions; `DescribeFixedCalibration` names such channels while Mic cal is not Own. The datum then
+  pairs a calibrated curve with the raw impulse response, so the calibration's shape enters it; the
+  median absorbs its broadband part.
+- *Protective high-pass in the measured path*, divided out with
+  `ProtectiveHighPassCompensation.MagnitudeCorrectionDb` — the model, cap and fade the swept path
+  uses — realized at the channel measurement's rate (the rate that divided the same filter out of its
+  IR), or at the file's own rate when the channel had no measurement at attach time. The default answer is what that measurement recorded (`ResolvedVirtualDspSource.ProtectiveHighPass`).
+
+**Onto the grid.** `SpatialAverage.FromLevels` takes any ascending grid. Where points fall inside a
+band it takes their power mean, which is what an unsmoothed linear export needs at the top (hundreds of
+points per band; sampling a few would report whichever modal notch the point landed on). Where no point
+falls it interpolates linearly in log frequency between the neighbours, which is what a sparse or
+log-spaced export needs at the bottom. Past the table it is NaN, never extrapolated.
+
+**Warnings, not refusals.** No REW header, a stated smoothing, a span short of 20 Hz–20 kHz, and
+fewer than 12 points per octave in the sparsest octave (`CoarsePointsPerOctave`, the 1/12 octave a
+moving-microphone capture integrates over) are listed in the dialog. The file is the user's: the
+feature exists for averages Resonalyze cannot take itself.
+
+**Set rules.** A set of files has no recipe and no session to compare, so `JudgeSet` accepts it; the
+moving-microphone offset rule (median of datums) levels it, and the spread is the only witness to a
+file exported at another gain or with REW's per-file SPL alignment. Files never share a set with
+captures (different levelling, same argument as arrays against captures).
 
 ## Coverage and set verdict
 

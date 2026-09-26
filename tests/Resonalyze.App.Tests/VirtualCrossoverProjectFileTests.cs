@@ -428,6 +428,48 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void AResponseFilesAnswers_RoundTripThroughTheProjectFile()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            saved.Pairs[1].Left.SpatialAveragePath = Path.Combine(root, "l mid.txt");
+            saved.Pairs[1].Left.SpatialAverageFile = new SpatialAverageFileSettings
+            {
+                Calibration = new VirtualCrossoverCalibrationSettings
+                {
+                    Name = "umik",
+                    Points = [[20.0, 1.5], [20_000.0, -2.0]]
+                },
+                HighPassKind = ProtectiveHighPassKind.LinkwitzRiley,
+                HighPassFrequencyHz = 1_500,
+                HighPassSlopeDbPerOctave = 48,
+                HighPassSampleRateHz = 96_000
+            };
+            saved.Pairs[2].Left.SpatialAverageFile = new SpatialAverageFileSettings { CalibratedAsIs = true };
+            saved.Save(root);
+
+            VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            SpatialAverageFileSettings answers = loaded.Pairs[1].Left.SpatialAverageFile!;
+            Assert.Equal("umik", answers.Calibration!.Name);
+            Assert.Equal([[20.0, 1.5], [20_000.0, -2.0]], answers.Calibration.Points);
+            Assert.Equal(
+                new ProtectiveHighPassConfiguration(ProtectiveHighPassKind.LinkwitzRiley, 1_500, 48),
+                answers.HighPass);
+            Assert.Equal(96_000, answers.HighPassSampleRateHz);
+            Assert.False(answers.CalibratedAsIs);
+            Assert.True(loaded.Pairs[2].Left.SpatialAverageFile!.CalibratedAsIs);
+            Assert.Null(loaded.Pairs[0].Left.SpatialAverageFile);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void TheTuneJunctionDialogsMemory_RoundTrips_AndWhatItCannotUseIsDropped()
     {
         string root = CreateTemporaryDirectory();

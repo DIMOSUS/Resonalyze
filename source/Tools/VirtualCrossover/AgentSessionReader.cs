@@ -137,10 +137,14 @@ internal sealed class AgentSessionReader(
                 : AgentSessionFingerprint.ContentDigest(
                     calibration.Points.SelectMany(point => new[] { point.FrequencyHz, point.Decibels }));
 
+        // A response file has no session id; the answers given about it move its curve and its calibration.
         static string Capture(LiveCaptureDocument? document) =>
             document == null
                 ? string.Empty
-                : $"{document.CaptureSessionId:D}/{document.SavedAtUtc.UtcTicks}/{document.Method}";
+                : $"{document.CaptureSessionId:D}/{document.SavedAtUtc.UtcTicks}/{document.Method}" +
+                  (document.Method == SpatialAverageMethod.File
+                      ? $"/{document.CalibrationFixed}/{Digest(document.CurveDb)}/{Digest(document.CalibrationCorrectionDb)}"
+                      : string.Empty);
 
         static string Edge(CrossoverEdge edge) =>
             $"{edge.Family}/{Number(edge.FrequencyHz)}/{edge.SlopeDbPerOctave}/{Number(edge.RippleDb)}";

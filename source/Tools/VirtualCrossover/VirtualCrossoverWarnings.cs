@@ -74,6 +74,14 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
                 VirtualCrossoverWarningLevel.Caution);
         }
 
+        if (hybrid != null && DescribeFixedCalibration(plotted) is { } fixedCalibration)
+        {
+            return new(
+                "⚠ Some averages ignore the calibration choice.",
+                fixedCalibration,
+                VirtualCrossoverWarningLevel.Caution);
+        }
+
         if (DescribeForeignCalibration(plotted, hybrid) is { } foreign)
         {
             return session.Calibration.Selected == null
@@ -186,6 +194,27 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
             "truth there is. Everything else on the plot is read through your " +
             "selection.\r\n\r\nSelect \"Own (as measured)\" to read the whole plot " +
             "the way each measurement was taken, and the note goes away.";
+    }
+
+    /// <summary>Off or a named curve, null unless a drawn response file was stated as already correct.</summary>
+    internal string? DescribeFixedCalibration(IReadOnlyList<ProcessedChannel> processed)
+    {
+        if (session.Calibration.Own)
+        {
+            return null;
+        }
+
+        List<string> names = processed
+            .Where(item => item.Channel.SideState(session.ActiveSideRight)
+                .SpatialAverageFor(session.SpatialAverageMode) is { CalibrationFixed: true })
+            .Select(item => $"{item.Channel.Name} {item.Channel.Settings.DisplayName}")
+            .ToList();
+        return names.Count == 0
+            ? null
+            : $"{string.Join(", ", names)} " + (names.Count == 1 ? "is a response file" : "are response files") +
+              " stated as already correct, so they are drawn as stored and your calibration " +
+              "choice does not reach them; everything else is read through it." +
+              "\r\n\r\nSelect \"Own (as measured)\" and the note goes away.";
     }
 
     /// <summary>Off or a named curve, null unless a drawn channel was measured through a different one.</summary>
@@ -398,12 +427,19 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
         HybridMagnitudes hybrid, IReadOnlyList<ProcessedChannel> processed)
     {
         bool arrays = session.SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray;
+        // One set never mixes methods, so any member says what the set is.
+        bool files = hybrid.SetDatumsDb.Any(entry =>
+            entry.Channel.SideState(entry.RightSide).SpatialAverageFor(session.SpatialAverageMode)
+                is { Method: SpatialAverageMethod.File });
         var lines = new StringBuilder();
         lines.Append(
             arrays
                 ? "Every array is referenced to the same loopback its impulse " +
                     "response is, so each should sit on it, within about a dB. " +
                     "These stand off by:\r\n\r\n"
+                : files
+                ? "Response files measured at one input gain sit the same distance " +
+                    "from their impulse responses. These do not:\r\n\r\n"
                 : "Every capture in one set is taken with one analyzer recipe at one " +
                     "input gain, so each channel should sit the same distance from " +
                     "its impulse response. These do not:\r\n\r\n");
@@ -444,6 +480,12 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
                     "different input, a different calibration, or a driver that was " +
                     "not the one being measured. The hybrid still draws each array at " +
                     "the level it measured."
+                : files
+                ? "\r\nUsually one file was measured at a different input gain, or " +
+                    "exported with REW's Align SPL, which levels every file to one " +
+                    "target. A wrong answer about its calibration or high-pass shows " +
+                    "here too. The hybrid still draws: one offset serves the whole " +
+                    "set, so a channel that disagrees is drawn at the level it claims."
                 : "\r\nUsually one capture was taken with a different input gain, a " +
                     "different frame length or window (which moves the noise-slope " +
                     "compensation), or belongs to another session. The hybrid still " +

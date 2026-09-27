@@ -424,6 +424,45 @@ public sealed class OverlaySessionTests : IDisposable
         Assert.Equal(-10.0, ImpulseSeriesOf(1).Points[0].X, 9);
     }
 
+    [Fact]
+    public void AnImpulseSlot_IsRenderedAgainOnlyWhenWhatItDrawsFromChanges()
+    {
+        mode = Mode.ImpulseResponse;
+        ImpulseOverlayFrame frame = ImpulseFrame(origin: 0);
+        sources.SetImpulseFrameProvider(() => frame);
+        sources.SetImpulseCaptureProvider(_ => new ImpulseOverlayCapture(
+            [new SignalPoint(100, 0.0), new SignalPoint(110, 1.0), new SignalPoint(120, 0.0)],
+            AnalysisCurveKind.Primary,
+            1.0,
+            48_000));
+        session.Prepare(mode);
+        var impulse = new LineSeries { Title = "Impulse", Tag = new CurveTag(Mode.ImpulseResponse, AnalysisCurveKind.Primary) };
+        impulse.Points.AddRange([new DataPoint(100, 0.0), new DataPoint(110, 1.0), new DataPoint(120, 0.0)]);
+        model.Series.Add(impulse);
+        session.Capture(Slot(1), impulse);
+        DataPoint[] drawn = Slot(1).DrawPoints!;
+
+        session.Hide(Slot(1));
+        session.Show(Slot(1));
+        Assert.Same(drawn, Slot(1).DrawPoints);
+
+        session.SetOffset(Slot(1), 2m);
+        Assert.NotSame(drawn, Slot(1).DrawPoints);
+        Assert.Equal(3.0, Slot(1).DrawPoints![1].Y, 9);
+        drawn = Slot(1).DrawPoints!;
+
+        frame = ImpulseFrame(origin: 10);
+        session.Show(Slot(1));
+        Assert.Equal(100.0, Slot(1).DrawPoints![1].X, 9);
+        drawn = Slot(1).DrawPoints!;
+
+        // The same options object edited in place still counts as a change.
+        frame.Options.TimeUnit = ImpulseTimeUnit.Milliseconds;
+        session.Show(Slot(1));
+        Assert.NotSame(drawn, Slot(1).DrawPoints);
+        Assert.Equal(100.0 * 1000.0 / 48_000, Slot(1).DrawPoints![1].X, 9);
+    }
+
     private static ImpulseOverlayFrame ImpulseFrame(double origin) =>
         new(
             new ImpulseResponseOptions

@@ -856,8 +856,19 @@ internal sealed class OverlaySession
         }
     }
 
-    private void UpdateDrawPoints(OverlaySlot slot) =>
+    // An impulse capture is millions of points and several paths ask twice in a row (update, then Show), or on every Show:
+    // it is rendered again only when something the render reads has changed.
+    private void UpdateDrawPoints(OverlaySlot slot)
+    {
+        object? key = Curves.ImpulseDrawKey(slot);
+        if (key != null && slot.DrawPoints != null && key.Equals(slot.DrawPointsKey))
+        {
+            return;
+        }
+
         slot.DrawPoints = Curves.CapturedPoints(slot, slot.State.SmoothingInverseOctaves);
+        slot.DrawPointsKey = key;
+    }
 
     private void Refresh(PlotModel model)
     {
@@ -892,6 +903,7 @@ internal sealed class OverlaySession
     {
         slot.State = slot.Empty with { Mode = mode };
         slot.DrawPoints = null;
+        slot.DrawPointsKey = null;
         slot.Checked = false;
         slot.CheckEnabled = false;
         slot.OffsetEnabled = false;

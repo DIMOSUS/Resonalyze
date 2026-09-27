@@ -176,8 +176,37 @@ internal static class ImpulseOverlayThinning
     }
 }
 
+/// <summary>Everything <see cref="ImpulseOverlayRenderer.Render"/> reads, copied by value: equal keys draw equal points, and an options
+/// object edited in place still changes the key.</summary>
+internal readonly record struct ImpulseOverlayRenderKey(
+    IReadOnlyList<SignalPoint> Samples,
+    AnalysisCurveKind Kind,
+    double PeakReference,
+    int CaptureSampleRate,
+    ImpulseTimeUnit TimeUnit,
+    ImpulseAmplitudeScale AmplitudeScale,
+    bool Invert,
+    bool NormalizeStepToImpulsePeak,
+    double OriginSamples,
+    double? ReferencePeak,
+    int SampleRate);
+
 internal static class ImpulseOverlayRenderer
 {
+    public static ImpulseOverlayRenderKey Key(ImpulseOverlayCapture capture, ImpulseOverlayFrame frame) =>
+        new(
+            capture.Samples,
+            capture.Kind,
+            capture.PeakReference,
+            capture.SampleRateHz,
+            frame.Options.TimeUnit,
+            frame.Options.AmplitudeScale,
+            frame.Options.Invert,
+            frame.Options.NormalizeStepToImpulsePeak,
+            frame.OriginSamples,
+            frame.ReferencePeak,
+            frame.SampleRate);
+
     public static DataPoint[] Render(
         ImpulseOverlayCapture capture,
         ImpulseOverlayFrame frame)

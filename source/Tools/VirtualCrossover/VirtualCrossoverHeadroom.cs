@@ -3,10 +3,11 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>One side's headroom: 0 dB less the chain's peak gain in the audio band. Negative clips a full-scale signal.</summary>
-internal readonly record struct HeadroomReading(double HeadroomDb, double PeakHz, bool Bypass)
+/// <summary>One side's headroom: 0 dB less the chain's peak gain in the audio band. Negative clips a full-scale signal.
+/// <see cref="Pending"/>: a FIR chain still being read, no figure yet.</summary>
+internal readonly record struct HeadroomReading(double HeadroomDb, double PeakHz, bool Bypass, bool Pending = false)
 {
-    public bool Clips => IsClip(HeadroomDb);
+    public bool Clips => !Pending && IsClip(HeadroomDb);
 
     /// <summary>On the figure as shown (a tenth of a dB), so the colour always agrees with its sign and float noise at
     /// 0 dB stays green. Every headroom read-out colours by it.</summary>
@@ -17,97 +18,60 @@ internal readonly record struct HeadroomReading(double HeadroomDb, double PeakHz
 internal sealed record HeadroomRow(string Channel, bool Mono, HeadroomReading? Left, HeadroomReading? Right);
 
 /// <summary>Headroom of every enabled block on both sides, whatever the view shows: the device clips on any output.
-/// Remembers each chain's peak, so a frame re-reads only the chains an edit changed. See
-/// docs/tech/virtual-dsp-analysis.md#headroom.</summary>
-internal sealed class VirtualCrossoverHeadroom
+/// See docs/tech/virtual-dsp-analysis.md#headroom.</summary>
+internal static class VirtualCrossoverHeadroom
 {
-    // Only the last read's chains: an older chain can hold a replaced FIR kernel and its caches.
-    private readonly Dictionary<DspChainResponseKey, (double PeakHz, double PeakDb)> peaks = [];
-
     /// <summary>What <see cref="Read"/> needs, taken on the UI thread; null chains are sides without a measurement.</summary>
     internal sealed record Input(
         string Channel, bool Mono, bool Bypass, DspChainResponseKey? Left, DspChainResponseKey? Right);
 
-    public static List<Input> Capture(IReadOnlyList<VirtualCrossoverChannel> channels)
+    /// <summary>Every enabled block, measured or not: an unmeasured side reads —.</summary>
+    public static List<Input> Capture(IReadOnlyList<VirtualCrossoverChannel> channels) =>
+        [
+            .. channels
+                .Where(channel => channel.Pair.Enabled)
+                .Select(channel => new Input(
+                    channel.Name,
+                    channel.Pair.Mono,
+                    channel.Pair.Bypass,
+                    SideKey(channel, rightSide: false),
+                    channel.Pair.Mono ? null : SideKey(channel, rightSide: true)))
+        ];
+
+    /// <summary>The chain a side's output runs through, as the chain plot draws it; null without a measurement or a
+    /// usable rate (it reads as unmeasured rather than failing the frame).</summary>
+    public static DspChainResponseKey? SideKey(VirtualCrossoverChannel channel, bool rightSide) =>
+        channel.SideState(rightSide).TransferImpulseResponse == null ||
+        channel.ProcessorSampleRateFor(rightSide) <= 0
+            ? null
+            // The bulk delay cannot change a magnitude.
+            : new DspChainResponseKey(
+                channel.Pair.Bypass
+                    ? DspChannelChain.Identity
+                    : channel.Pair.ToChain(rightSide) with { DelayMs = 0 },
+                channel.ProcessorSampleRateFor(rightSide));
+
+    /// <summary>Reads through <paramref name="reader"/>, which then keeps only these chains; a FIR side not read yet is
+    /// <see cref="HeadroomReading.Pending"/> until the reader's fill lands.</summary>
+    public static List<HeadroomRow> Read(ChainHeadroomReader reader, IReadOnlyList<Input> inputs)
     {
-        var inputs = new List<Input>();
-        foreach (VirtualCrossoverChannel channel in channels)
-        {
-            if (!channel.Pair.Enabled)
-            {
-                continue;
-            }
-
-            // A side without a rate cannot be realized; it reads as unmeasured rather than failing the frame.
-            DspChainResponseKey? Side(bool rightSide) =>
-                channel.SideState(rightSide).TransferImpulseResponse == null ||
-                channel.ProcessorSampleRateFor(rightSide) <= 0
-                    ? null
-                    // The bulk delay cannot change a magnitude.
-                    : new DspChainResponseKey(
-                        channel.Pair.Bypass
-                            ? DspChannelChain.Identity
-                            : channel.Pair.ToChain(rightSide) with { DelayMs = 0 },
-                        channel.ProcessorSampleRateFor(rightSide));
-
-            DspChainResponseKey? left = Side(rightSide: false);
-            DspChainResponseKey? right = channel.Pair.Mono ? null : Side(rightSide: true);
-            if (left != null || right != null)
-            {
-                inputs.Add(new Input(channel.Name, channel.Pair.Mono, channel.Pair.Bypass, left, right));
-            }
-        }
-
-        return inputs;
-    }
-
-    public List<HeadroomRow> Read(IReadOnlyList<Input> inputs)
-    {
-        List<HeadroomRow> rows =
+        reader.Keep([.. inputs.SelectMany(input => new[] { input.Left, input.Right }).OfType<DspChainResponseKey>()]);
+        return
         [
             .. inputs.Select(input => new HeadroomRow(
                 input.Channel,
                 input.Mono,
-                Reading(input.Left, input.Bypass),
-                Reading(input.Right, input.Bypass)))
+                Reading(reader, input.Left, input.Bypass),
+                Reading(reader, input.Right, input.Bypass)))
         ];
-        var live = inputs.SelectMany(input => new[] { input.Left, input.Right }).OfType<DspChainResponseKey>().ToHashSet();
-        lock (peaks)
-        {
-            foreach (DspChainResponseKey stale in peaks.Keys.Where(key => !live.Contains(key)).ToList())
-            {
-                peaks.Remove(stale);
-            }
-        }
-
-        return rows;
     }
 
-    private HeadroomReading? Reading(DspChainResponseKey? side, bool bypass)
-    {
-        if (side == null)
-        {
-            return null;
-        }
-
-        (double PeakHz, double PeakDb) peak;
-        bool known;
-        lock (peaks)
-        {
-            known = peaks.TryGetValue(side, out peak);
-        }
-
-        if (!known)
-        {
-            peak = DspChainPeak.InAudioBand(side.Chain, side.ProcessorSampleRate);
-            lock (peaks)
-            {
-                peaks[side] = peak;
-            }
-        }
-
-        return new HeadroomReading(-peak.PeakDb, peak.PeakHz, bypass);
-    }
+    private static HeadroomReading? Reading(ChainHeadroomReader reader, DspChainResponseKey? side, bool bypass) =>
+        side == null
+            ? null
+            : reader.Peak(side) is { } peak
+                ? new HeadroomReading(-peak.PeakDb, peak.PeakHz, bypass)
+                : new HeadroomReading(0, 0, bypass, Pending: true);
 
     /// <summary>The runs of a curve above 0 dB, each opening and closing on 0 dB at its interpolated crossings, for the
     /// chain plot's fill; a curve that never rises above 0 dB has none.</summary>
@@ -185,6 +149,7 @@ internal sealed class VirtualCrossoverHeadroom
         {
             null => new ToneSpan("      —"),
             { Bypass: true } => new ToneSpan("    byp", TextTone.Good),
+            { Pending: true } => new ToneSpan("      …"),
             { } value => new ToneSpan(
                 $"{value.HeadroomDb,7:+0.0;-0.0;0.0}", value.Clips ? TextTone.Bad : TextTone.Good)
         };
@@ -199,17 +164,25 @@ internal sealed class VirtualCrossoverHeadroom
         var lines = new List<string> { "Headroom: 0 dB less the chain's peak gain, 20 Hz – 20 kHz; below 0 clips. Peak at:" };
         foreach (HeadroomRow row in rows)
         {
-            IEnumerable<string> sides = row.Mono
+            List<string> sides = row.Mono
                 ? [Peak(row.Left)]
-                : new[] { ("L", row.Left), ("R", row.Right) }
-                    .Where(side => side.Item2 != null)
-                    .Select(side => $"{side.Item1} {Peak(side.Item2)}");
-            lines.Add($"{row.Channel}: {string.Join(", ", sides)}");
+                : [
+                    .. new[] { ("L", row.Left), ("R", row.Right) }
+                        .Where(side => side.Item2 != null)
+                        .Select(side => $"{side.Item1} {Peak(side.Item2)}")
+                ];
+            lines.Add($"{row.Channel}: {(sides.Count > 0 ? string.Join(", ", sides) : "—")}");
         }
 
         return string.Join("\r\n", lines);
     }
 
     private static string Peak(HeadroomReading? reading) =>
-        reading is { Bypass: false } value ? FrequencyText.Format(value.PeakHz) : "bypassed";
+        reading switch
+        {
+            null => "—",
+            { Bypass: true } => "bypassed",
+            { Pending: true } => "…",
+            { } value => FrequencyText.Format(value.PeakHz)
+        };
 }

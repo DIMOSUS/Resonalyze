@@ -45,27 +45,28 @@ public sealed class EqWizardHeadroomTests
     [Fact]
     public void AChainWithoutAFir_IsReadAtOnce()
     {
-        var reader = new EqWizardHeadroom();
+        var reader = new ChainHeadroomReader();
         var key = new DspChainResponseKey(new DspChannelChain(GainDb: -3), SampleRate);
 
-        Assert.Equal(3, reader.Read(key)!.Value, 6);
+        Assert.Equal(3, EqWizardHeadroom.Read(reader, key)!.Value, 6);
+        Assert.False(reader.Waiting);
     }
 
     [Fact]
-    public async Task AFirChain_LandsInTheBackground_AndOnlyTheLatestRequestLands()
+    public async Task AFirChain_IsReadInTheBackground_AndOnlyTheChainStillShownIsKept()
     {
-        var reader = new EqWizardHeadroom();
+        var reader = new ChainHeadroomReader();
         DspChainResponseKey older = FirKey(gainDb: -1);
         DspChainResponseKey latest = FirKey(gainDb: -4);
-        var landed = new List<double>();
+        int landings = 0;
 
-        Assert.Null(reader.Read(older));
-        Assert.Null(reader.Read(latest));
-        await reader.FillAsync(landed.Add);
+        Assert.Null(EqWizardHeadroom.Read(reader, older));
+        Assert.Null(EqWizardHeadroom.Read(reader, latest));
+        await reader.FillAsync(() => landings++);
 
-        double value = Assert.Single(landed);
-        Assert.Equal(EqWizardHeadroom.Of(latest), value, 9);
-        Assert.Equal(value, reader.Read(latest)!.Value, 9);
+        Assert.Equal(1, landings);
+        Assert.Equal(EqWizardHeadroom.Of(latest), -reader.KnownPeak(latest)!.Value.PeakDb, 9);
+        Assert.Null(reader.KnownPeak(older));
     }
 
     private static DspChainResponseKey FirKey(double gainDb)

@@ -85,7 +85,10 @@ public partial class VirtualCrossoverPanel
                 ? DspChannelChain.Identity
                 : channel.Settings.ToChain(channel.Pair.Zone) with { DelayMs = 0 };
             curves.Add(new DspChainCurve(
-                $"{channel.Name} filter", chain, session.ProcessorSampleRateHz, VirtualCrossoverColors.Channel(i)));
+                $"{channel.Name} filter", chain, session.ProcessorSampleRateHz, VirtualCrossoverColors.Channel(i),
+                VirtualCrossoverHeadroom.SideKey(channel, session.ActiveSideRight) is { } key
+                    ? headroomReader.KnownPeak(key)?.PeakHz
+                    : null));
         }
 
         dspChainPlot.Draw(CurrentDspPlotMode(), curves);

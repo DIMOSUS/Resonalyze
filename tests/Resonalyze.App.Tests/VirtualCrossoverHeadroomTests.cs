@@ -32,7 +32,7 @@ public class VirtualCrossoverHeadroomTests
         channel.Pair.Left.PeqBands = [new PeqBand(2_000, 4, 5)];
         channel.Pair.Right.GainDb = -6;
 
-        HeadroomRow row = Assert.Single(new VirtualCrossoverHeadroom().Read(VirtualCrossoverHeadroom.Capture([channel])));
+        HeadroomRow row = Assert.Single(VirtualCrossoverHeadroom.Read(new ChainHeadroomReader(), VirtualCrossoverHeadroom.Capture([channel])));
 
         Assert.Equal(-2, row.Left!.Value.HeadroomDb, 3);
         Assert.True(row.Left.Value.Clips);
@@ -46,15 +46,15 @@ public class VirtualCrossoverHeadroomTests
     {
         VirtualCrossoverChannel channel = Channel("A", measuredRight: false);
         channel.Pair.Left.PeqBands = [new PeqBand(500, 2, 3)];
-        var reader = new VirtualCrossoverHeadroom();
-        reader.Read(VirtualCrossoverHeadroom.Capture([channel]));
+        var reader = new ChainHeadroomReader();
+        VirtualCrossoverHeadroom.Read(reader, VirtualCrossoverHeadroom.Capture([channel]));
 
         channel.Pair.Left.PeqBands = [new PeqBand(500, 2, 1)];
-        HeadroomRow band = Assert.Single(reader.Read(VirtualCrossoverHeadroom.Capture([channel])));
+        HeadroomRow band = Assert.Single(VirtualCrossoverHeadroom.Read(reader, VirtualCrossoverHeadroom.Capture([channel])));
         channel.Pair.Left.PeqPreampDb = -2;
-        HeadroomRow preamp = Assert.Single(reader.Read(VirtualCrossoverHeadroom.Capture([channel])));
+        HeadroomRow preamp = Assert.Single(VirtualCrossoverHeadroom.Read(reader, VirtualCrossoverHeadroom.Capture([channel])));
         channel.Pair.Left.DelayMs = 3;
-        HeadroomRow delayed = Assert.Single(reader.Read(VirtualCrossoverHeadroom.Capture([channel])));
+        HeadroomRow delayed = Assert.Single(VirtualCrossoverHeadroom.Read(reader, VirtualCrossoverHeadroom.Capture([channel])));
 
         Assert.Equal(-1, band.Left!.Value.HeadroomDb, 3);
         Assert.Equal(1, preamp.Left!.Value.HeadroomDb, 3);
@@ -62,7 +62,7 @@ public class VirtualCrossoverHeadroomTests
     }
 
     [Fact]
-    public void Capture_SkipsDisabledAndUnmeasured_AndReadsAMonoBlockOnce()
+    public void Capture_KeepsEveryEnabledBlock_MeasuredOrNot_AndReadsAMonoBlockOnce()
     {
         VirtualCrossoverChannel disabled = Channel("A");
         disabled.Pair.Enabled = false;
@@ -73,15 +73,57 @@ public class VirtualCrossoverHeadroomTests
         mono.Pair.Left.GainDb = 4;
         mono.Pair.Right.GainDb = -20;
 
-        List<HeadroomRow> rows =
-            new VirtualCrossoverHeadroom().Read(VirtualCrossoverHeadroom.Capture([disabled, unmeasured, halfMeasured, mono]));
+        List<HeadroomRow> rows = VirtualCrossoverHeadroom.Read(
+            new ChainHeadroomReader(),
+            VirtualCrossoverHeadroom.Capture([disabled, unmeasured, halfMeasured, mono]));
 
-        Assert.Equal(["C", "D"], rows.Select(row => row.Channel));
-        Assert.NotNull(rows[0].Left);
+        Assert.Equal(["B", "C", "D"], rows.Select(row => row.Channel));
+        Assert.Null(rows[0].Left);
         Assert.Null(rows[0].Right);
-        Assert.True(rows[1].Mono);
-        Assert.Equal(-4, rows[1].Left!.Value.HeadroomDb, 3);
+        Assert.NotNull(rows[1].Left);
         Assert.Null(rows[1].Right);
+        Assert.True(rows[2].Mono);
+        Assert.Equal(-4, rows[2].Left!.Value.HeadroomDb, 3);
+        Assert.Null(rows[2].Right);
+    }
+
+    [Fact]
+    public void AnUnmeasuredBlock_ReadsAsDashes_InTheColumnAndTheTooltip()
+    {
+        var rows = new List<HeadroomRow> { new("B", false, null, null), new("E", true, null, null) };
+
+        List<ToneLine> lines = VirtualCrossoverHeadroom.FormatCompact(rows);
+        string[] detail = VirtualCrossoverHeadroom.FormatDetail(rows).Split("\r\n");
+
+        Assert.All(
+            lines.Where(line => line.Text.StartsWith('B') || line.Text.StartsWith('E')),
+            line => Assert.Contains("—", line.Text));
+        Assert.Contains("—", Assert.Single(detail, line => line.StartsWith("B:")));
+        string e = Assert.Single(detail, line => line.StartsWith("E:"));
+        Assert.Contains("—", e);
+        Assert.DoesNotContain("bypass", e);
+    }
+
+    [Fact]
+    public async Task AFirSide_IsPendingUntilTheReaderLandsIt_AndNeverColoursAsAClip()
+    {
+        VirtualCrossoverChannel channel = Channel("A", measuredRight: false);
+        double[] kernel = new double[64];
+        kernel[32] = 2;
+        channel.Pair.Left.Fir = new FirFilter(kernel);
+        var reader = new ChainHeadroomReader();
+
+        HeadroomReading pending = Assert.Single(
+            VirtualCrossoverHeadroom.Read(reader, VirtualCrossoverHeadroom.Capture([channel]))).Left!.Value;
+        await reader.FillAsync(() => { });
+        HeadroomReading landed = Assert.Single(
+            VirtualCrossoverHeadroom.Read(reader, VirtualCrossoverHeadroom.Capture([channel]))).Left!.Value;
+
+        Assert.True(pending.Pending);
+        Assert.False(pending.Clips);
+        Assert.False(landed.Pending);
+        Assert.Equal(-20 * Math.Log10(2), landed.HeadroomDb, 3);
+        Assert.True(landed.Clips);
     }
 
     [Fact]
@@ -91,7 +133,7 @@ public class VirtualCrossoverHeadroomTests
         channel.Pair.Bypass = true;
         channel.Pair.Left.GainDb = 12;
 
-        HeadroomRow row = Assert.Single(new VirtualCrossoverHeadroom().Read(VirtualCrossoverHeadroom.Capture([channel])));
+        HeadroomRow row = Assert.Single(VirtualCrossoverHeadroom.Read(new ChainHeadroomReader(), VirtualCrossoverHeadroom.Capture([channel])));
 
         Assert.True(row.Left!.Value.Bypass);
         Assert.Equal(0, row.Left.Value.HeadroomDb, 9);
@@ -192,7 +234,7 @@ public class VirtualCrossoverHeadroomTests
         VirtualCrossoverChannel channel = Channel("A");
         channel.SideState(rightSide: true).SampleRate = 0;
 
-        HeadroomRow row = Assert.Single(new VirtualCrossoverHeadroom().Read(VirtualCrossoverHeadroom.Capture([channel])));
+        HeadroomRow row = Assert.Single(VirtualCrossoverHeadroom.Read(new ChainHeadroomReader(), VirtualCrossoverHeadroom.Capture([channel])));
 
         Assert.NotNull(row.Left);
         Assert.Null(row.Right);
@@ -223,5 +265,32 @@ public class VirtualCrossoverHeadroomTests
     {
         box.Select(start, 2);
         return box.SelectionColor.ToArgb();
+    }
+
+    // A 6 Hz FIR lobe over a -6 dB floor: no point of the plot's grid rises above 0 dB, only the peak the headroom found.
+    [Fact]
+    public void TheChainPlotFillsAFirLobeTheGridMisses_OnceItIsGivenThePeak()
+    {
+        const int rate = 48_000;
+        double[] kernel = new double[16_384];
+        for (int n = 0; n < kernel.Length; n++)
+        {
+            kernel[n] = 2.0 / kernel.Length * Math.Cos(2 * Math.PI * 4_321.7 / rate * n);
+        }
+
+        kernel[0] += 0.5;
+        var chain = new DspChannelChain(Fir: new FirFilter(kernel));
+        (double peakHz, _) = DspChainPeak.InAudioBand(chain, rate);
+
+        int Fills(double? peak)
+        {
+            using var plotView = new OxyPlot.WindowsForms.PlotView();
+            var plot = new VirtualCrossoverDspChainPlot(plotView, DspPlotMode.Magnitude);
+            plot.Draw(DspPlotMode.Magnitude, [new DspChainCurve("A filter", chain, rate, OxyColors.Red, peak)]);
+            return ((PlotModel)plotView.Model).Series.OfType<OxyPlot.Series.AreaSeries>().Count();
+        }
+
+        Assert.Equal(0, Fills(null));
+        Assert.Equal(1, Fills(peakHz));
     }
 }

@@ -31,7 +31,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private readonly VirtualCrossoverAudition audition;
     private readonly VirtualCrossoverSharedScale sharedScale;
     private readonly VirtualCrossoverSideLock sideLock = new();
-    private readonly VirtualCrossoverHeadroom headroomReader = new();
+    private readonly ChainHeadroomReader headroomReader = new();
 
     private readonly VirtualCrossoverProcessingCoordinator processingCoordinator = new();
     private readonly VirtualCrossoverMetrics metrics;

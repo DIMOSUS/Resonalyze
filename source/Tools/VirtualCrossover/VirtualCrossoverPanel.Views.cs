@@ -187,9 +187,11 @@ public partial class VirtualCrossoverPanel
         // The whole set is kept: the junction views and opposite-side read-outs need channels this view does not draw.
         session.LastRender = render;
 
-        // Every enabled block, whatever the view shows; a FIR's refinement reads its kernel, so off the UI thread.
-        List<VirtualCrossoverHeadroom.Input> headroomInputs = VirtualCrossoverHeadroom.Capture(session.Channels);
-        Task<List<HeadroomRow>> headroomTask = Task.Run(() => headroomReader.Read(headroomInputs));
+        // Every enabled block, whatever the view shows. A FIR chain not read yet shows as pending and never holds the
+        // frame: it is read on a worker and lands by a redraw.
+        List<HeadroomRow> headroom =
+            VirtualCrossoverHeadroom.Read(headroomReader, VirtualCrossoverHeadroom.Capture(session.Channels));
+        ReadWaitingHeadroom();
 
         // Read once: a control changed during the awaits below requests the next frame. Filtered by group view once, so
         // curves, sum, loss and read-out describe the same channels.
@@ -208,13 +210,8 @@ public partial class VirtualCrossoverPanel
                 SharedScaleFor(view, drawn: null)));
             // A warning about channels no longer visible would read as a fault in this view.
             HideWarning();
-            List<HeadroomRow> headroomOnly = await headroomTask;
-            if (!mainPlotView.IsDisposed && processingCoordinator.IsCurrent(revision))
-            {
-                (List<ToneLine> compact, string detail) = VirtualCrossoverMetric.FormatHeadroomOnly(headroomOnly);
-                MetricChanged?.Invoke(compact, detail);
-            }
-
+            (List<ToneLine> compact, string detail) = VirtualCrossoverMetric.FormatHeadroomOnly(headroom);
+            MetricChanged?.Invoke(compact, detail);
             return;
         }
 
@@ -268,7 +265,6 @@ public partial class VirtualCrossoverPanel
             });
         }
 
-        List<HeadroomRow> headroom = await headroomTask;
         if (mainPlotView.IsDisposed || !processingCoordinator.IsCurrent(revision))
         {
             return;
@@ -403,6 +399,20 @@ public partial class VirtualCrossoverPanel
         catch (Exception exception)
         {
             System.Diagnostics.Debug.WriteLine($"Virtual DSP shared scale failed: {exception}");
+        }
+    }
+
+    private void ReadWaitingHeadroom()
+    {
+        if (headroomReader.Waiting)
+        {
+            _ = headroomReader.FillAsync(() =>
+            {
+                if (!IsDisposed)
+                {
+                    RequestRedraw();
+                }
+            });
         }
     }
 

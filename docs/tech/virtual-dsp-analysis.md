@@ -660,18 +660,23 @@ lower channel) and the current phase score.
 (0.49 × the rate, so a 44.1 kHz processor is still read to 20 kHz).
 
 - **Every enabled block on both sides**, not the view's: the Show filter and the L/R selector choose what is drawn,
-  while a clip happens on whichever output the device drives. A side is read only when it has a measurement, as the
-  chain plot draws only those; a bypassed block reads its identity chain.
+  while a clip happens on whichever output the device drives. A block without a source still gets its row, reading —:
+  a side is read only when it has a measurement, as the chain plot draws only those. A bypassed block reads its
+  identity chain.
 - **Threshold:** red once the figure as shown (a tenth of a dB) is negative, so the colour always agrees with the
   sign and a crossover's flat 0 dB passband never reads as a clip through float noise; 0.0 is green, since a
   full-scale output does not clip.
-- **Off the UI thread, memoized:** the inputs are captured with the frame, read on a worker while the frame's other
-  reads run, and each side's peak is kept by its response (PEQ compared band by band, the delay dropped), so a knob
-  turn re-reads one chain. Only the last read's chains are kept: an older one can hold a replaced FIR kernel.
-  A side with no usable rate reads as unmeasured instead of failing the frame.
+- **Never holds the frame:** `ChainHeadroomReader` keeps each side's peak by its response (`DspChainResponseKey`:
+  PEQ compared band by band, the delay dropped), so a knob turn re-reads one chain. A chain without a FIR reads in
+  about half a millisecond, in the frame. A FIR chain takes 6–106 ms (1k–131k taps), so it shows **…** and is read
+  on a worker, one chain at a time; its landing requests a redraw, and a chain no longer on screen by then is
+  dropped. Only the last frame's chains are kept: an older one can hold a replaced FIR kernel. A side with no usable
+  rate reads as unmeasured instead of failing the frame.
 - **Chain plot:** its magnitude mode fills red between each chain and 0 dB where the chain rises above it, one
   series per run above 0 dB (nothing lies along 0 dB for the tracker to snap to), with the crossings interpolated
-  in log frequency so the fill meets the drawn line.
+  in log frequency so the fill meets the drawn line. The plot's 512-point grid is about 60 Hz apart at 4 kHz, so a
+  FIR lobe a few hertz wide can fall between its points: each curve also draws the peak the headroom found as a
+  point of its own, read apart from the grid so the kernel's per-grid cache still serves the rest.
 
 ## Plots
 

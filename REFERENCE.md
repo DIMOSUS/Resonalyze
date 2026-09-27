@@ -3143,10 +3143,12 @@ highest gain between 20 Hz and 20 kHz (gain, PEQ with its preamp, crossover,
 phase control and FIR — the delay changes no magnitude). It is green while the
 figure is 0.0 or more — a chain peaking at exactly 0 dB plays full scale without
 clipping — and red once it goes negative; the tooltip names the frequency each
-side peaks at. It covers **every enabled block on both sides whatever the
-Show filter and the L/R selector show**, because the device clips on any of its
-outputs; a side with no measurement shows —, a mono block reads once, and a
-bypassed block reads *byp*. The table leads the column so a clip is in view
+side peaks at, and the chain plot draws that peak as a point of its own, so a FIR
+lobe narrower than the plot's grid still shows its red. It covers **every enabled
+block on both sides whatever the Show filter and the L/R selector show**, because
+the device clips on any of its outputs; a side with no measurement (a block with
+no source yet included) shows —, a mono block reads once, and a bypassed block
+reads *byp*. A channel with a FIR shows **…** for the moment its figure takes. The table leads the column so a clip is in view
 without scrolling; a column longer than its box scrolls, keeping its place while
 the figures refresh.
 

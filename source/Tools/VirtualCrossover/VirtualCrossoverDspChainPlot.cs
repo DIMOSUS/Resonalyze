@@ -7,12 +7,14 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>A channel's chain curve, drawn without bulk delay at the PROCESSOR's rate (this plot shows the device's filters).</summary>
+/// <summary>A channel's chain curve, drawn without bulk delay at the PROCESSOR's rate (this plot shows the device's filters).
+/// <see cref="PeakHz"/>: the headroom's peak, drawn as a point of its own so a lobe between grid points still shows.</summary>
 internal readonly record struct DspChainCurve(
     string Title,
     DspChannelChain Chain,
     int ProcessorSampleRate,
-    OxyColor Color);
+    OxyColor Color,
+    double? PeakHz = null);
 
 /// <summary>Junction-correlation data from two PROCESSED channels: lag 0 is the applied alignment, lags correct the upper channel.
 /// See docs/tech/virtual-dsp-analysis.md#plots.</summary>
@@ -541,10 +543,18 @@ internal sealed class VirtualCrossoverDspChainPlot
             PreparedDspResponse response =
                 PreparedDspResponse.Create(curve.Chain, curve.ProcessorSampleRate);
             double[] values = Values(response, grid, mode);
-            var points = new List<DataPoint>(grid.Count);
+            var points = new List<DataPoint>(grid.Count + 1);
             for (int i = 0; i < grid.Count; i++)
             {
                 points.Add(new DataPoint(grid[i], values[i]));
+            }
+
+            // Read on its own: the grid's values come from the kernel's per-grid cache, which a changed grid would miss.
+            if (mode == DspPlotMode.Magnitude && curve.PeakHz is { } peakHz && peakHz > grid[0] && peakHz < grid[^1])
+            {
+                points.Insert(
+                    points.FindIndex(point => point.X > peakHz),
+                    new DataPoint(peakHz, DataHelper.AmplitudeToDecibels(response.Response(peakHz).Magnitude)));
             }
 
             AddSeries(model, curve.Title, points, curve.Color);

@@ -27,7 +27,7 @@ Where the code lives:
 | Calibration options and the choice a source opens with | `EqWizardCalibration` |
 | The source curve through its calibration and smoothing; a gated source's preview request | `EqWizardSourceCurve` |
 | Target, Source + EQ, statistics, the bank's gain and phase curves, hints, the source's axis | `EqWizardRender` |
-| The whole chain's headroom, a FIR chain's read off the UI thread | `EqWizardHeadroom` |
+| The chain the bank runs in and its headroom (read through the shared `ChainHeadroomReader`) | `EqWizardHeadroom` |
 | What Auto Tune is given; kept bands (locked, all-pass) | `EqWizardFit` |
 | The phase context a source opens with, a gate edited in the dialog, one render's request | `EqWizardPhase` |
 | Gated magnitude and measured phase rendered off the UI thread, keyed by bank | `EqWizardPreviews` |
@@ -56,8 +56,8 @@ the Headroom row used to negate, because it answers a different question: what t
 - **Why the whole chain:** the two tools quoted different "headroom" for one channel (the wizard the bank alone, Virtual
   DSP the chain), so a channel with its gain raised read safe here and clipping there.
 - **Cost:** a chain without a FIR reads in about half a millisecond, on the UI thread with every redraw. A FIR chain
-  takes 6 ms (1,024 taps) to 106 ms (131,072 taps), too slow for a dragged band, so `EqWizardHeadroom` reads it on a
-  worker and shows **…** meanwhile; while a read runs, further redraws only replace the chain it reads next, and a
+  takes 6 ms (1,024 taps) to 106 ms (131,072 taps), too slow for a dragged band, so it is read on a worker by the
+  `ChainHeadroomReader` Virtual DSP uses too, and shows **…** meanwhile; each redraw keeps only its own chain, so a
   value lands only while its chain is still the one on screen.
 
 ## Fit

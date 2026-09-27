@@ -169,7 +169,7 @@ internal sealed class PlotModelFactory
             : null;
     }
 
-    /// <summary>Impulse trace re-rendered under a canonical framing (absolute sample indices, raw linear values). Null when not an impulse trace.</summary>
+    /// <summary>Impulse trace re-rendered under a canonical framing (every signed sample, raw linear values). Null when not an impulse trace.</summary>
     public ImpulseOverlayCapture? BuildImpulseCapture(CurveTag tag)
     {
         if (tag.Mode != Mode.ImpulseResponse ||
@@ -216,17 +216,20 @@ internal sealed class PlotModelFactory
             return null;
         }
 
-        IReadOnlyList<SignalPoint> samples = tag.Kind == AnalysisCurveKind.ImpulseStep
-            ? curve.Points
-                .Select(point => new SignalPoint(point.X, point.Y * set.PeakReference))
-                .ToArray()
-            : curve.Points;
+        // The canonical frame puts one point on every signed sample, so the trace is a run of values.
+        double scale = tag.Kind == AnalysisCurveKind.ImpulseStep ? set.PeakReference : 1.0;
+        var values = new double[curve.Points.Count];
+        for (int i = 0; i < values.Length; i++)
+        {
+            values[i] = curve.Points[i].Y * scale;
+        }
 
         return new ImpulseOverlayCapture(
-            ImpulseOverlayThinning.Thin(samples),
+            new ImpulseSampleRun((int)curve.Points[0].X, values),
             tag.Kind,
             set.PeakReference,
-            source.SampleRate);
+            source.SampleRate,
+            SignedPeakSample(source));
     }
 
     // Drawn curve plus rate, baked smoothing and calibration, so a consumer can undo the additive correction.

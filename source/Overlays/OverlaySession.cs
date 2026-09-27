@@ -450,6 +450,7 @@ internal sealed class OverlaySession
             Operation = operation,
             Target = null
         };
+        ClearDrawPoints(slot);
         Present(slot);
 
         TrySave(slot, "Overlay changes could not be saved.");
@@ -477,6 +478,7 @@ internal sealed class OverlaySession
             Operation = null,
             Target = target
         };
+        ClearDrawPoints(slot);
         Present(slot);
 
         TrySave(slot, "Overlay changes could not be saved.");
@@ -856,8 +858,19 @@ internal sealed class OverlaySession
         }
     }
 
-    private void UpdateDrawPoints(OverlaySlot slot) =>
+    // An impulse capture is millions of points and several paths ask twice in a row (update, then Show), or on every Show:
+    // it is rendered again only when something the render reads has changed.
+    private void UpdateDrawPoints(OverlaySlot slot)
+    {
+        object? key = Curves.ImpulseDrawKey(slot);
+        if (key != null && slot.DrawPoints != null && key.Equals(slot.DrawPointsKey))
+        {
+            return;
+        }
+
         slot.DrawPoints = Curves.CapturedPoints(slot, slot.State.SmoothingInverseOctaves);
+        slot.DrawPointsKey = key;
+    }
 
     private void Refresh(PlotModel model)
     {
@@ -887,11 +900,18 @@ internal sealed class OverlaySession
         }
     }
 
+    // Draw points belong to a capture; the key holds its whole record, so neither may outlive it.
+    private static void ClearDrawPoints(OverlaySlot slot)
+    {
+        slot.DrawPoints = null;
+        slot.DrawPointsKey = null;
+    }
+
     // An emptied slot stays in its mode, so what is put into it next is saved there.
     private void Reset(OverlaySlot slot, Mode mode)
     {
         slot.State = slot.Empty with { Mode = mode };
-        slot.DrawPoints = null;
+        ClearDrawPoints(slot);
         slot.Checked = false;
         slot.CheckEnabled = false;
         slot.OffsetEnabled = false;

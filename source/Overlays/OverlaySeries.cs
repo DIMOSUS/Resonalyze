@@ -65,6 +65,12 @@ internal static class OverlaySeries
         {
             series.TrackerFormatString = trackerFormat;
         }
+        // An impulse overlay carries every sample of a record (millions at 96-192 kHz), like the live trace.
+        if (mode == Mode.ImpulseResponse)
+        {
+            series.Decimator = Decimator.Decimate;
+        }
+
         series.Points.AddRange(points);
         model.Series.Add(series);
         return true;

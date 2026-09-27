@@ -52,6 +52,21 @@ internal sealed class AppearanceSettingsFile
         return new AppearanceSettingsFile { pathOnDisk = path };
     }
 
+    /// <summary>Saves both choices; when that fails the object goes back to the values on disk, so nothing acts on
+    /// a choice that a restart would lose.</summary>
+    public bool TryApply(UiTheme theme, bool hardwareAcceleratedPlots)
+    {
+        (UiTheme savedTheme, bool savedPlots) = (Theme, HardwareAcceleratedPlots);
+        (Theme, HardwareAcceleratedPlots) = (theme, hardwareAcceleratedPlots);
+        if (TrySave())
+        {
+            return true;
+        }
+
+        (Theme, HardwareAcceleratedPlots) = (savedTheme, savedPlots);
+        return false;
+    }
+
     /// <summary>False when the file still holds the old theme, with <see cref="SaveWarning"/> saying why: a caller
     /// must not then act as if the new one were in force.</summary>
     /// <remarks>Written through <see cref="AtomicFile"/>, so a write that fails part way — a full disk — leaves the

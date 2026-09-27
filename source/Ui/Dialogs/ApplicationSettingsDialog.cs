@@ -47,11 +47,9 @@ internal sealed partial class ApplicationSettingsDialog : Form
     {
         if (chosen != persistedTheme || hardwareGraphs != persistedHardwareGraphs)
         {
-            Appearance.Theme = chosen;
-            Appearance.HardwareAcceleratedPlots = hardwareGraphs;
-            if (!Appearance.TrySave())
+            if (!Appearance.TryApply(chosen, hardwareGraphs))
             {
-                // The file still holds the old theme, so a restart would land back in it.
+                // The file and Appearance still hold the old choices, so neither a restart nor the window follows.
                 MessageBox.Show(
                     Appearance.SaveWarning,
                     "Resonalyze",

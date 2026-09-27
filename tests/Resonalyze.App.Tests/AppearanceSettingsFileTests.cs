@@ -99,6 +99,18 @@ public sealed class AppearanceSettingsFileTests : IDisposable
     }
 
     [Fact]
+    public void AFailedApply_LeavesTheObjectAsTheFileIs()
+    {
+        // A directory where the file belongs: the write fails without needing a permission fixture.
+        Directory.CreateDirectory(Path_);
+        AppearanceSettingsFile settings = AppearanceSettingsFile.LoadOrDefault(Path_);
+
+        Assert.False(settings.TryApply(UiTheme.Light, hardwareAcceleratedPlots: false));
+        Assert.Equal(UiTheme.Dark, settings.Theme);
+        Assert.True(settings.HardwareAcceleratedPlots);
+    }
+
+    [Fact]
     public void GraphsTurnedOffInTheDialog_AreSavedOff()
     {
         Directory.CreateDirectory(directory);

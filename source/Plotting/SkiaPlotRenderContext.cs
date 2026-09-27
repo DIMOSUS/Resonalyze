@@ -222,7 +222,8 @@ internal sealed class SkiaPlotRenderContext : IRenderContext, IDisposable
             string rest = line;
             while (clipped.Count < room)
             {
-                int take = FittingLength(rest, width, primary, fontWeight, paint);
+                int take = PlotTextWrap.FittingLength(
+                    rest, length => Width(RunsOf(rest[..length], primary, fontWeight), paint) <= width);
                 clipped.Add(rest[..take].TrimEnd());
                 rest = rest[take..].TrimStart();
                 if (rest.Length == 0)
@@ -233,34 +234,6 @@ internal sealed class SkiaPlotRenderContext : IRenderContext, IDisposable
         }
 
         return [.. clipped];
-    }
-
-    private int FittingLength(string text, float width, SKTypeface primary, double fontWeight, SKPaint paint)
-    {
-        bool Fits(int length) => Width(RunsOf(text[..length], primary, fontWeight), paint) <= width;
-        if (Fits(text.Length))
-        {
-            return text.Length;
-        }
-
-        int wordEnd = 0;
-        for (int space = text.IndexOf(' '); space > 0 && Fits(space); space = text.IndexOf(' ', space + 1))
-        {
-            wordEnd = space;
-        }
-
-        if (wordEnd > 0)
-        {
-            return wordEnd;
-        }
-
-        int characters = 1;
-        while (characters < text.Length && Fits(characters + 1))
-        {
-            characters++;
-        }
-
-        return characters;
     }
 
     // Latin, Greek, Cyrillic and symbols draw glyph by glyph, as GDI+ draws them; shaping them cost 0.6 ms a frame.

@@ -6,8 +6,11 @@ namespace Resonalyze;
 /// <summary>One side's headroom: 0 dB less the chain's peak gain in the audio band. Negative clips a full-scale signal.</summary>
 internal readonly record struct HeadroomReading(double HeadroomDb, double PeakHz, bool Bypass)
 {
-    // On the figure as shown, so the colour always agrees with its sign and float noise at 0 dB stays green.
-    public bool Clips => Math.Round(HeadroomDb, 1, MidpointRounding.AwayFromZero) < 0;
+    public bool Clips => IsClip(HeadroomDb);
+
+    /// <summary>On the figure as shown (a tenth of a dB), so the colour always agrees with its sign and float noise at
+    /// 0 dB stays green. Every headroom read-out colours by it.</summary>
+    public static bool IsClip(double headroomDb) => Math.Round(headroomDb, 1, MidpointRounding.AwayFromZero) < 0;
 }
 
 /// <summary>An enabled block's two sides; a mono block reads its left only, a side without a measurement reads null.</summary>
@@ -18,31 +21,12 @@ internal sealed record HeadroomRow(string Channel, bool Mono, HeadroomReading? L
 /// docs/tech/virtual-dsp-analysis.md#headroom.</summary>
 internal sealed class VirtualCrossoverHeadroom
 {
-    private const double LowHz = 20;
-    private const double HighHz = 20_000;
-
-    // Just under Nyquist, where a bilinear filter's response is still defined.
-    private const double HighestRateFraction = 0.49;
-
     // Only the last read's chains: an older chain can hold a replaced FIR kernel and its caches.
-    private readonly Dictionary<SideInput, (double PeakHz, double PeakDb)> peaks = [];
+    private readonly Dictionary<DspChainResponseKey, (double PeakHz, double PeakDb)> peaks = [];
 
     /// <summary>What <see cref="Read"/> needs, taken on the UI thread; null chains are sides without a measurement.</summary>
-    internal sealed record Input(string Channel, bool Mono, bool Bypass, SideInput? Left, SideInput? Right);
-
-    /// <summary>Equal when the response is: the PEQ is compared band by band, not by instance.</summary>
-    internal sealed record SideInput(DspChannelChain Chain, int ProcessorSampleRate)
-    {
-        public bool Equals(SideInput? other) =>
-            other != null &&
-            ProcessorSampleRate == other.ProcessorSampleRate &&
-            Chain with { Peq = null } == other.Chain with { Peq = null } &&
-            (Chain.Peq?.PreampDb ?? 0) == (other.Chain.Peq?.PreampDb ?? 0) &&
-            (Chain.Peq?.Bands ?? []).SequenceEqual(other.Chain.Peq?.Bands ?? []);
-
-        public override int GetHashCode() =>
-            HashCode.Combine(Chain with { Peq = null }, ProcessorSampleRate, Chain.Peq?.Bands.Count ?? 0);
-    }
+    internal sealed record Input(
+        string Channel, bool Mono, bool Bypass, DspChainResponseKey? Left, DspChainResponseKey? Right);
 
     public static List<Input> Capture(IReadOnlyList<VirtualCrossoverChannel> channels)
     {
@@ -55,19 +39,19 @@ internal sealed class VirtualCrossoverHeadroom
             }
 
             // A side without a rate cannot be realized; it reads as unmeasured rather than failing the frame.
-            SideInput? Side(bool rightSide) =>
+            DspChainResponseKey? Side(bool rightSide) =>
                 channel.SideState(rightSide).TransferImpulseResponse == null ||
                 channel.ProcessorSampleRateFor(rightSide) <= 0
                     ? null
                     // The bulk delay cannot change a magnitude.
-                    : new SideInput(
+                    : new DspChainResponseKey(
                         channel.Pair.Bypass
                             ? DspChannelChain.Identity
                             : channel.Pair.ToChain(rightSide) with { DelayMs = 0 },
                         channel.ProcessorSampleRateFor(rightSide));
 
-            SideInput? left = Side(rightSide: false);
-            SideInput? right = channel.Pair.Mono ? null : Side(rightSide: true);
+            DspChainResponseKey? left = Side(rightSide: false);
+            DspChainResponseKey? right = channel.Pair.Mono ? null : Side(rightSide: true);
             if (left != null || right != null)
             {
                 inputs.Add(new Input(channel.Name, channel.Pair.Mono, channel.Pair.Bypass, left, right));
@@ -87,10 +71,10 @@ internal sealed class VirtualCrossoverHeadroom
                 Reading(input.Left, input.Bypass),
                 Reading(input.Right, input.Bypass)))
         ];
-        var live = inputs.SelectMany(input => new[] { input.Left, input.Right }).OfType<SideInput>().ToHashSet();
+        var live = inputs.SelectMany(input => new[] { input.Left, input.Right }).OfType<DspChainResponseKey>().ToHashSet();
         lock (peaks)
         {
-            foreach (SideInput stale in peaks.Keys.Where(key => !live.Contains(key)).ToList())
+            foreach (DspChainResponseKey stale in peaks.Keys.Where(key => !live.Contains(key)).ToList())
             {
                 peaks.Remove(stale);
             }
@@ -99,7 +83,7 @@ internal sealed class VirtualCrossoverHeadroom
         return rows;
     }
 
-    private HeadroomReading? Reading(SideInput? side, bool bypass)
+    private HeadroomReading? Reading(DspChainResponseKey? side, bool bypass)
     {
         if (side == null)
         {
@@ -115,11 +99,7 @@ internal sealed class VirtualCrossoverHeadroom
 
         if (!known)
         {
-            peak = DspChainPeak.Find(
-                side.Chain,
-                side.ProcessorSampleRate,
-                LowHz,
-                Math.Min(HighHz, HighestRateFraction * side.ProcessorSampleRate));
+            peak = DspChainPeak.InAudioBand(side.Chain, side.ProcessorSampleRate);
             lock (peaks)
             {
                 peaks[side] = peak;

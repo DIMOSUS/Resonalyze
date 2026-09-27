@@ -40,6 +40,8 @@ public partial class EqWizardPanel : UserControl
     private readonly EqWizardImportExportCoordinator importExportCoordinator = new();
     private readonly EqWizardPlot plot = new();
     private readonly EqDoubleSkirtCheck.Cache doubleSkirtCheck = new();
+    private readonly EqWizardHeadroom headroom = new();
+    private EqTuneStats? shownStats;
     private PlotLabelsPanelController plotLabels = null!;
     // Set while the panel writes its own controls, so their handlers do not write the value back.
     private bool presenting;
@@ -484,7 +486,20 @@ public partial class EqWizardPanel : UserControl
         buttonOverlaySettings.Enabled = true;
         NumericTargetOffset.Enabled = true;
         NumericGain.Enabled = !session.Bypass && render.SourcePlusEq != null;
-        ResultsChanged?.Invoke(EqWizardRender.Stats(session, render, eq));
+        DspChainResponseKey? chain = EqWizardHeadroom.Input(session, eq);
+        shownStats = EqWizardRender.Stats(session, render, eq, chain == null ? null : headroom.Read(chain));
+        ResultsChanged?.Invoke(shownStats);
+        if (chain != null && shownStats is { HeadroomDb: null })
+        {
+            _ = headroom.FillAsync(value =>
+            {
+                if (shownStats is { HeadroomDb: null } waiting)
+                {
+                    shownStats = waiting with { HeadroomDb = value };
+                    ResultsChanged?.Invoke(shownStats);
+                }
+            });
+        }
         WarningChanged?.Invoke(doubleSkirtCheck.Warning(
             session.Target.Spec,
             session.TargetCrossover,

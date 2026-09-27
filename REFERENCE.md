@@ -2122,8 +2122,15 @@ A **From /
 To** window limits where bands are placed and bounds the error metrics in the
 colour-coded **Tuning results** panel, which reports **RMS error** and **Max
 error** between Source + EQ and Target (a dash when no point of the source lies
-in the window), **Filters used**, **Peak boost** and **Peak cut**, and
-**Headroom** (red when the EQ nets a boost that could clip).
+in the window), **Filters used**, **EQ boost** and **Peak cut** (the bank's own
+highest and lowest gain, preamp included), and **Headroom**: 0 dB less the peak
+gain of the whole chain the bank runs in, 20 Hz – 20 kHz, the
+[Virtual DSP read-out](#the-panel-gates-plots-and-read-outs)'s rule and colour. For a
+channel handed over from Virtual DSP that chain is the channel's gain, crossover,
+phase control and FIR with this bank, so a channel whose gain is raised can clip
+with an EQ that only cuts; for any other source it is the bank alone, and the two
+figures agree. With a FIR in the chain the figure takes a moment and reads **…**
+until it lands.
 
 **Shelves** (off by default) lets the fit propose a low and a high shelf as well
 as bells. A car target is a bass shelf plus a downward tilt, and a bell is the
@@ -2161,7 +2168,7 @@ shelf's plateau is the correction rather than spill from one. And a shelf is not
 counted against the cumulative boost the bells are held to, because it is a
 correction of the whole tail and not a stack of bands at one frequency: with a
 shelf placed, the **total** boost can exceed **Max Gain** (measured: +11.1 dB
-where Max Gain was +6), which is what the **Headroom** read-out is for. Each
+where Max Gain was +6), which is what the **EQ boost** and **Headroom** read-outs are for. Each
 band still obeys **Max Gain**, and the other two **Boosts** settings rule all of
 this out (their shelves only cut).
 

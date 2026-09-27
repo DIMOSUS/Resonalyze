@@ -78,9 +78,12 @@ internal static class TuningSheetPdf
         AddErrorRow(table, "RMS error", stats.RmsErrorDb, 3, 6);
         AddErrorRow(table, "Max error", stats.MaxErrorDb, 6, 12);
         AddStatRow(table, "Filters used", stats.FiltersUsed.ToString(CultureInfo.InvariantCulture), Colors.Black);
-        AddStatRow(table, "Peak boost", $"{Signed(stats.PeakBoostDb)} dB", stats.PeakBoostDb > 0.05 ? BadColor : GoodColor);
+        AddStatRow(table, "EQ boost", $"{Signed(stats.PeakBoostDb)} dB", stats.PeakBoostDb > 0.05 ? BadColor : GoodColor);
         AddStatRow(table, "Peak cut", $"{Signed(stats.PeakCutDb)} dB", InfoColor);
-        AddStatRow(table, "Headroom", $"{Signed(stats.HeadroomDb)} dB", stats.HeadroomDb < -0.05 ? BadColor : GoodColor);
+        if (stats.HeadroomDb is { } headroom)
+        {
+            AddStatRow(table, "Headroom", $"{Signed(headroom)} dB", HeadroomReading.IsClip(headroom) ? BadColor : GoodColor);
+        }
     }
 
     private static void AddErrorRow(Table table, string label, double? errorDb, double goodBelow, double badAbove)

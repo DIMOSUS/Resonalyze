@@ -179,7 +179,7 @@ namespace Resonalyze
             boostCaption.Name = "boostCaption";
             boostCaption.Size = new Size(65, 15);
             boostCaption.TabIndex = 7;
-            boostCaption.Text = "Peak boost";
+            boostCaption.Text = "EQ boost";
             // 
             // boostValue
             // 

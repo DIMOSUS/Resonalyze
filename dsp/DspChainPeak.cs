@@ -20,6 +20,16 @@ public static class DspChainPeak
 
     private const int RefineIterations = 24;
 
+    private const double AudioBandLowHz = 20;
+    private const double AudioBandHighHz = 20_000;
+
+    // Just under Nyquist, where a bilinear filter's response is still defined, so 44.1 kHz still reaches 20 kHz.
+    private const double HighestRateFraction = 0.49;
+
+    /// <summary><see cref="Find"/> over 20 Hz – 20 kHz, the headroom read-outs' band.</summary>
+    public static (double FrequencyHz, double GainDb) InAudioBand(DspChannelChain chain, int processorRate) =>
+        Find(chain, processorRate, AudioBandLowHz, Math.Min(AudioBandHighHz, HighestRateFraction * processorRate));
+
     /// <param name="processorRate">The rate the chain is realized at (its filters warp by it).</param>
     public static (double FrequencyHz, double GainDb) Find(
         DspChannelChain chain, int processorRate, double lowHz, double highHz)

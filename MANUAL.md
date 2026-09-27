@@ -1093,7 +1093,7 @@ typed or matched by hand, and no file changes hands.
    for real resonances. With **Boosts** on **Refill cuts** or **Off** it is safe to
    leave ticked — a shelf is kept only where it lands closer to the target; with boosts
    **Allowed** a boosting shelf can push the total boost past **Max Gain**, so read
-   **Headroom** after the run. **Crossover in target** (on by default, available when
+   **EQ boost** and **Headroom** after the run. **Crossover in target** (on by default, available when
    the handed-over chain has a crossover) makes the goal the target curve inside the
    passband and the channel's own crossover slope outside it, so the fit brings the
    ACOUSTIC roll-off onto the filter you chose — which is what the neighbour has to sum

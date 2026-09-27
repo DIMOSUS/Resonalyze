@@ -27,6 +27,7 @@ Where the code lives:
 | Calibration options and the choice a source opens with | `EqWizardCalibration` |
 | The source curve through its calibration and smoothing; a gated source's preview request | `EqWizardSourceCurve` |
 | Target, Source + EQ, statistics, the bank's gain and phase curves, hints, the source's axis | `EqWizardRender` |
+| The whole chain's headroom, a FIR chain's read off the UI thread | `EqWizardHeadroom` |
 | What Auto Tune is given; kept bands (locked, all-pass) | `EqWizardFit` |
 | The phase context a source opens with, a gate edited in the dialog, one render's request | `EqWizardPhase` |
 | Gated magnitude and measured phase rendered off the UI thread, keyed by bank | `EqWizardPreviews` |
@@ -43,6 +44,21 @@ screen. A value written by code (a restored file, an Auto Tune result, an import
 `ThemedNumericUpDownExtensions.ClampValue` puts it in a field: clamped, then rounded to the field's decimals half to
 even. A value typed into a field arrives already rounded, half away from zero, by the field itself. Narrowing Max
 Boost or Max Cut clamps the bands' gains without rounding, as a pending edit that lands as its own undo step.
+
+## Headroom
+
+**Headroom** in the results panel and on the tuning sheet is the Virtual DSP read-out's figure
+(`DspChainPeak.InAudioBand`, [peak gain](dsp-chain-response.md#peak-gain)) for the chain the displayed bank runs in:
+the source's `PreviewChain` (a handed-over channel's gain, crossover, phase control and FIR; identity for any other
+source) with the bank as its PEQ, at the processor's rate. **EQ boost** keeps the bank's own highest gain, the figure
+the Headroom row used to negate, because it answers a different question: what the bank itself asks for.
+
+- **Why the whole chain:** the two tools quoted different "headroom" for one channel (the wizard the bank alone, Virtual
+  DSP the chain), so a channel with its gain raised read safe here and clipping there.
+- **Cost:** a chain without a FIR reads in about half a millisecond, on the UI thread with every redraw. A FIR chain
+  takes 6 ms (1,024 taps) to 106 ms (131,072 taps), too slow for a dragged band, so `EqWizardHeadroom` reads it on a
+  worker and shows **…** meanwhile; while a read runs, further redraws only replace the chain it reads next, and a
+  value lands only while its chain is still the one on screen.
 
 ## Fit
 

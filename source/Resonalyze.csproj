@@ -49,7 +49,16 @@
          to compile — the audio boundary is enforced by the build. -->
     <PackageReference Include="NetSparkleUpdater.UI.WinForms" Version="3.0.1" />
     <PackageReference Include="OxyPlot.WindowsForms" Version="2.2.0" />
+    <!-- The main plot renders through Skia on an OpenGL context (AcceleratedPlotView); GDI+ stays the fallback. -->
+    <PackageReference Include="OxyPlot.SkiaSharp" Version="2.2.0" />
     <PackageReference Include="PDFsharp-MigraDoc-GDI" Version="6.2.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- In licenses\ beside the exe in every publish, so the zip and the installer carry them; each shipped
+         package's own license files join them through PublishPackageLicenses below. -->
+    <None Include="..\License.md" Link="licenses\License.md" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" Visible="false" />
+    <None Include="..\THIRD-PARTY-NOTICES.md" Link="licenses\THIRD-PARTY-NOTICES.md" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" Visible="false" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(Configuration)' == 'Tracy'">
@@ -112,6 +121,23 @@
     <Warning Condition="'$(_GitVersionFound)' != 'true'"
              Text="No vX.Y.Z tag found by git describe ('$(_GitDescribe)'); the exe keeps version $(Version)." />
     <Message Importance="high" Text="Resonalyze version: $(Version)" />
+  </Target>
+
+  <!-- Every package that ships (the .NET runtime packs included) brings the LICENSE and THIRD-PARTY-NOTICES files it -->
+  <!-- carries into licenses\<package id>\: Skia's and the runtime's notices hold BSD, Apache and zlib texts that must -->
+  <!-- travel with the binary. Packages that carry none are MIT by expression; THIRD-PARTY-NOTICES.md holds their lines. -->
+  <Target Name="PublishPackageLicenses" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <_ShippedPackageFile Include="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.NuGetPackageId)' != ''" />
+      <_ShippedPackage Include="%(_ShippedPackageFile.NuGetPackageId)" Version="%(_ShippedPackageFile.NuGetPackageVersion)" />
+      <_ShippedPackage PackageDirectory="$(NuGetPackageRoot)$([System.String]::Copy('%(Identity)').ToLowerInvariant())\%(Version)\" />
+      <_ShippedPackageLicense Include="%(_ShippedPackage.PackageDirectory)LICENSE*;%(_ShippedPackage.PackageDirectory)THIRD-PARTY-NOTICES*"
+                              PackageId="%(_ShippedPackage.Identity)" />
+      <ResolvedFileToPublish Include="@(_ShippedPackageLicense)"
+                             RelativePath="licenses\%(_ShippedPackageLicense.PackageId)\%(_ShippedPackageLicense.Filename)%(_ShippedPackageLicense.Extension)"
+                             CopyToPublishDirectory="PreserveNewest"
+                             ExcludeFromSingleFile="true" />
+    </ItemGroup>
   </Target>
 
   <!-- DebugType=None reaches only this project; the libraries' .pdb, which release.yml deletes, are never copied. -->

@@ -92,6 +92,15 @@ Three things the theme deliberately does **not** touch:
 - **Tuning sheets** — a PDF is printed on paper, which has no theme.
 - **The figures in this documentation**, which were taken in the dark theme.
 
+**Hardware-accelerated graphs** — on by default. The main graph (every analysis
+mode and Live Spectrum) is drawn on the graphics card, so panning and zooming stay
+smooth with many curves on a full-screen window; the smaller graphs in dialogs and
+tools are drawn as before. Where there is no hardware OpenGL driver (Remote Desktop,
+a virtual machine without 3D acceleration) or the driver fails, the graph falls back
+to drawing without the graphics card by itself. Turn the option off if the graph
+still shows black, garbled or flickering, which a few virtual GPU drivers can do.
+The change applies at once, without a restart, and is stored in `appearance.json`.
+
 **The window** opens at the size and place it had when you last closed it, and
 maximized if it was then. If that spot is no longer on a screen (a monitor unplugged,
 a smaller resolution), the window is moved and shrunk to fit the screen it mostly

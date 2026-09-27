@@ -5,6 +5,7 @@ namespace Resonalyze;
 internal sealed partial class ApplicationSettingsDialog : Form
 {
     private readonly UiTheme persistedTheme;
+    private readonly bool persistedHardwareGraphs;
 
     public ApplicationSettingsDialog(AppearanceSettingsFile appearance)
     {
@@ -16,6 +17,8 @@ internal sealed partial class ApplicationSettingsDialog : Form
         persistedTheme = appearance.Theme;
         radioThemeLight.Checked = appearance.Theme == UiTheme.Light;
         radioThemeDark.Checked = !radioThemeLight.Checked;
+        persistedHardwareGraphs = appearance.HardwareAcceleratedPlots;
+        checkBoxHardwareGraphs.Checked = appearance.HardwareAcceleratedPlots;
 
         AcceptButton = buttonOk;
         CancelButton = buttonCancel;
@@ -32,7 +35,7 @@ internal sealed partial class ApplicationSettingsDialog : Form
 
         if (DialogResult == DialogResult.OK)
         {
-            Apply(radioThemeLight.Checked ? UiTheme.Light : UiTheme.Dark);
+            Apply(radioThemeLight.Checked ? UiTheme.Light : UiTheme.Dark, checkBoxHardwareGraphs.Checked);
         }
 
         base.OnFormClosing(e);
@@ -40,14 +43,13 @@ internal sealed partial class ApplicationSettingsDialog : Form
 
     // What is on disk and what is running can differ: a theme chosen and then not restarted into leaves the file
     // ahead of the window. Saving answers the first, offering a restart answers the second.
-    private void Apply(UiTheme chosen)
+    private void Apply(UiTheme chosen, bool hardwareGraphs)
     {
-        if (chosen != persistedTheme)
+        if (chosen != persistedTheme || hardwareGraphs != persistedHardwareGraphs)
         {
-            Appearance.Theme = chosen;
-            if (!Appearance.TrySave())
+            if (!Appearance.TryApply(chosen, hardwareGraphs))
             {
-                // The file still holds the old theme, so a restart would land back in it.
+                // The file and Appearance still hold the old choices, so neither a restart nor the window follows.
                 MessageBox.Show(
                     Appearance.SaveWarning,
                     "Resonalyze",

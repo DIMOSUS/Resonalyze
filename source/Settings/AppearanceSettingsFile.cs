@@ -16,6 +16,9 @@ internal sealed class AppearanceSettingsFile
 
     public UiTheme Theme { get; set; } = UiTheme.Dark;
 
+    /// <summary>Whether the main graph may draw on the GPU; off is the way out for a driver that draws it wrong.</summary>
+    public bool HardwareAcceleratedPlots { get; set; } = true;
+
     /// <summary>Why the last <see cref="TrySave"/> failed; telling the user is the caller's job, not this layer's.</summary>
     [JsonIgnore]
     public string? SaveWarning { get; private set; }
@@ -47,6 +50,21 @@ internal sealed class AppearanceSettingsFile
         }
 
         return new AppearanceSettingsFile { pathOnDisk = path };
+    }
+
+    /// <summary>Saves both choices; when that fails the object goes back to the values on disk, so nothing acts on
+    /// a choice that a restart would lose.</summary>
+    public bool TryApply(UiTheme theme, bool hardwareAcceleratedPlots)
+    {
+        (UiTheme savedTheme, bool savedPlots) = (Theme, HardwareAcceleratedPlots);
+        (Theme, HardwareAcceleratedPlots) = (theme, hardwareAcceleratedPlots);
+        if (TrySave())
+        {
+            return true;
+        }
+
+        (Theme, HardwareAcceleratedPlots) = (savedTheme, savedPlots);
+        return false;
     }
 
     /// <summary>False when the file still holds the old theme, with <see cref="SaveWarning"/> saying why: a caller

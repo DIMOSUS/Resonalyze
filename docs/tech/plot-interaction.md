@@ -22,6 +22,8 @@ Code lives in `source/Plotting/`:
 - `PlotZoomButtons` / `PlotZoomButtonsAnnotation` - on-graph plus/minus buttons.
 - `PlotAxisFit` - Fit to data / Fit Y to data.
 - `PlotAxisViewport`, `PlotViewportMemory`, `PlotAxisIdentity` - carrying zoom across model rebuilds.
+- `AcceleratedPlotView`, `SkiaPlotRenderContext`, `PlotViewPaintState`, `WglContext` - the main plot's GPU drawing
+  (see [Rendering](#rendering)).
 
 ## Gesture map
 
@@ -240,3 +242,44 @@ Time Alignment previews each have their own memory.
 - `Forget(mode)` is for settings that change what an axis means (linear vs logarithmic, dBr vs dB SPL, impulse
   unit or origin). Mode descriptors declare a `viewResetKey` for such settings. `Forget` also resets the axes of
   the model on screen; otherwise the capture on the next redraw would save the stale range straight back.
+
+## Rendering
+
+The stock `PlotView` draws with GDI+, which strokes antialiased lines on the UI thread's one CPU core. Its cost grows
+with the stroked pixels, not the points: every curve in the app is about 1024 points, yet the analyzer maximized on a
+2306×1328 plot with eleven Frequency Response curves (the measurement, its harmonics and five overlays) took 31.8 ms
+a frame to pan, about 31 fps, against 12 ms in a compact window. Task Manager shows it as near-idle CPU, since one
+busy core of sixteen is 6 %.
+
+The analyzer's plot (`plotView1`, every analysis mode and Live Spectrum) is an `AcceleratedPlotView`: the stock view
+with only its painting replaced. It opens a hardware OpenGL context on its own window (`WglContext`, plain WGL, no
+OpenTK), wraps the window's back buffer in a Skia GPU surface and renders the model through `SkiaPlotRenderContext`.
+The same scene then takes 4.5 ms. Mouse input, the tracker label, cursors and `IPlotView` are the base's, so the
+gesture controller and every annotation work unchanged. The base's OnPaint also applies a pending `InvalidatePlot`;
+`PlotViewPaintState` reads the private fields it keeps for that (pinned by `PlotViewPaintStateTests`, which fail
+if an OxyPlot upgrade renames them).
+
+GDI+ stays the fallback, per window: when the pixel format is Windows' software OpenGL 1.1 (Remote Desktop, a VM
+without a GPU driver), when Skia cannot build a GL context or its native library fails to load (it loads there, not
+in the constructor, so the window still opens), and for good after any frame throws. OxyPlot catches a model's own
+exceptions inside `Render`, so only GPU failures reach that point. A window keeps an OpenGL pixel format until it is
+destroyed, so a failure after the format was set recreates the handle and GDI+ draws on a fresh window; until
+the queued recreation runs, a synchronous `Update()` paints nothing on the old one. Settings'
+**Hardware-accelerated graphs** (`AppearanceSettingsFile.HardwareAcceleratedPlots`, applied through
+`AcceleratedPlotView.GpuAllowed`) switches the GPU path off for a driver that draws wrong without failing; a change
+recreates the handle at once, and turning it back on gives a failed GPU another try. `DrawToBitmap`
+(WM_PRINTCLIENT) always takes the GDI+ path, since a GL frame never reaches a GDI bitmap; screen grabs
+(`CopyFromScreen`) see the GL frame. The other plots in the app are stock `PlotView`s: they are small, and PNG and PDF
+exports keep their GDI+ `PngExporter`.
+
+`SkiaPlotRenderContext` draws text itself rather than through OxyPlot's Skia text, for layout parity with GDI+:
+GDI+ reads a font size as `0.8 × size` points at the window's DPI where Skia reads pixels, GDI+ aligns a multi-line
+block by its widest line with every line left-aligned inside it, GDI+ word-wraps a text given a `maxSize` (the
+plot title, clipped to 90 % of its area and carrying the file name) and keeps only the lines its unwrapped height
+holds, and GDI+ substitutes a font for a glyph the font lacks. The plot labels' `━━` swatch (U+2501) is not in Segoe UI; the substitute is looked up along Windows' font link
+chain for the family (`HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\FontLink\SystemLink`), as GDI+ does,
+because Skia's own character match picks a font whose box-drawing glyphs are half as wide.
+A run that needs shaping (combining marks, Hebrew, Arabic, Indic and other complex
+scripts, emoji) goes through HarfBuzz (`SKShaper`), as GDI+ shapes it; Latin, Greek, Cyrillic and symbols draw glyph
+by glyph, as GDI+ draws them, since shaping every label cost 0.6 ms a frame. `SkiaPlotRenderContextTests` holds
+measured text, an Arabic name included, within 8 % of GDI+.

@@ -54,6 +54,9 @@ internal sealed class ChromeTitleBar : Panel
     private bool initialized;
     private Rectangle restoreBounds;
 
+    /// <summary>Raised when the settings dialog closes with OK and no restart; the running window follows what it can.</summary>
+    public event EventHandler<AppearanceSettingsFile>? SettingsApplied;
+
     public ChromeTitleBar()
     {
         BackColor = UiPalette.TitleBarBackground;
@@ -570,11 +573,15 @@ internal sealed class ChromeTitleBar : Panel
     private void SettingsClick(object? sender, EventArgs e)
     {
         using var dialog = new ApplicationSettingsDialog(AppearanceSettingsFile.LoadOrDefault());
-        dialog.ShowDialog(form);
+        DialogResult result = dialog.ShowDialog(form);
         if (dialog.RestartRequested)
         {
             ApplicationRestart.Request();
             form.Close();
+        }
+        else if (result == DialogResult.OK)
+        {
+            SettingsApplied?.Invoke(this, dialog.Appearance);
         }
     }
 

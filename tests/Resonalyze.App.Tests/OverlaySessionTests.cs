@@ -463,6 +463,32 @@ public sealed class OverlaySessionTests : IDisposable
         Assert.Equal(100.0 * 1000.0 / 48_000, Slot(1).DrawPoints![1].X, 9);
     }
 
+    [Fact]
+    public void AnImpulseSlotTurnedIntoACalculatedOverlay_LetsGoOfItsRecord()
+    {
+        mode = Mode.ImpulseResponse;
+        sources.SetImpulseFrameProvider(() => ImpulseFrame(origin: 0));
+        sources.SetImpulseCaptureProvider(_ => new ImpulseOverlayCapture(
+            [new SignalPoint(100, 0.0), new SignalPoint(110, 1.0), new SignalPoint(120, 0.0)],
+            AnalysisCurveKind.Primary,
+            1.0,
+            48_000));
+        session.Prepare(mode);
+        var impulse = new LineSeries { Title = "Impulse", Tag = new CurveTag(Mode.ImpulseResponse, AnalysisCurveKind.Primary) };
+        impulse.Points.AddRange([new DataPoint(100, 0.0), new DataPoint(110, 1.0), new DataPoint(120, 0.0)]);
+        model.Series.Add(impulse);
+        session.Capture(Slot(1), impulse);
+        session.Capture(Slot(2), impulse);
+        Assert.NotNull(Slot(1).DrawPointsKey);
+
+        session.ApplyOperation(
+            Slot(1), "Calculated", OverlayOperationSettings.Default with { SourceSlotA = 2 }, Slot(1).State.Appearance, 0);
+
+        Assert.Null(Slot(1).State.Captured);
+        Assert.Null(Slot(1).DrawPoints);
+        Assert.Null(Slot(1).DrawPointsKey);
+    }
+
     private static ImpulseOverlayFrame ImpulseFrame(double origin) =>
         new(
             new ImpulseResponseOptions

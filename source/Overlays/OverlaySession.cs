@@ -450,6 +450,7 @@ internal sealed class OverlaySession
             Operation = operation,
             Target = null
         };
+        ClearDrawPoints(slot);
         Present(slot);
 
         TrySave(slot, "Overlay changes could not be saved.");
@@ -477,6 +478,7 @@ internal sealed class OverlaySession
             Operation = null,
             Target = target
         };
+        ClearDrawPoints(slot);
         Present(slot);
 
         TrySave(slot, "Overlay changes could not be saved.");
@@ -898,12 +900,18 @@ internal sealed class OverlaySession
         }
     }
 
+    // Draw points belong to a capture; the key holds its whole record, so neither may outlive it.
+    private static void ClearDrawPoints(OverlaySlot slot)
+    {
+        slot.DrawPoints = null;
+        slot.DrawPointsKey = null;
+    }
+
     // An emptied slot stays in its mode, so what is put into it next is saved there.
     private void Reset(OverlaySlot slot, Mode mode)
     {
         slot.State = slot.Empty with { Mode = mode };
-        slot.DrawPoints = null;
-        slot.DrawPointsKey = null;
+        ClearDrawPoints(slot);
         slot.Checked = false;
         slot.CheckEnabled = false;
         slot.OffsetEnabled = false;

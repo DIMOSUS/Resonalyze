@@ -25,8 +25,10 @@ internal sealed class WglContext : IDisposable
     }
 
     /// <summary>Null when the driver offers only Windows' software OpenGL 1.1 (Remote Desktop, a VM without a GPU).</summary>
-    public static WglContext? TryCreate(IntPtr window)
+    /// <param name="pixelFormatSet">True once the window carries an OpenGL pixel format, which it keeps until destroyed.</param>
+    public static WglContext? TryCreate(IntPtr window, out bool pixelFormatSet)
     {
+        pixelFormatSet = false;
         IntPtr deviceContext = GetDC(window);
         if (deviceContext == IntPtr.Zero)
         {
@@ -53,6 +55,7 @@ internal sealed class WglContext : IDisposable
             return null;
         }
 
+        pixelFormatSet = true;
         IntPtr renderingContext = wglCreateContext(deviceContext);
         if (renderingContext == IntPtr.Zero)
         {

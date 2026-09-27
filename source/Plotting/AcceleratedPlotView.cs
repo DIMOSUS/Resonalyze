@@ -5,19 +5,20 @@ using SkiaSharp;
 namespace Resonalyze;
 
 /// <summary>A <see cref="PlotView"/> drawn by Skia on the GPU; input, tracker and cursors stay the base's.</summary>
-/// <remarks>GDI+ draws without a hardware OpenGL driver, after a failed frame, and for DrawToBitmap. See docs/tech/plot-interaction.md#rendering.</remarks>
+/// <remarks>GDI+ draws without a hardware OpenGL driver, after any GPU failure, and for DrawToBitmap. See docs/tech/plot-interaction.md#rendering.</remarks>
 internal sealed class AcceleratedPlotView : PlotView
 {
     private const int PrintClientMessage = 0x0318;
     private const int StencilBits = 8;
     private const uint Rgba8Format = 0x8058;
 
-    private readonly SkiaPlotRenderContext renderContext = new();
+    private SkiaPlotRenderContext? renderContext;
     private WglContext? glContext;
     private GRContext? gpu;
     private GRBackendRenderTarget? renderTarget;
     private SKSurface? surface;
     private bool printing;
+    private bool gpuRefused;
 
     public AcceleratedPlotView()
     {
@@ -43,15 +44,30 @@ internal sealed class AcceleratedPlotView : PlotView
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        glContext = WglContext.TryCreate(Handle);
-        gpu = glContext == null ? null : GRContext.CreateGl(GRGlInterface.Create());
-        if (gpu == null)
+        if (gpuRefused)
         {
-            ReleaseGpu();
             return;
         }
 
-        SetGdiPainting(false);
+        // Skia's native library loads here, not in the constructor: a machine it fails on still opens the window.
+        bool pixelFormatSet = false;
+        try
+        {
+            glContext = WglContext.TryCreate(Handle, out pixelFormatSet);
+            GRGlInterface? glInterface = glContext == null ? null : GRGlInterface.Create();
+            gpu = glInterface == null ? null : GRContext.CreateGl(glInterface);
+            if (gpu != null)
+            {
+                renderContext ??= new SkiaPlotRenderContext();
+                SetGdiPainting(false);
+                return;
+            }
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+        }
+
+        RefuseGpu(pixelFormatSet);
     }
 
     protected override void OnHandleDestroyed(EventArgs e)
@@ -102,9 +118,7 @@ internal sealed class AcceleratedPlotView : PlotView
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
                 // One failed frame, driver or model, hands this window to GDI+ for good.
-                ReleaseGpu();
-                SetGdiPainting(true);
-                Invalidate();
+                RefuseGpu(windowHasGlFormat: true);
                 return;
             }
         }
@@ -117,7 +131,7 @@ internal sealed class AcceleratedPlotView : PlotView
         if (disposing)
         {
             ReleaseGpu();
-            renderContext.Dispose();
+            renderContext?.Dispose();
         }
 
         base.Dispose(disposing);
@@ -125,7 +139,7 @@ internal sealed class AcceleratedPlotView : PlotView
 
     private void RenderOnGpu()
     {
-        if (glContext == null || gpu == null || !glContext.MakeCurrent())
+        if (glContext == null || gpu == null || renderContext == null || !glContext.MakeCurrent())
         {
             throw new InvalidOperationException("The OpenGL context could not be made current.");
         }
@@ -186,6 +200,28 @@ internal sealed class AcceleratedPlotView : PlotView
         using var outline = new SKPaint { Color = SKColors.Black, Style = SKPaintStyle.Stroke, PathEffect = dashes };
         canvas.DrawRect(bounds, fill);
         canvas.DrawRect(bounds, outline);
+    }
+
+    // A window keeps its OpenGL pixel format until destroyed, so GDI+ gets a fresh one rather than drawing over GL's.
+    private void RefuseGpu(bool windowHasGlFormat)
+    {
+        ReleaseGpu();
+        gpuRefused = true;
+        SetGdiPainting(true);
+        if (windowHasGlFormat && IsHandleCreated)
+        {
+            BeginInvoke(() =>
+            {
+                if (!IsDisposed)
+                {
+                    RecreateHandle();
+                }
+            });
+        }
+        else
+        {
+            Invalidate();
+        }
     }
 
     private void SetGdiPainting(bool gdi)

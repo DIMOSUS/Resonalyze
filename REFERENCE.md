@@ -3128,6 +3128,21 @@ inverted rival, the wavefronts within a period or two of the front decide it,
 because that is the part of the record the drivers made and the room had not yet
 answered.
 
+**Headroom.** On its magnitude mode the chain plot fills red wherever a chain
+rises above 0 dB: a full-scale signal at those frequencies leaves the processor
+above full scale and clips. The read-out column opens with a **Headroom (dB)**
+table, one row per enabled block and a cell per side: 0 dB less the chain's
+highest gain between 20 Hz and 20 kHz (gain, PEQ with its preamp, crossover,
+phase control and FIR — the delay changes no magnitude). It is green while the
+figure is 0.0 or more — a chain peaking at exactly 0 dB plays full scale without
+clipping — and red once it goes negative; the tooltip names the frequency each
+side peaks at. It covers **every enabled block on both sides whatever the
+Show filter and the L/R selector show**, because the device clips on any of its
+outputs; a side with no measurement shows —, a mono block reads once, and a
+bypassed block reads *byp*. The table leads the column so a clip is in view
+without scrolling; a column longer than its box scrolls, keeping its place while
+the figures refresh.
+
 The pair is chosen from a list of the junctions the current **group view** has:
 the chain that view SUMS, ordered along the spectrum — the same set its sum-loss
 read-out reports row by row. Band order over a whole installation is not a chain
@@ -3205,9 +3220,9 @@ loss when it was applied. Last comes **score**, where the
 junction stands as it is — the band's phase-alignment score (−1…+1) that the
 fix maximizes: 1.00 is aligned across the overlap, 0 a wash, negative means the
 two drivers are subtracting. It moves while a delay is dragged, so it answers
-"is this getting better", which the fix alone cannot. The tooltip carries every
-fitted figure behind those columns, including the lobe margin the `!` is drawn
-from. A **Δ L−R** block
+"is this getting better", which the fix alone cannot. The tooltip adds each
+junction's best score, the flipped polarity's score and the rival lobe with the
+margin the `!` is drawn from. A **Δ L−R** block
 below reports each pair's inter-side state — the two sides' band-limited envelope
 arrivals with their difference (positive means the right side leads, the scene
 offset's convention), plus a **Level Δ L−R** row for the by-ear gain trim that

@@ -81,3 +81,18 @@ itself, and `PreparedDspResponse.Responses`/`GroupDelaysMs` multiply them into t
   Constructor edit) starts empty and the old one's values go with it.
 - **Computed once, never waited on by another grid:** as with the bins, only the lookup is locked. A second reader
   of a grid waits for its one computation; the chain plot on the UI thread never waits for a hybrid build's grid.
+
+## Peak gain
+
+`DspChainPeak.Find` answers the headroom read-outs: the highest |H| a chain reaches in a band, and where. A 1/48-octave
+log grid finds the neighbourhood; each local grid maximum within 6 dB of the highest (the eight highest at most) is
+then refined by golden-section search on log frequency between its grid neighbours.
+
+- **Why refine every candidate, not the grid's best:** a narrow bell (Q 40–60) or a FIR ripple can fall between grid
+  points and read a dB or more low, under a broad peak it actually tops. The tests step a Q 60 bell across 1/12 octave
+  so some centres land between grid points whatever the grid.
+- **What it misses:** a peak whose every grid sample sits more than 6 dB under the highest. At 1/48 octave that takes a
+  bell narrower than any PEQ the app or its importers produce.
+- **Cost:** the grid read goes through `PreparedDspResponse.Responses`, so a FIR's values come from the kernel's grid
+  cache ([FIR on a plotted grid](#fir-on-a-plotted-grid)); the refinement reads points one by one, about 200 per
+  chain, a Horner sum over the taps each.

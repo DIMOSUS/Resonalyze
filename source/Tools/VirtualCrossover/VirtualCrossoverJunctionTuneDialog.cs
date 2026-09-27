@@ -17,7 +17,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
 
     private readonly VirtualCrossoverJunctionTuneQuestion question = new();
     private Func<JunctionTuneRequest, Task<JunctionTuneOutcome>>? runner;
-    private IReadOnlyList<JunctionTuneLine>? shownReport;
+    private IReadOnlyList<ToneLine>? shownReport;
     private bool presenting;
     private bool undoOffered;
 
@@ -242,39 +242,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         }
     }
 
-    private void ShowReport(IReadOnlyList<JunctionTuneLine> report)
-    {
-        textBoxReport.BeginUpdate();
-        try
-        {
-            textBoxReport.Clear();
-            foreach (JunctionTuneLine line in report)
-            {
-                foreach (JunctionTuneSpan span in line.Spans)
-                {
-                    textBoxReport.SelectionStart = textBoxReport.TextLength;
-                    textBoxReport.SelectionLength = 0;
-                    textBoxReport.SelectionColor = span.Tone switch
-                    {
-                        JunctionTuneTone.Better => UiPalette.Success,
-                        JunctionTuneTone.Worse => UiPalette.Error,
-                        _ => textBoxReport.ForeColor
-                    };
-                    textBoxReport.AppendText(span.Text);
-                }
-
-                textBoxReport.AppendText(Environment.NewLine);
-            }
-
-            textBoxReport.SelectionStart = 0;
-            textBoxReport.SelectionLength = 0;
-            textBoxReport.SelectionColor = textBoxReport.ForeColor;
-        }
-        finally
-        {
-            textBoxReport.EndUpdate();
-        }
-    }
+    private void ShowReport(IReadOnlyList<ToneLine> report) => textBoxReport.ShowLines(report);
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {

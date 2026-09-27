@@ -4,7 +4,11 @@ internal sealed class StatusRichTextBox : RichTextBox
 {
     private const int WmSetCursor = 0x20;
     private const int WmSetRedraw = 0x0B;
+    private const int EmGetFirstVisibleLine = 0xCE;
+    private const int EmLineScroll = 0xB6;
     private int updateDepth;
+    private string? shownLines;
+    private IReadOnlyList<ToneLine>? lastLines;
 
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
@@ -30,6 +34,74 @@ internal sealed class StatusRichTextBox : RichTextBox
         {
             SendMessage(Handle, WmSetRedraw, new IntPtr(1), IntPtr.Zero);
             Invalidate();
+        }
+    }
+
+    /// <summary>Replaces the text with <paramref name="lines"/>, coloured by tone. An unchanged text is left alone, and
+    /// <paramref name="keepScroll"/> keeps the first visible line where it was.</summary>
+    public void ShowLines(IReadOnlyList<ToneLine> lines, bool keepScroll = false)
+    {
+        lastLines = lines;
+        // Spans with their tones, so a recolour with the same text still repaints.
+        string shown = string.Join(
+            "\u0001",
+            lines.SelectMany(line => line.Spans.Select(span => $"{(int)span.Tone}{span.Text}").Append("\n")));
+        if (shownLines == shown && TextLength > 0)
+        {
+            return;
+        }
+
+        shownLines = shown;
+        int firstLine = keepScroll && IsHandleCreated
+            ? (int)SendMessage(Handle, EmGetFirstVisibleLine, IntPtr.Zero, IntPtr.Zero)
+            : 0;
+        BeginUpdate();
+        try
+        {
+            Clear();
+            for (int index = 0; index < lines.Count; index++)
+            {
+                foreach (ToneSpan span in lines[index].Spans)
+                {
+                    SelectionStart = TextLength;
+                    SelectionLength = 0;
+                    SelectionColor = span.Tone switch
+                    {
+                        TextTone.Good => UiPalette.Success,
+                        TextTone.Bad => UiPalette.Error,
+                        _ => ForeColor
+                    };
+                    AppendText(span.Text);
+                }
+
+                if (index < lines.Count - 1)
+                {
+                    AppendText(Environment.NewLine);
+                }
+            }
+
+            SelectionStart = 0;
+            SelectionLength = 0;
+            SelectionColor = ForeColor;
+            if (firstLine > 0)
+            {
+                SendMessage(Handle, EmLineScroll, IntPtr.Zero, new IntPtr(firstLine));
+            }
+        }
+        finally
+        {
+            EndUpdate();
+        }
+    }
+
+    // Text set before the handle exists comes back without its colours, so the lines are written again.
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        if (lastLines != null)
+        {
+            shownLines = null;
+            ShowLines(lastLines);
         }
     }
 

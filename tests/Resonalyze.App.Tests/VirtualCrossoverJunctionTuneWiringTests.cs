@@ -140,7 +140,7 @@ public sealed class VirtualCrossoverJunctionTuneWiringTests
 
         public LivePanel()
         {
-            Panel = new VirtualCrossoverPanel { Dock = DockStyle.Fill, MetricChanged = (compact, _) => metric = compact };
+            Panel = new VirtualCrossoverPanel { Dock = DockStyle.Fill, MetricChanged = (compact, _) => metric = ToneLine.TextOf(compact) };
             host.Controls.Add(Panel);
             List<VirtualCrossoverChannel> channels = Session.Channels;
             for (int index = 0; index < channels.Count; index++)

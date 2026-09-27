@@ -47,7 +47,7 @@ public partial class Form1
         }
         virtualCrossoverPanel.Visible = descriptor.ShowsVirtualCrossoverPanel;
         firConstructorPanel.Visible = descriptor.ShowsFirConstructorPanel;
-        virtualDspMetricLabel.Visible = descriptor.ShowsVirtualCrossoverPanel;
+        virtualDspMetricPanel.Visible = descriptor.ShowsVirtualCrossoverPanel;
         virtualDspWarningLabel.Visible = descriptor.ShowsVirtualCrossoverPanel &&
             virtualDspWarningLabel.Text.Length > 0;
         if (descriptor.ShowsVirtualCrossoverPanel)

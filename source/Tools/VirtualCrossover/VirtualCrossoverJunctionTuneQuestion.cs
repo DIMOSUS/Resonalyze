@@ -82,7 +82,7 @@ internal sealed class VirtualCrossoverJunctionTuneQuestion
     /// <summary>The request the standing answer was searched for; null until a search that may be applied lands.</summary>
     public JunctionTuneRequest? Result { get; private set; }
 
-    public IReadOnlyList<JunctionTuneLine> Report { get; private set; } = [];
+    public IReadOnlyList<ToneLine> Report { get; private set; } = [];
 
     public string Status { get; private set; } = NothingYet;
 

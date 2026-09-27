@@ -3,22 +3,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-internal enum JunctionTuneTone
-{
-    Plain,
-    Better,
-    Worse
-}
-
-internal sealed record JunctionTuneSpan(string Text, JunctionTuneTone Tone = JunctionTuneTone.Plain);
-
-internal sealed record JunctionTuneLine(IReadOnlyList<JunctionTuneSpan> Spans)
-{
-    public static JunctionTuneLine Of(string text) => new([new JunctionTuneSpan(text)]);
-
-    public string Text => string.Concat(Spans.Select(span => span.Text));
-}
-
 /// <summary>The dialog's report: columns and colour, where the AI summary (<see cref="AgentJunctionTune.Describe"/>)
 /// writes one line per item.</summary>
 internal static class VirtualCrossoverJunctionTuneReport
@@ -27,7 +11,7 @@ internal static class VirtualCrossoverJunctionTuneReport
 
     private const int Cell = 12;
 
-    public static List<JunctionTuneLine> Build(JunctionTunePlan plan, JunctionTuneResult result)
+    public static List<ToneLine> Build(JunctionTunePlan plan, JunctionTuneResult result)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(result);
@@ -37,27 +21,27 @@ internal static class VirtualCrossoverJunctionTuneReport
         // A change the goal paid for in sum is not "better", or the headline contradicts the table.
         bool forTheGoal = plan.Options.AcousticTarget != null &&
             result.Best.RankingScoreDb > result.Current.RankingScoreDb;
-        var lines = new List<JunctionTuneLine>
+        var lines = new List<ToneLine>
         {
             new([
-                new JunctionTuneSpan($"{lower}/{upper} — "),
+                new ToneSpan($"{lower}/{upper} — "),
                 result.Changed
-                    ? new JunctionTuneSpan(
+                    ? new ToneSpan(
                         forTheGoal
                             ? "a crossover nearer the acoustic goal was found."
                             : "a better crossover was found.",
-                        JunctionTuneTone.Better)
+                        TextTone.Good)
                     : moved
-                        ? new JunctionTuneSpan("keeping the crossover on screen is recommended.")
-                        : new JunctionTuneSpan("the crossover on screen is the best found.")
+                        ? new ToneSpan("keeping the crossover on screen is recommended.")
+                        : new ToneSpan("the crossover on screen is the best found.")
             ]),
-            JunctionTuneLine.Of($"  now    {AgentJunctionTune.JunctionText(result.Current, lower, upper)}")
+            ToneLine.Of($"  now    {AgentJunctionTune.JunctionText(result.Current, lower, upper)}")
         };
         if (moved)
         {
             double delta = result.Best.RankingScoreDb - result.Current.RankingScoreDb;
             // Found is not advice: where it did not win, the same line says so.
-            lines.Add(JunctionTuneLine.Of(
+            lines.Add(ToneLine.Of(
                 $"  found  {AgentJunctionTune.JunctionText(result.Best, lower, upper)}" +
                 (result.Changed
                     ? string.Empty
@@ -68,11 +52,11 @@ internal static class VirtualCrossoverJunctionTuneReport
                             $"{Number(plan.Options.KeepMarginDb)} dB it takes"))));
         }
 
-        lines.Add(JunctionTuneLine.Of(string.Empty));
+        lines.Add(ToneLine.Of(string.Empty));
         Readings(lines, result, moved, upper, plan.Options.OneAlignmentForAllSides);
         if (plan.Options.AcousticTarget is { } asked)
         {
-            lines.Add(JunctionTuneLine.Of(string.Empty));
+            lines.Add(ToneLine.Of(string.Empty));
             Acoustic(lines, asked, result, plan.Options.SumSlackDb, lower, upper);
         }
 
@@ -80,25 +64,25 @@ internal static class VirtualCrossoverJunctionTuneReport
     }
 
     private static void Readings(
-        List<JunctionTuneLine> lines, JunctionTuneResult result, bool moved, string upper, bool oneShift)
+        List<ToneLine> lines, JunctionTuneResult result, bool moved, string upper, bool oneShift)
     {
-        lines.Add(JunctionTuneLine.Of(Row("side", "sum loss, dB", "dip, dB", "ripple, dB")));
+        lines.Add(ToneLine.Of(Row("side", "sum loss, dB", "dip, dB", "ripple, dB")));
         foreach (JunctionTuneReading now in result.Current.Sides)
         {
             JunctionTuneReading? best = result.Best.Sides.FirstOrDefault(side => side.Side == now.Side);
             if (!moved || best == null)
             {
-                lines.Add(JunctionTuneLine.Of(
+                lines.Add(ToneLine.Of(
                     Row(now.Side, Number(now.LossDb), Number(now.DipDb), Number(now.RippleDb))));
                 continue;
             }
 
-            var spans = new List<JunctionTuneSpan> { new($"  {now.Side,-6}") };
+            var spans = new List<ToneSpan> { new($"  {now.Side,-6}") };
             // Loss and dip are negative: nearer zero is better. Ripple is the other way round.
             Add(spans, now.LossDb, best.LossDb, higherIsBetter: true);
             Add(spans, now.DipDb, best.DipDb, higherIsBetter: true);
             Add(spans, now.RippleDb, best.RippleDb, higherIsBetter: false);
-            lines.Add(new JunctionTuneLine(spans));
+            lines.Add(new ToneLine(spans));
         }
 
         // The re-alignment every figure above was read at, for the crossover the table ends on.
@@ -109,14 +93,14 @@ internal static class VirtualCrossoverJunctionTuneReport
         {
             // One shift, named once; the resulting polarity is still each side's own.
             string inverted = string.Join(", ", aligned.Where(item => item.InvertUpper).Select(item => item.Side));
-            lines.Add(JunctionTuneLine.Of(
+            lines.Add(ToneLine.Of(
                 $"  read after one shift of {upper} for both sides (a mono block has one delay): " +
                 $"{Signed(aligned[0].ExtraDelayMs)} ms" +
                 (inverted.Length == 0 ? string.Empty : $", inverted on {inverted}")));
         }
         else if (aligned.Count > 0)
         {
-            lines.Add(JunctionTuneLine.Of(
+            lines.Add(ToneLine.Of(
                 $"  read after re-aligning {upper}: " +
                 string.Join(", ", aligned.Select(item =>
                     $"{item.Side} {Signed(item.ExtraDelayMs)} ms" +
@@ -124,21 +108,21 @@ internal static class VirtualCrossoverJunctionTuneReport
         }
     }
 
-    private static void Add(List<JunctionTuneSpan> spans, double now, double best, bool higherIsBetter)
+    private static void Add(List<ToneSpan> spans, double now, double best, bool higherIsBetter)
     {
         string value = Number(best);
         string cell = $" {Number(now)}→{value}".PadLeft(Cell + 1);
         double gain = higherIsBetter ? best - now : now - best;
-        spans.Add(new JunctionTuneSpan(cell[..^value.Length]));
-        spans.Add(new JunctionTuneSpan(
+        spans.Add(new ToneSpan(cell[..^value.Length]));
+        spans.Add(new ToneSpan(
             value,
             Math.Abs(gain) < Noticeable
-                ? JunctionTuneTone.Plain
-                : gain > 0 ? JunctionTuneTone.Better : JunctionTuneTone.Worse));
+                ? TextTone.Plain
+                : gain > 0 ? TextTone.Good : TextTone.Bad));
     }
 
     private static void Acoustic(
-        List<JunctionTuneLine> lines,
+        List<ToneLine> lines,
         JunctionAcousticTarget asked,
         JunctionTuneResult result,
         double budgetDb,
@@ -151,25 +135,25 @@ internal static class VirtualCrossoverJunctionTuneReport
         bool lands = candidate.AcousticGoalLands;
         string? unread = Unread(candidate, lower, upper);
         bool anyFilterCould = CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb);
-        lines.Add(JunctionTuneLine.Of(
+        lines.Add(ToneLine.Of(
             $"  Acoustic {FirCrossoverDescription.FamilyName(asked.Family)} {asked.SlopeDbPerOctave}, " +
             $"{(result.Moves ? "as found" : "as it stands")}: off by {Number(worst?.ChargeDb)} dB at worst" +
             (worst == null ? string.Empty : $" ({Channel(worst, lower, upper)})") +
             $", {Number(candidate.AcousticCostDb)} on average" +
             (unread == null ? "." : $"; {unread} not read.")));
-        lines.Add(new JunctionTuneLine([
-            new JunctionTuneSpan($"    nearest any filter: {Number(result.ClosestAcousticCostDb)} dB at worst — "),
+        lines.Add(new ToneLine([
+            new ToneSpan($"    nearest any filter: {Number(result.ClosestAcousticCostDb)} dB at worst — "),
             result.ClosestAcousticCostDb == null
-                ? new JunctionTuneSpan("not enough data: no filter was read on every channel.")
+                ? new ToneSpan("not enough data: no filter was read on every channel.")
                 : anyFilterCould
-                    ? new JunctionTuneSpan("reachable.")
-                    : new JunctionTuneSpan("OUT OF REACH.", JunctionTuneTone.Worse)
+                    ? new ToneSpan("reachable.")
+                    : new ToneSpan("OUT OF REACH.", TextTone.Bad)
         ]));
         foreach (JunctionTuneReading side in candidate.Sides)
         {
             JunctionAcousticFit? fit = side.Acoustic;
             JunctionDriverSlopes? plant = result.DriverSlopes.FirstOrDefault(item => item.Side == side.Side);
-            lines.Add(JunctionTuneLine.Of(
+            lines.Add(ToneLine.Of(
                 $"    {side.Side,-6} got {Number(fit?.LowerSlopeDbPerOctave)} / {Number(fit?.UpperSlopeDbPerOctave)} " +
                 $"dB/oct against {Number(fit?.TargetSlopeDbPerOctave)} asked; the channels fall " +
                 $"{Number(plant?.LowerDbPerOctave)} / {Number(plant?.UpperDbPerOctave)} alone."));
@@ -182,7 +166,7 @@ internal static class VirtualCrossoverJunctionTuneReport
             result.DriverSlopes.FirstOrDefault(item => item.Side == worst.Side) is { } fall &&
             (worst.Upper ? fall.UpperDbPerOctave : fall.LowerDbPerOctave) is { } own)
         {
-            lines.Add(JunctionTuneLine.Of(
+            lines.Add(ToneLine.Of(
                 $"    landing {Channel(worst, lower, upper)} on it takes about " +
                 $"{Number(Math.Max(0, askedSlope - own))} dB/oct of filter; a filter that soft sums worse."));
         }
@@ -190,17 +174,17 @@ internal static class VirtualCrossoverJunctionTuneReport
         if (result.Moves && result.BestSumScoreDb is { } bestSum &&
             result.Best.RankingScoreDb - bestSum >= Noticeable)
         {
-            lines.Add(JunctionTuneLine.Of(
+            lines.Add(ToneLine.Of(
                 $"    it costs {Number(result.Best.RankingScoreDb - bestSum)} dB of summation score against the " +
                 $"best sum here (budget {Number(budgetDb)} dB)."));
         }
 
-        lines.Add(new JunctionTuneLine([
+        lines.Add(new ToneLine([
             lands
-                ? new JunctionTuneSpan(
+                ? new ToneSpan(
                     "    Apply writes it onto the cards; Auto Tune aims at it instead of the filter.",
-                    JunctionTuneTone.Better)
-                : new JunctionTuneSpan(
+                    TextTone.Good)
+                : new ToneSpan(
                     "    Apply writes it anyway, and Auto Tune will aim at it; " +
                     (unread != null
                         ? $"{unread} could not be read against it."
@@ -209,7 +193,7 @@ internal static class VirtualCrossoverJunctionTuneReport
                         : anyFilterCould
                             ? "a filter that lands on it sums worse."
                             : "no filter in this search lands on it."),
-                    JunctionTuneTone.Worse)
+                    TextTone.Bad)
         ]));
     }
 

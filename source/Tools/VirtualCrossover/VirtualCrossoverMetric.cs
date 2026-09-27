@@ -128,91 +128,34 @@ internal static class VirtualCrossoverMetric
             return string.Empty;
         }
 
-        static string Side(double? value, bool latched) =>
-            value.HasValue
-                ? (latched ? "~" : string.Empty) + $"{value.Value:0.000}"
-                : "\u2014";
-
         // Mixed lists are legitimate (a channel without an array); point-measured rows are marked in place.
         bool anySpatialLevel = deltas.Any(delta => delta.LevelFromSpatialAverage);
-        bool anyPointLevel = deltas.Any(delta =>
-            delta.LevelDeltaDb.HasValue && !delta.LevelFromSpatialAverage);
-
-        return "Final envelope arrivals of the processed sides (ms from the " +
-            "IR start, delays\r\nincluded) and \u0394 L\u2212R (positive: right leads; " +
-            "after a stereo Auto delay every\r\nchannel should read the scene " +
-            "offset)\r\n" +
-            string.Join("\r\n", deltas.Select(delta =>
-            {
-                string levelText = delta.LevelDeltaDb.HasValue
-                    ? $", level {delta.LevelDeltaDb.Value:+0.0;-0.0;0.0} dB" +
-                        (anySpatialLevel && !delta.LevelFromSpatialAverage
-                            ? " (point mic)"
-                            : string.Empty)
+        var lines = new List<string> { "Arrival: ms from the IR start; \u0394 L\u2212R positive = right leads" };
+        foreach (StereoDelta delta in deltas)
+        {
+            string how = delta.EnergyOnset
+                ? ", energy onsets"
+                : delta.EnergyOnsetWithheld
+                    ? $", first peaks: SNR under {AutoAlignmentEngine.EnergyOnsetMinimumSnrDb:0} dB"
                     : string.Empty;
-                if (!delta.LeftMs.HasValue && !delta.RightMs.HasValue)
-                {
-                    // A spatial level outlives the arrivals, so the row keeps it.
-                    return $"{delta.Channel}: \u2014 (no measurable arrival)" +
-                        levelText;
-                }
+            string arrival = delta.LeftMs.HasValue || delta.RightMs.HasValue
+                ? string.Empty
+                : ", no measurable arrival";
+            string pointMic = anySpatialLevel && delta.LevelDeltaDb.HasValue && !delta.LevelFromSpatialAverage
+                ? ", level from the point mic"
+                : string.Empty;
+            lines.Add($"{delta.Channel}: {Band(delta.LowHz, delta.HighHz)}{how}{arrival}{pointMic}");
+        }
 
-                string deltaText = delta.DeltaMs.HasValue
-                    ? (delta.AnyLatched ? "~" : string.Empty) +
-                        $"{delta.DeltaMs.Value:+0.000;-0.000;0.000} ms"
-                    : "\u2014";
-                return $"{delta.Channel}: L {Side(delta.LeftMs, delta.LeftLatched)} / " +
-                    $"R {Side(delta.RightMs, delta.RightLatched)} ms, " +
-                    $"\u0394 {deltaText}{levelText} " +
-                    $"({FrequencyText.Format(delta.LowHz)} \u2013 " +
-                    $"{FrequencyText.Format(delta.HighHz)}" +
-                    (delta.EnergyOnset
-                        ? ", energy onsets"
-                        : delta.EnergyOnsetWithheld
-                            ? ", first peaks: a side is under the " +
-                                $"{AutoAlignmentEngine.EnergyOnsetMinimumSnrDb:0} dB " +
-                                "an energy onset needs"
-                            : string.Empty) + ")";
-            })) +
-            (deltas.Any(delta => delta.EnergyOnset)
-                ? "\r\nEnergy onsets: a pair whose shared band is centred " +
-                    $"below {AutoAlignmentEngine.EnergyOnsetBandCenterHz:0} Hz is " +
-                    "timed by the instant a tenth\r\nof the band's energy has " +
-                    "arrived, not by its first envelope peak \u2014 a slow " +
-                    "low-frequency\r\nenvelope's first hump is a coin toss " +
-                    "(a fraction of a dB decides whether it peaks),\r\nand the " +
-                    "stereo Auto delay's cross-side target picks its instrument " +
-                    "by the same rule\r\n(on the band it reads, which may be " +
-                    $"narrower). Both sides need {AutoAlignmentEngine.EnergyOnsetMinimumSnrDb:0} dB " +
-                    "of SNR,\r\nor the pair reads first peaks."
-                : string.Empty) +
-            (deltas.Any(delta => delta.AnyLatched)
-                ? "\r\n~: the full-band envelope timed the room's modal " +
-                    "build-up, not the direct rise\r\n(its upper half reads " +
-                    "much earlier) \u2014 the sides compare different features," +
-                    "\r\nso this \u0394 overstates the true skew. The alignment " +
-                    "engine detects the same\r\nlatch and times such pairs by " +
-                    "other means; trust its log over this row."
-                : string.Empty) +
-            "\r\nLow-band envelopes rise slowly, so the lowest rows carry " +
-            "extra tolerance (a fraction of a millisecond is noise there)." +
-            (anySpatialLevel
-                ? "\r\nLevel \u0394 compares the sides' spatial averages " +
-                    "through their chains \u2014 the levels\r\nthe hybrid " +
-                    "view draws \u2014 so one microphone position's dips " +
-                    "have no say in it\r\n(positive: LEFT louder)." +
-                    (anyPointLevel
-                        ? " (point mic): that pair's captures cannot produce " +
-                            "the figure — a side\r\nwithout one, or no shared " +
-                            "data in this band — so its row still reads " +
-                            "the\r\ngated processed responses."
-                        : string.Empty)
-                : "\r\nLevel \u0394 is the gated band level of the processed " +
-                    "sides (positive: LEFT louder).") +
-            "\r\nTrim the louder side's gain by ear " +
-            "to center the image alongside the timing \u2014\r\na single " +
-            "microphone underestimates the binaural difference (no head " +
-            "shadow).";
+        lines.Add(anySpatialLevel
+            ? "Level \u0394: spatial averages through the chains; positive = LEFT louder"
+            : "Level \u0394: gated band level; positive = LEFT louder");
+        if (deltas.Any(delta => delta.AnyLatched))
+        {
+            lines.Add("~: timed on the cabin's modal build-up, so the \u0394 overstates the skew");
+        }
+
+        return string.Join("\r\n", lines);
     }
 
     /// <summary>A listening group against the front stage in their shared band, replacing sum loss in multi-group views.
@@ -253,50 +196,21 @@ internal static class VirtualCrossoverMetric
         }
 
         bool anySpatialLevel = deltas.Any(delta => delta.LevelFromSpatialAverage);
-        var builder = new System.Text.StringBuilder(
-            "Each group against the front stage, measured on their summed " +
-            "responses in the band they share. No summation loss is quoted " +
-            "across groups: they play the same band from different places with " +
-            "no crossover between them, so their sum combs however well each " +
-            "one is tuned.");
+        var lines = new List<string> { "Each group vs the front stage in their shared band; no sum loss across groups" };
         foreach (GroupDelta delta in deltas)
         {
-            builder.AppendLine();
-            builder.AppendLine();
-            builder.Append(VirtualCrossoverZones.DisplayName(delta.Zone));
-            builder.Append($" ({delta.LowHz:0}-{delta.HighHz:0} Hz): ");
-            builder.Append(delta.DelayMs is { } ms
-                ? ms >= 0
-                    ? $"arrives {ms:0.00} ms after the front"
-                    : $"arrives {-ms:0.00} ms BEFORE the front"
-                : "no reliable arrival in this band");
-            if (delta.LevelDb is { } db)
-            {
-                builder.Append($", {Math.Abs(db):0.0} dB ");
-                builder.Append(db < 0 ? "quieter" : "louder");
-                if (anySpatialLevel && !delta.LevelFromSpatialAverage)
-                {
-                    builder.Append(" (point mic)");
-                }
-            }
-
-            builder.Append('.');
+            string pointMic = anySpatialLevel && delta.LevelDb.HasValue && !delta.LevelFromSpatialAverage
+                ? ", level from the point mic"
+                : string.Empty;
+            string arrival = delta.DelayMs.HasValue ? string.Empty : ", no reliable arrival";
+            lines.Add(
+                $"{VirtualCrossoverZones.DisplayName(delta.Zone)}: {Band(delta.LowHz, delta.HighHz)}{arrival}{pointMic}");
         }
 
-        if (anySpatialLevel)
-        {
-            builder.AppendLine();
-            builder.Append(
-                "Levels compare the groups' spatial averages through their " +
-                "chains (each group power-summed — an average carries no " +
-                "phase), so one microphone position's dips have no say in " +
-                "them; the arrivals keep reading the impulse responses. A row " +
-                "marked (point mic) could not be read from the captures — a " +
-                "member without one, or no shared capture data across the " +
-                "band — and still reads the gated processed responses.");
-        }
-
-        return builder.ToString();
+        lines.Add(anySpatialLevel
+            ? "\u0394t positive = later; \u0394dB from spatial averages, negative = quieter"
+            : "\u0394t positive = later; \u0394dB negative = quieter");
+        return string.Join("\r\n", lines);
     }
 
     internal readonly record struct PhaseEntry(
@@ -375,91 +289,52 @@ internal static class VirtualCrossoverMetric
             return string.Empty;
         }
 
-        return "Junction phase (through the phase gate, 8-cycle window)\r\n" +
-            string.Join("\r\n", entries.Select(entry =>
-            {
-                JunctionPhaseResult result = entry.Result;
-                string rival = result.RivalScore.HasValue
-                    ? $"rival lobe {result.RivalScore.Value:0.00} at " +
-                        $"{result.RivalExtraDelayMs!.Value:+0.00;-0.00;0.00} ms " +
-                        $"(margin {result.LobeMargin!.Value:0.00})"
-                    : "no rival lobe in the sweep window";
-                string phaseNote =
-                    result.PhaseConsistency >= JunctionPhaseAlignment.MinimumPhaseConsistency
-                        ? $"φ {result.PhaseAtCrossoverDeg:+0;-0;0}° at fc " +
-                            $"(R {result.PhaseConsistency:0.00})"
-                        : $"φ unreliable (R {result.PhaseConsistency:0.00} — " +
-                            "a notch or gap sits at the handover)";
-                string flip = result.BestInvert
-                    ? $", invert {entry.LowerChannel}"
-                    : $" (flip scores {result.OppositePolarityScore:0.00})";
-                string advice =
-                    result.BestScore >= JunctionPhaseAlignment.MinimumAlignableScore
-                        ? $"best {result.BestScore:0.00} at " +
-                            $"{FixText(result.BestExtraDelayMs)} ms " +
-                            $"on {entry.LowerChannel}{flip}"
-                        : $"no delay aligns this band (ceiling " +
-                            $"{result.BestScore:0.00}) — the two paths do not " +
-                            "correlate here, so no fix is offered";
-                return $"{entry.Junction} @ {FrequencyText.Format(entry.CrossoverHz)}: " +
-                    $"{phaseNote}; " +
-                    $"phase score {result.CurrentScore:0.00} now, " +
-                    $"{advice};\r\n   {rival}; " +
-                    $"fit Δτ {result.FitDelayMs:+0.00;-0.00;0.00} ms, " +
-                    $"rms {result.FitRmsDeg:0}° " +
-                    $"({FrequencyText.Format(entry.LowHz)} – " +
-                    $"{FrequencyText.Format(entry.HighHz)})";
-            })) +
-            "\r\nscore: Σw·cos(Δφ)/Σw over the band as the junction stands " +
-            "(−1..+1), a phase-\r\nalignment score, not the magnitude coherence " +
-            "γ² — 1.00 is aligned across the\r\nband, 0 a wash, negative means " +
-            "the overlap subtracts; it is what the fix\r\nmaximizes, so it " +
-            "moves while a delay is dragged. fix: the delay " +
-            "to add to the LOWER channel\r\nthat best aligns the band. A " +
-            "negative fix advances the lower channel — apply\r\nit as a +delay " +
-            "on the UPPER one when the lower is already at 0. A fix worth less " +
-            "than\r\n10° of phase at fc (0.03 dB in the sum) shows as \"·\": " +
-            "there is nothing to apply.\r\nA fix shows as \"—\" where even " +
-            "the best delay leaves the band out of phase: the two paths do\r\n" +
-            "not correlate over it, and moving one of them cannot help.\r\n" +
-            "Polarity mark: " +
-            "\"i\" (or \"invert\") = flipping the lower channel scores " +
-            "clearly better; \"~\" = the\r\ncurrent polarity is kept but a flip " +
-            "nearly ties (an inversion and a half-period\r\ndelay sum alike, " +
-            "common at a sub), so summation cannot settle the polarity —\r\nφ " +
-            "near ±180° never settles it either. φ is a narrow circular mean " +
-            "around fc;\r\nR (0..1) is how much its bins agree — a low R dashes " +
-            "it. The lobe margin above\r\nis how decisively the best delay beats " +
-            "the nearest same-polarity whole-period\r\nrival; a small one (!) " +
-            "means the band is too narrow to rule that period hop out,\r\nso " +
-            "don't trust the fix — read the junction's coherence ladder instead.";
+        var lines = new List<string> { "Junction phase, 8-cycle window" };
+        foreach (PhaseEntry entry in entries)
+        {
+            JunctionPhaseResult result = entry.Result;
+            string best = result.BestScore >= JunctionPhaseAlignment.MinimumAlignableScore
+                ? $"best {result.BestScore:0.00} at {FixText(result.BestExtraDelayMs)} ms on {entry.LowerChannel}" +
+                    (result.BestInvert
+                        ? $", invert {entry.LowerChannel}"
+                        : $", flip {result.OppositePolarityScore:0.00}")
+                : $"no delay aligns it (ceiling {result.BestScore:0.00})";
+            string rival = result.RivalScore.HasValue
+                ? $"; rival {result.RivalScore.Value:0.00} at " +
+                    $"{result.RivalExtraDelayMs!.Value:+0.00;-0.00;0.00} ms (margin {result.LobeMargin!.Value:0.00})"
+                : string.Empty;
+            string phase = result.PhaseConsistency >= JunctionPhaseAlignment.MinimumPhaseConsistency
+                ? string.Empty
+                : $"; \u03c6 unreliable (R {result.PhaseConsistency:0.00})";
+            lines.Add($"{entry.Junction} @ {FrequencyText.Format(entry.CrossoverHz)}: {best}{rival}{phase}");
+        }
+
+        lines.Add("score \u22121\u20261, 1 = aligned; fix = delay to add to the LOWER channel");
+        lines.Add("i invert \u00b7 ~ flip nearly ties \u00b7 ! lobe hop possible \u00b7 \u00b7 too small \u00b7 \u2014 nothing aligns");
+        return string.Join("\r\n", lines);
     }
 
     public static string FormatDetail(IReadOnlyList<Entry> entries, bool direct = false)
     {
-        string title = direct ? "Sum loss (direct) avg" : "Sum loss avg";
+        string title = direct ? "Sum loss (direct)" : "Sum loss";
         if (entries.Count == 0)
         {
-            return title + ": —";
+            return title + ": \u2014";
         }
 
-        return title + "\r\n" + string.Join("\r\n", entries.Select(entry =>
-        {
-            string name = entry.IsTotal ? "Total" : entry.Junction;
-            string dip = entry.DipDb.HasValue ? $", dip {entry.DipDb.Value:0.00} dB" : "";
-            return $"{name}: {entry.AverageDb:0.00} dB avg{dip} " +
-                $"({FrequencyText.Format(entry.LowHz)} – {FrequencyText.Format(entry.HighHz)})";
-        })) + (direct
-            ? "\r\nDirect: each channel through the Junction phase block's 8-cycle\r\n" +
-              "window at its own front — the loss of the direct sound, not of the\r\n" +
-              "sum the cabin hears. Deeper and more seat-sensitive than the Full\r\n" +
-              "read; the two are not comparable."
-            : string.Empty);
+        return title + " bands\r\n" + string.Join("\r\n", entries.Select(entry =>
+            $"{(entry.IsTotal ? "Total" : entry.Junction)}: {Band(entry.LowHz, entry.HighHz)}")) +
+            (direct ? "\r\nDirect: each channel's 8-cycle window; not comparable with Full" : string.Empty);
     }
 
-    /// <summary>The panel's read-out column (compact) and its tooltip (detail), block by block in reading order.</summary>
+    private static string Band(double lowHz, double highHz) =>
+        $"{FrequencyText.Format(lowHz)} \u2013 {FrequencyText.Format(highHz)}";
+
+    /// <summary>The panel's read-out column (compact) and its tooltip (detail), block by block in reading order; the
+    /// headroom leads, since a clip must show without scrolling.</summary>
     /// <param name="hybrid">The hybrid's health figure while it is drawn, else null.</param>
-    public static (string Compact, string Detail) FormatReadOut(
+    public static (List<ToneLine> Compact, string Detail) FormatReadOut(
+        IReadOnlyList<HeadroomRow> headroom,
         IReadOnlyList<Entry> entries,
         bool direct,
         IReadOnlyList<PhaseEntry> phaseEntries,
@@ -495,14 +370,32 @@ internal static class VirtualCrossoverMetric
             // A health reading: an array shares the IRs' loopback, so a large figure means a different input, calibration or driver.
             compact += "\r\n\r\n" + $"Spatial average {reading.Db:+0.0;-0.0} dB";
             detail += DetailBreak() + (reading.ArrayStandOff
-                ? $"The array furthest from its impulse response sits {reading.Db:+0.0;-0.0} dB " +
-                    "off it. Arrays share the impulse responses' loopback, so each is drawn " +
-                    "at the level it measured."
-                : $"The spatial averages sit {reading.Db:+0.0;-0.0} dB from the " +
-                    "impulse responses, and the whole set is drawn shifted by that one " +
-                    "figure.");
+                ? $"Furthest array {reading.Db:+0.0;-0.0} dB off its IR; each array is drawn at its own level"
+                : $"Spatial averages drawn shifted {reading.Db:+0.0;-0.0} dB onto the IRs");
         }
 
-        return (compact, detail);
+        return (WithHeadroom(headroom, ToneLine.Plain(compact)), WithHeadroom(headroom, detail));
+    }
+
+    /// <summary>The headroom block alone, for a view that quotes nothing else.</summary>
+    public static (List<ToneLine> Compact, string Detail) FormatHeadroomOnly(IReadOnlyList<HeadroomRow> headroom) =>
+        (VirtualCrossoverHeadroom.FormatCompact(headroom), VirtualCrossoverHeadroom.FormatDetail(headroom));
+
+    private static List<ToneLine> WithHeadroom(IReadOnlyList<HeadroomRow> headroom, List<ToneLine> rest)
+    {
+        List<ToneLine> lines = VirtualCrossoverHeadroom.FormatCompact(headroom);
+        if (lines.Count > 0 && rest.Count > 0)
+        {
+            lines.Add(ToneLine.Of(string.Empty));
+        }
+
+        lines.AddRange(rest);
+        return lines;
+    }
+
+    private static string WithHeadroom(IReadOnlyList<HeadroomRow> headroom, string rest)
+    {
+        string block = VirtualCrossoverHeadroom.FormatDetail(headroom);
+        return block.Length > 0 && rest.Length > 0 ? block + "\r\n\r\n" + rest : block + rest;
     }
 }

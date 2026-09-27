@@ -18,6 +18,7 @@ Where the code lives:
   junction phase entries, stereo and group Δ read-outs and the opposite side's sum.
 - `source/Tools/VirtualCrossover/VirtualCrossoverMetric.cs` — pure formatting of those read-outs.
 - `source/Tools/VirtualCrossover/SumLossWindow.cs` — the Full / Direct / Off selector.
+- `source/Tools/VirtualCrossover/VirtualCrossoverHeadroom.cs` — every output's headroom and its read-out block.
 - `source/Tools/VirtualCrossover/VirtualCrossoverAcousticPlot.cs`,
   `VirtualCrossoverDspChainPlot.cs` — OxyPlot presenters for the main plot and the lower plot
   (chain response, junction correlation, junction coherence).
@@ -651,6 +652,22 @@ lower channel) and the current phase score.
   which the fix alone cannot.
 - Signed values use three format sections: since .NET Core 3.0's signed-zero change a negative
   value rounding to zero renders "-+0.00" through the two-section form.
+
+## Headroom
+
+`VirtualCrossoverHeadroom` quotes 0 dB less each output's peak chain gain over 20 Hz – 20 kHz
+([peak gain](dsp-chain-response.md#peak-gain)), at the processor's rate, the band capped at 0.45 × that rate.
+
+- **Every enabled block on both sides**, not the view's: the Show filter and the L/R selector choose what is drawn,
+  while a clip happens on whichever output the device drives. A side is read only when it has a measurement, as the
+  chain plot draws only those; a bypassed block reads its identity chain.
+- **Threshold:** red below −0.05 dB, the EQ Wizard's Headroom rule, so a crossover's flat 0 dB passband never reads
+  as a clip through float noise, and 0.0 is green: a full-scale output does not clip.
+- **Off the UI thread, memoized:** the inputs are captured with the frame, read on a worker while the frame's other
+  reads run, and each side's peak is kept by its response (PEQ compared band by band, the delay dropped), so a knob
+  turn re-reads one chain.
+- **Chain plot:** its magnitude mode fills red between each chain and 0 dB where the chain rises above it, with the
+  crossings interpolated in log frequency so the fill meets the drawn line.
 
 ## Plots
 

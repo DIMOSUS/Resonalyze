@@ -99,7 +99,7 @@ public partial class VirtualCrossoverPanel
         if (loading)
         {
             acousticPlot.ShowHint(AcousticViewBuilder.LoadingHint);
-            MetricChanged?.Invoke("Loading\r\nsession…", string.Empty);
+            MetricChanged?.Invoke(ToneLine.Plain("Loading\r\nsession…"), string.Empty);
         }
     }
 

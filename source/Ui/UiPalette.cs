@@ -81,6 +81,7 @@ internal static class UiPalette
     public static Color FaderCapPressedBottom => Current.FaderCapPressedBottom;
     public static Color FaderTick => Current.FaderTick;
     public static Color CurveNeutral => Current.CurveNeutral;
+    public static Color CurveClipFill => Current.CurveClipFill;
     public static Color CurveMuted => Current.CurveMuted;
     public static Color CurveHarmonic2 => Current.CurveHarmonic2;
     public static Color CurveHarmonic3 => Current.CurveHarmonic3;

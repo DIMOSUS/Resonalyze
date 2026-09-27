@@ -29,7 +29,7 @@ internal sealed class VirtualCrossoverLivePanel : IDisposable
         Panel = new VirtualCrossoverPanel
         {
             Dock = DockStyle.Fill,
-            MetricChanged = (compact, _) => metric = compact,
+            MetricChanged = (compact, _) => metric = ToneLine.TextOf(compact),
             WarningChanged = (text, _, _) => Warning = text,
             ShowMenu = (_, menu) => Menu = menu,
             ShowMessage = (text, caption, buttons, _) =>

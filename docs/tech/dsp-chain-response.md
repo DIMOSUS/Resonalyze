@@ -84,15 +84,20 @@ itself, and `PreparedDspResponse.Responses`/`GroupDelaysMs` multiply them into t
 
 ## Peak gain
 
-`DspChainPeak.Find` answers the headroom read-outs: the highest |H| a chain reaches in a band, and where. A 1/48-octave
-log grid finds the neighbourhood; each local grid maximum within 6 dB of the highest (the eight highest at most) is
-then refined by golden-section search on log frequency between its grid neighbours.
+`DspChainPeak.Find` answers the headroom read-outs: the highest |H| a chain reaches in a band, and where. Two grids find
+the neighbourhoods: a 1/48-octave log grid over the whole chain, and, when the chain carries a FIR, the kernel's DFT at
+bins a quarter of a lobe apart (length ≥ 4 × taps, so a 131,072-tap kernel is read every 0.09 Hz at 48 kHz) times the
+IIR stages read at those bins. Each local maximum within 6 dB of the highest (the eight highest at most) is then
+refined by golden-section search on log frequency between its grid neighbours, against the full chain.
 
-- **Why refine every candidate, not the grid's best:** a narrow bell (Q 40–60) or a FIR ripple can fall between grid
-  points and read a dB or more low, under a broad peak it actually tops. The tests step a Q 60 bell across 1/12 octave
-  so some centres land between grid points whatever the grid.
-- **What it misses:** a peak whose every grid sample sits more than 6 dB under the highest. At 1/48 octave that takes a
-  bell narrower than any PEQ the app or its importers produce.
-- **Cost:** the grid read goes through `PreparedDspResponse.Responses`, so a FIR's values come from the kernel's grid
-  cache ([FIR on a plotted grid](#fir-on-a-plotted-grid)); the refinement reads points one by one, about 200 per
-  chain, a Horner sum over the taps each.
+- **Why refine every candidate, not the grid's best:** a narrow bell (Q 40–60) can fall between log-grid points and
+  read a dB or more low, under a broad peak it actually tops. The tests step a Q 60 bell across 1/12 octave so some
+  centres land between grid points whatever the grid.
+- **Why the FIR bins:** a long kernel's lobes are about rate / taps wide, sub-hertz for the longest, and the log grid
+  can miss one entirely. The test hides a 6 Hz cosine-burst lobe under nine broad bells on the log grid and checks it
+  against a brute-force DTFT.
+- **What it misses:** a peak whose every grid sample sits more than 6 dB under the highest, or one ranked below eight
+  others; at these densities that takes a peak narrower than anything the app or its importers produce.
+- **Cost:** one FFT of the kernel and the IIR stages at the in-band bins (218k at the longest kernel), then the
+  refinement's point reads, about 200 per chain, each a Horner sum over the taps. The headroom reader keeps the result
+  per chain, so this runs once per edit of that chain.

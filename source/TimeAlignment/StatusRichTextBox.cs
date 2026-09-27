@@ -42,6 +42,11 @@ internal sealed class StatusRichTextBox : RichTextBox
     public void ShowLines(IReadOnlyList<ToneLine> lines, bool keepScroll = false)
     {
         lastLines = lines;
+        if (!IsHandleCreated)
+        {
+            return;
+        }
+
         // Spans with their tones, so a recolour with the same text still repaints.
         string shown = string.Join(
             "\u0001",
@@ -52,7 +57,7 @@ internal sealed class StatusRichTextBox : RichTextBox
         }
 
         shownLines = shown;
-        int firstLine = keepScroll && IsHandleCreated
+        int firstLine = keepScroll
             ? (int)SendMessage(Handle, EmGetFirstVisibleLine, IntPtr.Zero, IntPtr.Zero)
             : 0;
         BeginUpdate();
@@ -94,7 +99,7 @@ internal sealed class StatusRichTextBox : RichTextBox
         }
     }
 
-    // Text set before the handle exists comes back without its colours, so the lines are written again.
+    // Lines shown before the handle exists wait for it: text set on a handle-less box comes back without its colours.
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);

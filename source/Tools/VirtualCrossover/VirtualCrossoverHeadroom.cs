@@ -1,3 +1,4 @@
+using OxyPlot;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -5,8 +6,8 @@ namespace Resonalyze;
 /// <summary>One side's headroom: 0 dB less the chain's peak gain in the audio band. Negative clips a full-scale signal.</summary>
 internal readonly record struct HeadroomReading(double HeadroomDb, double PeakHz, bool Bypass)
 {
-    // The EQ Wizard's threshold: float noise around a flat 0 dB never reads as a clip.
-    public bool Clips => HeadroomDb < -0.05;
+    // On the figure as shown, so the colour always agrees with its sign and float noise at 0 dB stays green.
+    public bool Clips => Math.Round(HeadroomDb, 1, MidpointRounding.AwayFromZero) < 0;
 }
 
 /// <summary>An enabled block's two sides; a mono block reads its left only, a side without a measurement reads null.</summary>
@@ -19,8 +20,11 @@ internal sealed class VirtualCrossoverHeadroom
 {
     private const double LowHz = 20;
     private const double HighHz = 20_000;
-    private const int CacheCapacity = 64;
 
+    // Just under Nyquist, where a bilinear filter's response is still defined.
+    private const double HighestRateFraction = 0.49;
+
+    // Only the last read's chains: an older chain can hold a replaced FIR kernel and its caches.
     private readonly Dictionary<SideInput, (double PeakHz, double PeakDb)> peaks = [];
 
     /// <summary>What <see cref="Read"/> needs, taken on the UI thread; null chains are sides without a measurement.</summary>
@@ -50,8 +54,10 @@ internal sealed class VirtualCrossoverHeadroom
                 continue;
             }
 
+            // A side without a rate cannot be realized; it reads as unmeasured rather than failing the frame.
             SideInput? Side(bool rightSide) =>
-                channel.SideState(rightSide).TransferImpulseResponse == null
+                channel.SideState(rightSide).TransferImpulseResponse == null ||
+                channel.ProcessorSampleRateFor(rightSide) <= 0
                     ? null
                     // The bulk delay cannot change a magnitude.
                     : new SideInput(
@@ -71,12 +77,27 @@ internal sealed class VirtualCrossoverHeadroom
         return inputs;
     }
 
-    public List<HeadroomRow> Read(IReadOnlyList<Input> inputs) =>
-        [.. inputs.Select(input => new HeadroomRow(
-            input.Channel,
-            input.Mono,
-            Reading(input.Left, input.Bypass),
-            Reading(input.Right, input.Bypass)))];
+    public List<HeadroomRow> Read(IReadOnlyList<Input> inputs)
+    {
+        List<HeadroomRow> rows =
+        [
+            .. inputs.Select(input => new HeadroomRow(
+                input.Channel,
+                input.Mono,
+                Reading(input.Left, input.Bypass),
+                Reading(input.Right, input.Bypass)))
+        ];
+        var live = inputs.SelectMany(input => new[] { input.Left, input.Right }).OfType<SideInput>().ToHashSet();
+        lock (peaks)
+        {
+            foreach (SideInput stale in peaks.Keys.Where(key => !live.Contains(key)).ToList())
+            {
+                peaks.Remove(stale);
+            }
+        }
+
+        return rows;
+    }
 
     private HeadroomReading? Reading(SideInput? side, bool bypass)
     {
@@ -94,20 +115,63 @@ internal sealed class VirtualCrossoverHeadroom
 
         if (!known)
         {
-            PreparedDspResponse response = PreparedDspResponse.Create(side.Chain, side.ProcessorSampleRate);
-            peak = DspChainPeak.Find(response, LowHz, Math.Min(HighHz, 0.45 * side.ProcessorSampleRate));
+            peak = DspChainPeak.Find(
+                side.Chain,
+                side.ProcessorSampleRate,
+                LowHz,
+                Math.Min(HighHz, HighestRateFraction * side.ProcessorSampleRate));
             lock (peaks)
             {
-                if (peaks.Count >= CacheCapacity)
-                {
-                    peaks.Clear();
-                }
-
                 peaks[side] = peak;
             }
         }
 
         return new HeadroomReading(-peak.PeakDb, peak.PeakHz, bypass);
+    }
+
+    /// <summary>The runs of a curve above 0 dB, each opening and closing on 0 dB at its interpolated crossings, for the
+    /// chain plot's fill; a curve that never rises above 0 dB has none.</summary>
+    public static List<List<DataPoint>> OverUnity(IReadOnlyList<DataPoint> points)
+    {
+        var runs = new List<List<DataPoint>>();
+        List<DataPoint>? run = null;
+        for (int i = 0; i < points.Count; i++)
+        {
+            bool over = points[i].Y > 0;
+            if (i > 0 && over != points[i - 1].Y > 0)
+            {
+                DataPoint crossing = Crossing(points[i - 1], points[i]);
+                if (over)
+                {
+                    run = [crossing];
+                    runs.Add(run);
+                }
+                else
+                {
+                    run!.Add(crossing);
+                    run = null;
+                }
+            }
+            else if (over && run == null)
+            {
+                run = [];
+                runs.Add(run);
+            }
+
+            if (over)
+            {
+                run!.Add(points[i]);
+            }
+        }
+
+        return runs;
+    }
+
+    // Linear in log frequency, as the axis draws the segment.
+    private static DataPoint Crossing(DataPoint a, DataPoint b)
+    {
+        double t = a.Y / (a.Y - b.Y);
+        return new DataPoint(Math.Exp(Math.Log(a.X) + t * (Math.Log(b.X) - Math.Log(a.X))), 0);
     }
 
     /// <summary>The read-out column's block: a row per block, L and R cells green or red.</summary>

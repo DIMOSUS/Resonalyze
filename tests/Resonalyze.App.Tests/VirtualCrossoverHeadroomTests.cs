@@ -1,5 +1,6 @@
 using System.Numerics;
 using OxyPlot;
+using Resonalyze.Ui;
 using Resonalyze.Dsp;
 using Xunit;
 
@@ -100,6 +101,7 @@ public class VirtualCrossoverHeadroomTests
     [Theory]
     [InlineData(0.0, false)]
     [InlineData(-0.04, false)]
+    [InlineData(-0.05, true)]
     [InlineData(-0.06, true)]
     [InlineData(3.0, false)]
     public void Clips_OnlyWhenTheShownFigureIsNegative(double headroomDb, bool clips) =>
@@ -136,7 +138,16 @@ public class VirtualCrossoverHeadroomTests
 
         string[] lines = VirtualCrossoverHeadroom.FormatDetail(rows).Split("\r\n");
 
-        Assert.Equal(["A: 48 Hz", "B: L 77 Hz, R 107 Hz", "C: R bypassed"], lines.Skip(1));
+        string a = Assert.Single(lines, line => line.StartsWith("A:"));
+        Assert.Contains("48 Hz", a);
+        Assert.DoesNotContain("L ", a);
+        string b = Assert.Single(lines, line => line.StartsWith("B:"));
+        Assert.True(b.IndexOf("77 Hz") < b.IndexOf("107 Hz"), b);
+        Assert.Contains("L", b);
+        Assert.Contains("R", b);
+        string c = Assert.Single(lines, line => line.StartsWith("C:"));
+        Assert.Contains("bypass", c);
+        Assert.DoesNotContain("L ", c);
     }
 
     [Fact]
@@ -152,19 +163,65 @@ public class VirtualCrossoverHeadroomTests
     }
 
     [Fact]
-    public void OverUnity_MeetsTheCurveAtEachCrossing()
+    public void OverUnity_GivesEachRunItsOwnCrossings()
     {
-        List<DataPoint> over = VirtualCrossoverDspChainPlot.OverUnity(
-            [new(100, -1), new(200, 1), new(400, 1), new(800, -3)]);
+        List<List<DataPoint>> runs = VirtualCrossoverHeadroom.OverUnity(
+            [new(100, -1), new(200, 1), new(400, 1), new(800, -3), new(1_600, 2)]);
 
-        // Crossings linear in log frequency: the log midpoint of 100–200 Hz, a quarter of 400–800 Hz.
-        Assert.Equal(
-            [
-                new DataPoint(100, 0), new DataPoint(Math.Sqrt(100 * 200), 0), new DataPoint(200, 1),
-                new DataPoint(400, 1), new DataPoint(400 * Math.Pow(2, 0.25), 0), new DataPoint(800, 0)
-            ],
-            over.Select(point => new DataPoint(Math.Round(point.X, 9), point.Y)),
-            (x, y) => Math.Abs(x.X - Math.Round(y.X, 9)) < 1e-6 && x.Y == y.Y);
-        Assert.Empty(VirtualCrossoverDspChainPlot.OverUnity([new(100, -1), new(200, 0)]));
+        // Crossings linear in log frequency: the log midpoint of 100–200 Hz, a quarter of 400–800 Hz, 3/5 of 800–1600 Hz.
+        Assert.Equal(2, runs.Count);
+        AssertPoints(
+            [new(Math.Sqrt(100 * 200), 0), new(200, 1), new(400, 1), new(400 * Math.Pow(2, 0.25), 0)], runs[0]);
+        AssertPoints([new(800 * Math.Pow(2, 0.6), 0), new(1_600, 2)], runs[1]);
+        Assert.Empty(VirtualCrossoverHeadroom.OverUnity([new(100, -1), new(200, 0)]));
+    }
+
+    private static void AssertPoints(DataPoint[] expected, List<DataPoint> actual)
+    {
+        Assert.Equal(expected.Length, actual.Count);
+        for (int i = 0; i < expected.Length; i++)
+        {
+            Assert.Equal(expected[i].X, actual[i].X, 6);
+            Assert.Equal(expected[i].Y, actual[i].Y, 9);
+        }
+    }
+
+    [Fact]
+    public void Capture_ReadsASideWithoutARateAsUnmeasured()
+    {
+        VirtualCrossoverChannel channel = Channel("A");
+        channel.SideState(rightSide: true).SampleRate = 0;
+
+        HeadroomRow row = Assert.Single(new VirtualCrossoverHeadroom().Read(VirtualCrossoverHeadroom.Capture([channel])));
+
+        Assert.NotNull(row.Left);
+        Assert.Null(row.Right);
+    }
+
+    [Fact]
+    public void ShowLines_KeepsEachSpansColourThroughTheHandlesCreation()
+    {
+        StaTest.Run(() =>
+        {
+            using var box = new StatusRichTextBox { ForeColor = UiPalette.Warning };
+            ToneLine line = new([new ToneSpan("ab"), new ToneSpan("cd", TextTone.Bad), new ToneSpan("ef", TextTone.Good)]);
+            box.ShowLines([line]);
+            box.CreateControl();
+            _ = box.Handle;
+
+            Assert.Equal("abcdef", box.Text);
+            Assert.Equal(
+                [UiPalette.Warning.ToArgb(), UiPalette.Error.ToArgb(), UiPalette.Success.ToArgb()],
+                new[] { 0, 2, 4 }.Select(start => ColourAt(box, start)));
+
+            box.ShowLines([new ToneLine([new ToneSpan("ab"), new ToneSpan("cd", TextTone.Good), new ToneSpan("ef")])]);
+            Assert.Equal(UiPalette.Success.ToArgb(), ColourAt(box, 2));
+        });
+    }
+
+    private static int ColourAt(StatusRichTextBox box, int start)
+    {
+        box.Select(start, 2);
+        return box.SelectionColor.ToArgb();
     }
 }

@@ -618,53 +618,24 @@ internal sealed class VirtualCrossoverDspChainPlot
     // Red between the curve and 0 dB wherever the chain gains: a full-scale input clips there.
     private static void AddOverUnity(PlotModel model, string title, List<DataPoint> points)
     {
-        List<DataPoint> over = OverUnity(points);
-        if (over.Count == 0)
+        // One series per run, so nothing lies along 0 dB for the tracker to snap to between them.
+        foreach (List<DataPoint> run in VirtualCrossoverHeadroom.OverUnity(points))
         {
-            return;
-        }
-
-        var area = new AreaSeries
-        {
-            Title = $"{title} over 0 dB",
-            RenderInLegend = false,
-            Tag = SeriesTag,
-            Color = OxyColors.Transparent,
-            Color2 = OxyColors.Transparent,
-            Fill = UiPalette.CurveClipFill.ToOxy(),
-            TrackerFormatString = TrackerFormat,
-            YAxisKey = ValueAxisKey,
-            ConstantY2 = 0
-        };
-        area.Points.AddRange(over);
-        model.Series.Insert(0, area);
-    }
-
-    /// <summary>The curve clamped at 0 dB from below, with each crossing interpolated so the fill meets the line;
-    /// empty when nothing rises above 0 dB.</summary>
-    internal static List<DataPoint> OverUnity(IReadOnlyList<DataPoint> points)
-    {
-        if (!points.Any(point => point.Y > 0))
-        {
-            return [];
-        }
-
-        var clamped = new List<DataPoint>(points.Count + 8);
-        for (int i = 0; i < points.Count; i++)
-        {
-            if (i > 0 && points[i - 1].Y > 0 != points[i].Y > 0)
+            var area = new AreaSeries
             {
-                DataPoint a = points[i - 1];
-                DataPoint b = points[i];
-                // Linear in log frequency, as the axis draws the segment.
-                double t = a.Y / (a.Y - b.Y);
-                clamped.Add(new DataPoint(Math.Exp(Math.Log(a.X) + t * (Math.Log(b.X) - Math.Log(a.X))), 0));
-            }
-
-            clamped.Add(new DataPoint(points[i].X, Math.Max(0, points[i].Y)));
+                Title = $"{title} over 0 dB",
+                RenderInLegend = false,
+                Tag = SeriesTag,
+                Color = OxyColors.Transparent,
+                Color2 = OxyColors.Transparent,
+                Fill = UiPalette.CurveClipFill.ToOxy(),
+                TrackerFormatString = TrackerFormat,
+                YAxisKey = ValueAxisKey,
+                ConstantY2 = 0
+            };
+            area.Points.AddRange(run);
+            model.Series.Insert(0, area);
         }
-
-        return clamped;
     }
 
     private static void AddSeries(

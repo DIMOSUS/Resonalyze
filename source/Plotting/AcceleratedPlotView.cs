@@ -19,6 +19,7 @@ internal sealed class AcceleratedPlotView : PlotView
     private SKSurface? surface;
     private bool printing;
     private bool gpuRefused;
+    private bool awaitingFreshWindow;
     private bool gpuAllowed = true;
 
     public AcceleratedPlotView()
@@ -69,6 +70,7 @@ internal sealed class AcceleratedPlotView : PlotView
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
+        awaitingFreshWindow = false;
         if (gpuRefused || !gpuAllowed)
         {
             return;
@@ -122,7 +124,7 @@ internal sealed class AcceleratedPlotView : PlotView
 
     protected override void OnPaintBackground(PaintEventArgs pevent)
     {
-        if (gpu == null || printing)
+        if ((gpu == null && !awaitingFreshWindow) || printing)
         {
             base.OnPaintBackground(pevent);
         }
@@ -130,6 +132,12 @@ internal sealed class AcceleratedPlotView : PlotView
 
     protected override void OnPaint(PaintEventArgs e)
     {
+        // An Update() delivers WM_PAINT before the queued RecreateHandle; the old window's GL format takes no GDI+.
+        if (awaitingFreshWindow && !printing)
+        {
+            return;
+        }
+
         if (gpu == null || printing)
         {
             base.OnPaint(e);
@@ -235,6 +243,7 @@ internal sealed class AcceleratedPlotView : PlotView
         SetGdiPainting(true);
         if (windowHasGlFormat && IsHandleCreated)
         {
+            awaitingFreshWindow = true;
             BeginInvoke(() =>
             {
                 if (!IsDisposed)

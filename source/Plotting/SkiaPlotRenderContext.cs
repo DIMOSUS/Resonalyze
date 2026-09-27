@@ -62,6 +62,17 @@ internal sealed class SkiaPlotRenderContext : IRenderContext, IDisposable
         SKPaint paint = TextPaint(primary, fontSize);
         paint.Color = new SKColor(fill.R, fill.G, fill.B, fill.A);
         float lineHeight = paint.GetFontMetrics(out SKFontMetrics metrics);
+        float blockWidth = lines.Max(line => Width(RunsOf(line, primary, fontWeight), paint));
+        if (maxSize is { } limit)
+        {
+            blockWidth = Math.Min(blockWidth, (float)limit.Width);
+            lines = Clip(lines, limit, lineHeight, primary, fontWeight, paint);
+            if (lines.Length == 0)
+            {
+                return;
+            }
+        }
+
         float y = verticalAlignment switch
         {
             VerticalAlignment.Top => -metrics.Ascent,
@@ -72,9 +83,8 @@ internal sealed class SkiaPlotRenderContext : IRenderContext, IDisposable
         using var restore = new SKAutoCanvasRestore(Canvas);
         Canvas.Translate((float)p.X, (float)p.Y);
         Canvas.RotateDegrees((float)rotation);
-        // GDI+ aligns the block by its widest line and starts every line at the block's left edge.
+        // GDI+ aligns the block by its widest line, before any clipping, and starts every line at the block's left edge.
         List<(string Text, SKTypeface Typeface)>[] lineRuns = [.. lines.Select(line => RunsOf(line, primary, fontWeight))];
-        float blockWidth = lineRuns.Max(runs => Width(runs, paint));
         float left = horizontalAlignment switch
         {
             HorizontalAlignment.Left => 0,
@@ -198,6 +208,59 @@ internal sealed class SkiaPlotRenderContext : IRenderContext, IDisposable
         }
 
         return width;
+    }
+
+    // A plot title's maxSize, as GDI+ lays it out: lines word-wrapped to the width (a word too long for a line of its
+    // own broken where it overflows), and only the lines the unwrapped block's height holds.
+    private string[] Clip(string[] lines, OxySize limit, float lineHeight, SKTypeface primary, double fontWeight, SKPaint paint)
+    {
+        int room = (int)Math.Floor((Math.Min(lines.Length * lineHeight, limit.Height) / lineHeight) + 1e-3);
+        float width = (float)limit.Width;
+        var clipped = new List<string>();
+        foreach (string line in lines)
+        {
+            string rest = line;
+            while (clipped.Count < room)
+            {
+                int take = FittingLength(rest, width, primary, fontWeight, paint);
+                clipped.Add(rest[..take].TrimEnd());
+                rest = rest[take..].TrimStart();
+                if (rest.Length == 0)
+                {
+                    break;
+                }
+            }
+        }
+
+        return [.. clipped];
+    }
+
+    private int FittingLength(string text, float width, SKTypeface primary, double fontWeight, SKPaint paint)
+    {
+        bool Fits(int length) => Width(RunsOf(text[..length], primary, fontWeight), paint) <= width;
+        if (Fits(text.Length))
+        {
+            return text.Length;
+        }
+
+        int wordEnd = 0;
+        for (int space = text.IndexOf(' '); space > 0 && Fits(space); space = text.IndexOf(' ', space + 1))
+        {
+            wordEnd = space;
+        }
+
+        if (wordEnd > 0)
+        {
+            return wordEnd;
+        }
+
+        int characters = 1;
+        while (characters < text.Length && Fits(characters + 1))
+        {
+            characters++;
+        }
+
+        return characters;
     }
 
     // Latin, Greek, Cyrillic and symbols draw glyph by glyph, as GDI+ draws them; shaping them cost 0.6 ms a frame.

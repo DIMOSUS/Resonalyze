@@ -263,7 +263,8 @@ GDI+ stays the fallback, per window: when the pixel format is Windows' software 
 without a GPU driver), when Skia cannot build a GL context or its native library fails to load (it loads there, not
 in the constructor, so the window still opens), and for good after any frame throws. OxyPlot catches a model's own
 exceptions inside `Render`, so only GPU failures reach that point. A window keeps an OpenGL pixel format until it is
-destroyed, so a failure after the format was set recreates the handle and GDI+ draws on a fresh window. Settings'
+destroyed, so a failure after the format was set recreates the handle and GDI+ draws on a fresh window; until
+the queued recreation runs, a synchronous `Update()` paints nothing on the old one. Settings'
 **Hardware-accelerated graphs** (`AppearanceSettingsFile.HardwareAcceleratedPlots`, applied through
 `AcceleratedPlotView.GpuAllowed`) switches the GPU path off for a driver that draws wrong without failing; a change
 recreates the handle at once, and turning it back on gives a failed GPU another try. `DrawToBitmap`
@@ -273,8 +274,9 @@ exports keep their GDI+ `PngExporter`.
 
 `SkiaPlotRenderContext` draws text itself rather than through OxyPlot's Skia text, for layout parity with GDI+:
 GDI+ reads a font size as `0.8 × size` points at the window's DPI where Skia reads pixels, GDI+ aligns a multi-line
-block by its widest line with every line left-aligned inside it, and GDI+ substitutes a font for a glyph the font
-lacks. The plot labels' `━━` swatch (U+2501) is not in Segoe UI; the substitute is looked up along Windows' font link
+block by its widest line with every line left-aligned inside it, GDI+ word-wraps a text given a `maxSize` (the
+plot title, clipped to 90 % of its area and carrying the file name) and keeps only the lines its unwrapped height
+holds, and GDI+ substitutes a font for a glyph the font lacks. The plot labels' `━━` swatch (U+2501) is not in Segoe UI; the substitute is looked up along Windows' font link
 chain for the family (`HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\FontLink\SystemLink`), as GDI+ does,
 because Skia's own character match picks a font whose box-drawing glyphs are half as wide.
 A run that needs shaping (combining marks, Hebrew, Arabic, Indic and other complex

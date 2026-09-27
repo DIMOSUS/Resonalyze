@@ -31,6 +31,21 @@ internal static class OverlayCapture
             seedSmoothing = rawCapture.SmoothingCode;
             bakedSmoothing = 0;
         }
+        else if (impulse is { } impulseCapture && sources.TryGetImpulseFrame() is { } frame)
+        {
+            // Only builds that cannot read the whole trace draw these points: a thinned copy, not the record twice over.
+            points = ImpulseOverlayRenderer.Render(
+                impulseCapture with
+                {
+                    Samples = ImpulseOverlayThinning.Thin(impulseCapture.Samples, impulseCapture.PeakSample)
+                },
+                frame);
+            spectrum = null;
+            calibrationCorrectionDb = Array.Empty<double>();
+            pointsCorrectionDb = Array.Empty<double>();
+            seedSmoothing = 0;
+            bakedSmoothing = raw?.SmoothingCode;
+        }
         else
         {
             points = new DataPoint[selected.Points.Count];

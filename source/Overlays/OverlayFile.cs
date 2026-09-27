@@ -93,6 +93,13 @@ public sealed class OverlayFile
     // False in files whose RawImpulse runs 0..N-1 from record start; loading moves their second half before zero.
     public bool RawImpulseSignedLags { get; set; }
 
+    // Impulse only: the whole trace, one value per signed sample from RawImpulseFirstSample. Written instead of
+    // RawImpulse, whose point objects thinned the record; builds that do not know it draw the thinned Points.
+    [JsonConverter(typeof(Float32SampleArrayJsonConverter))]
+    public double[] RawImpulseSamples { get; set; } = Array.Empty<double>();
+
+    public int RawImpulseFirstSample { get; set; }
+
     // Record peak at capture, used only when no live measurement is available to normalize against.
     public double? RawImpulsePeakReference { get; set; }
 
@@ -392,9 +399,13 @@ public sealed class OverlayFile
             }
         }
 
-        if (RawSpectrum == null || RawCalibrationCorrectionDb == null)
+        if (RawSpectrum == null || RawCalibrationCorrectionDb == null || RawImpulseSamples == null)
         {
             throw new InvalidDataException("The raw overlay data is invalid.");
+        }
+        if (RawImpulseSamples.Any(value => !double.IsFinite(value)))
+        {
+            throw new InvalidDataException("The raw impulse contains a non-finite value.");
         }
         if (RawCalibrationCorrectionDb.Length != 0 &&
             (RawSpectrum.Length < 2 ||

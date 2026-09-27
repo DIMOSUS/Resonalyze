@@ -40,6 +40,9 @@ internal sealed class OverlaySlot
     /// <summary>A captured slot's curve as drawn (smoothed, offset); what operations and targets read as its source.</summary>
     public DataPoint[]? DrawPoints { get; set; }
 
+    /// <summary>What an impulse capture's <see cref="DrawPoints"/> were rendered from; null for any other slot.</summary>
+    public object? DrawPointsKey { get; set; }
+
     /// <summary>What a dialog for <paramref name="kind"/> opens with: the slot's own look, or the new-overlay look.</summary>
     public OverlayDialogSeed DialogSeed(OverlayKind kind) => State.Kind == kind
         ? new OverlayDialogSeed(State.Title, State.Appearance.Color, State.Appearance.LineStyle)

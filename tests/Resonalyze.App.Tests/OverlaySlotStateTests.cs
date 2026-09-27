@@ -89,11 +89,11 @@ public sealed class OverlaySlotStateTests
         string root = Directory.CreateTempSubdirectory("resonalyze-overlay-state-").FullName;
         try
         {
-            state.ToFile(2).Save(root);
-            string path = OverlayFile.GetPath(Mode.ImpulseResponse, 2, root);
-            File.WriteAllLines(
-                path,
-                File.ReadAllLines(path).Where(line => !line.Contains("rawImpulseSignedLags")).ToArray());
+            OverlayFile legacy = state.ToFile(2);
+            legacy.RawImpulse = values.Select((value, index) => new OverlayPoint(index, value)).ToArray();
+            legacy.RawImpulseSamples = [];
+            legacy.RawImpulseSignedLags = false;
+            legacy.Save(root);
 
             ImpulseOverlayCapture loaded = OverlaySlotState
                 .FromFile(OverlayFile.Load(Mode.ImpulseResponse, 2, root)!, OffsetRange)
@@ -112,6 +112,30 @@ public sealed class OverlaySlotStateTests
         {
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    [Fact]
+    public void AnImpulseSlot_StoresARunAsSamples_AndThinnedPointsAsPoints()
+    {
+        static OverlayFile Saved(IReadOnlyList<SignalPoint> samples) => new OverlaySlotState(
+            Mode.ImpulseResponse,
+            "Impulse",
+            0m,
+            Appearance,
+            0,
+            Captured: new CapturedCurve(
+                [new DataPoint(0, 0), new DataPoint(1, 0)],
+                MagnitudeScale.Relative,
+                Impulse: new ImpulseOverlayCapture(samples, AnalysisCurveKind.Primary, 1.0, 48_000))).ToFile(1);
+
+        OverlayFile run = Saved([new SignalPoint(-2, 0.5), new SignalPoint(-1, 0.25), new SignalPoint(0, 1.0)]);
+        OverlayFile thinned = Saved([new SignalPoint(-2, 0.5), new SignalPoint(5, 0.25), new SignalPoint(9, 1.0)]);
+
+        Assert.Equal(-2, run.RawImpulseFirstSample);
+        Assert.Equal([0.5, 0.25, 1.0], run.RawImpulseSamples);
+        Assert.Empty(run.RawImpulse);
+        Assert.Empty(thinned.RawImpulseSamples);
+        Assert.Equal([-2.0, 5.0, 9.0], thinned.RawImpulse.Select(point => point.X));
     }
 
     [Fact]

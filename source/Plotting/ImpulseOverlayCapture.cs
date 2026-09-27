@@ -5,11 +5,65 @@ namespace Resonalyze;
 
 /// <summary>Impulse trace stored framing-free (signed sample index, raw linear value), because the view's origin, unit and level scale change;
 /// <see cref="ImpulseOverlayFrame"/> re-frames it. Band filter and envelope smoothing stay baked in. Steps are stored as the raw integral.</summary>
+/// <param name="PeakSample">The record's broadband peak, signed: where the thinned copy for older builds keeps its detail. Not stored.</param>
 internal readonly record struct ImpulseOverlayCapture(
     IReadOnlyList<SignalPoint> Samples,
     AnalysisCurveKind Kind,
     double PeakReference,
-    int SampleRateHz);
+    int SampleRateHz,
+    double PeakSample = 0.0);
+
+/// <summary>A whole trace, one value per sample from <see cref="FirstSample"/>: half the memory of points, and stored as float32.</summary>
+internal sealed class ImpulseSampleRun(int firstSample, double[] values) : IReadOnlyList<SignalPoint>
+{
+    public int FirstSample { get; } = firstSample;
+
+    public double[] Values { get; } = values;
+
+    public int Count => Values.Length;
+
+    public SignalPoint this[int index] => new(FirstSample + index, Values[index]);
+
+    /// <summary>Null unless X runs one sample at a time, as a trace built from a record does; a legacy file's thinned points do not.</summary>
+    public static ImpulseSampleRun? TryFrom(IReadOnlyList<SignalPoint> points)
+    {
+        if (points is ImpulseSampleRun run)
+        {
+            return run;
+        }
+
+        if (points.Count == 0 ||
+            points[0].X != Math.Round(points[0].X) ||
+            Math.Abs(points[0].X) > int.MaxValue / 2)
+        {
+            return null;
+        }
+
+        int first = (int)points[0].X;
+        var values = new double[points.Count];
+        for (int i = 0; i < values.Length; i++)
+        {
+            if (points[i].X != first + i)
+            {
+                return null;
+            }
+
+            values[i] = points[i].Y;
+        }
+
+        return new ImpulseSampleRun(first, values);
+    }
+
+    public IEnumerator<SignalPoint> GetEnumerator()
+    {
+        for (int i = 0; i < Values.Length; i++)
+        {
+            yield return this[i];
+        }
+    }
+
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+}
 
 /// <summary>Current impulse view framing.</summary>
 /// <param name="ReferencePeak">Live record's peak (null without one); overlays scale against it so their level difference stays visible.</param>
@@ -19,26 +73,78 @@ internal readonly record struct ImpulseOverlayFrame(
     double? ReferencePeak,
     int SampleRate);
 
-/// <summary>Whole-record traces at 192 kHz are ~1M samples; thinning keeps overlay JSON small.</summary>
+/// <summary>The copy of an impulse overlay that builds without the whole trace draw. A window around the peak keeps every sample,
+/// since that is where the view zooms in (the arrival, early reflections and pre-ringing).</summary>
 internal static class ImpulseOverlayThinning
 {
-    /// <summary>Per-trace point budget: bounds overlay JSON regardless of record length and sample rate.</summary>
-    public const int MaximumPoints = 32_768;
+    /// <summary>Consecutive samples kept around the peak: about 340 ms at 96 kHz.</summary>
+    public const int DetailSamples = 32_768;
 
-    /// <summary>Above the budget keeps each bucket's extremes at their own indices; averaging or subsampling would lose peaks.</summary>
-    public static IReadOnlyList<SignalPoint> Thin(IReadOnlyList<SignalPoint> points)
+    /// <summary>Points for the rest of the record, as each bucket's extremes.</summary>
+    public const int OutlinePoints = 16_384;
+
+    public const int MaximumPoints = DetailSamples + OutlinePoints;
+
+    // A quarter of the window before the peak, for pre-ringing.
+    private const int DetailSamplesBeforePeak = DetailSamples / 4;
+
+    /// <param name="points">Ascending in X.</param>
+    /// <param name="peakX">Where the detail window is centred: the record's broadband peak, since a band's may be leakage.</param>
+    public static IReadOnlyList<SignalPoint> Thin(IReadOnlyList<SignalPoint> points, double peakX)
     {
         if (points.Count <= MaximumPoints)
         {
             return points;
         }
 
-        int buckets = MaximumPoints / 2;
+        int peak = 0;
+        while (peak < points.Count - 1 && points[peak].X < peakX)
+        {
+            peak++;
+        }
+
+        int detailStart = Math.Clamp(peak - DetailSamplesBeforePeak, 0, points.Count - DetailSamples);
+        int detailEnd = detailStart + DetailSamples;
+        int outside = points.Count - DetailSamples;
+        int after = points.Count - detailEnd;
+        // A bucket at least for each non-empty side, so a short edge is not dropped.
+        int bucketsBefore = detailStart == 0
+            ? 0
+            : Math.Clamp(
+                (int)Math.Round((double)OutlinePoints / 2 * detailStart / outside),
+                1,
+                OutlinePoints / 2 - (after == 0 ? 0 : 1));
+        int bucketsAfter = after == 0 ? 0 : OutlinePoints / 2 - bucketsBefore;
+
         var thinned = new List<SignalPoint>(MaximumPoints);
+        AddExtremes(points, 0, detailStart, bucketsBefore, thinned);
+        for (int i = detailStart; i < detailEnd; i++)
+        {
+            thinned.Add(points[i]);
+        }
+
+        AddExtremes(points, detailEnd, points.Count, bucketsAfter, thinned);
+        return thinned;
+    }
+
+    // Each bucket's extremes at their own indices; averaging or subsampling would lose peaks.
+    private static void AddExtremes(
+        IReadOnlyList<SignalPoint> points,
+        int from,
+        int to,
+        int buckets,
+        List<SignalPoint> thinned)
+    {
+        int count = to - from;
+        if (count <= 0 || buckets <= 0)
+        {
+            return;
+        }
+
         for (int bucket = 0; bucket < buckets; bucket++)
         {
-            int start = (int)((long)bucket * points.Count / buckets);
-            int end = (int)((long)(bucket + 1) * points.Count / buckets);
+            int start = from + (int)((long)bucket * count / buckets);
+            int end = from + (int)((long)(bucket + 1) * count / buckets);
             if (end <= start)
             {
                 continue;
@@ -67,13 +173,40 @@ internal static class ImpulseOverlayThinning
             thinned.Add(points[Math.Min(lowest, highest)]);
             thinned.Add(points[Math.Max(lowest, highest)]);
         }
-
-        return thinned;
     }
 }
 
+/// <summary>Everything <see cref="ImpulseOverlayRenderer.Render"/> reads, copied by value: equal keys draw equal points, and an options
+/// object edited in place still changes the key.</summary>
+internal readonly record struct ImpulseOverlayRenderKey(
+    IReadOnlyList<SignalPoint> Samples,
+    AnalysisCurveKind Kind,
+    double PeakReference,
+    int CaptureSampleRate,
+    ImpulseTimeUnit TimeUnit,
+    ImpulseAmplitudeScale AmplitudeScale,
+    bool Invert,
+    bool NormalizeStepToImpulsePeak,
+    double OriginSamples,
+    double? ReferencePeak,
+    int SampleRate);
+
 internal static class ImpulseOverlayRenderer
 {
+    public static ImpulseOverlayRenderKey Key(ImpulseOverlayCapture capture, ImpulseOverlayFrame frame) =>
+        new(
+            capture.Samples,
+            capture.Kind,
+            capture.PeakReference,
+            capture.SampleRateHz,
+            frame.Options.TimeUnit,
+            frame.Options.AmplitudeScale,
+            frame.Options.Invert,
+            frame.Options.NormalizeStepToImpulsePeak,
+            frame.OriginSamples,
+            frame.ReferencePeak,
+            frame.SampleRate);
+
     public static DataPoint[] Render(
         ImpulseOverlayCapture capture,
         ImpulseOverlayFrame frame)

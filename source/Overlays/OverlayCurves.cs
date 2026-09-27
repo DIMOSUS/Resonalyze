@@ -92,6 +92,12 @@ internal sealed class OverlayCurves
         return sourceA != null && (sourceB != null || !settings.UsesOperandB);
     }
 
+    /// <summary>For an impulse capture, what its drawn points depend on; null for any other slot or before the first framing.</summary>
+    public object? ImpulseDrawKey(OverlaySlot slot) =>
+        slot.State.Captured?.Impulse is { Samples.Count: > 1 } capture && Sources.TryGetImpulseFrame() is { } frame
+            ? (ImpulseOverlayRenderer.Key(capture, frame), slot.State.Offset)
+            : null;
+
     public DataPoint[]? CapturedPoints(OverlaySlot slot, int smoothing)
     {
         if (slot.State.Captured is not { } captured)

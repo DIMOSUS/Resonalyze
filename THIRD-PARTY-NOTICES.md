@@ -1,39 +1,46 @@
 # Third-Party Notices
 
-Resonalyze is distributed under the MIT License. The packages below ship inside
-the released application, each under its own license. All of them are
-MIT-licensed; the native graphics libraries two of them bundle are described
-under [Native graphics libraries](#native-graphics-libraries).
+Resonalyze is distributed under the MIT License (`License.md`). The release
+(the zip and the installer) is a single `Resonalyze.exe` with a `licenses`
+folder beside it that holds this file, `License.md`, and one folder per shipped
+package that carries license files of its own, with those files copied verbatim
+from the package at publish:
 
-| Package | Version | License | Authors |
-|---------|---------|---------|---------|
-| MathNet.Numerics | 5.0.0 | MIT | Christoph Rüegg, Marcus Cuda, Jurgen Van Gael |
-| NAudio | 2.3.0 | MIT | Mark Heath & Contributors |
-| NAudio.Asio | 2.3.0 | MIT | Mark Heath |
-| NetSparkleUpdater.UI.WinForms | 3.0.1 | MIT | Deadpikle |
-| OxyPlot.Core | 2.2.0 | MIT | OxyPlot |
-| OxyPlot.WindowsForms | 2.2.0 | MIT | OxyPlot |
-| OxyPlot.SkiaSharp | 2.2.0 | MIT | OxyPlot |
-| SkiaSharp (incl. SkiaSharp.NativeAssets.Win32) | 2.88.8 | MIT | Microsoft |
-| SkiaSharp.HarfBuzz | 2.88.8 | MIT | Microsoft |
-| HarfBuzzSharp (incl. HarfBuzzSharp.NativeAssets.Win32) | 7.3.0.2 | MIT | Microsoft |
-| YamlDotNet | 16.2.1 | MIT | Antoine Aubry |
-| PDFsharp-MigraDoc-GDI (incl. PDFsharp, MigraDoc) | 6.2.4 | MIT | PDFsharp Team (empira Software GmbH) |
+- `Microsoft.NETCore.App.Runtime.*` and `Microsoft.WindowsDesktop.App.Runtime.*`:
+  the .NET runtime and Windows Forms, which the self-contained exe bundles, with
+  the .NET `THIRD-PARTY-NOTICES.TXT`.
+- `SkiaSharp*` and `HarfBuzzSharp*`: the native `libSkiaSharp.dll` and
+  `libHarfBuzzSharp.dll` the main plot draws with. Their
+  `THIRD-PARTY-NOTICES.txt` reproduces in full the licenses of **Skia** (Google,
+  BSD 3-Clause), **HarfBuzz** ("Old MIT") and the projects compiled into them,
+  among them FreeType, libpng, zlib, libjpeg-turbo, libwebp, expat, ICU and etc1
+  (Apache 2.0).
+- `Microsoft.Extensions.*` (used by PDFsharp) with the .NET notices.
+- `NetSparkleUpdater.Chaos.NaCl`, which also carries the Bouncy Castle notice and
+  the public-domain Chaos.NaCl credit.
 
-## Native graphics libraries
+The packages below state their license by expression only and carry no license
+file, so their copyright lines, copied from each project's own license file, are
+reproduced here; each is provided under the [MIT License](#mit-license) at the
+end of this file.
 
-The main plot draws through Skia. `SkiaSharp.NativeAssets.Win32` and
-`HarfBuzzSharp.NativeAssets.Win32` ship the native `libSkiaSharp.dll` and
-`libHarfBuzzSharp.dll`, which Microsoft builds from third-party projects under
-their own licenses: **Skia** (Google, BSD 3-Clause), **HarfBuzz** ("Old MIT"),
-and, compiled into Skia, FreeType (FreeType License), libpng (libpng License),
-zlib (zlib License), libjpeg-turbo (IJG and BSD 3-Clause), libwebp (BSD
-3-Clause), expat (MIT), ICU (Unicode License), etc1 (Apache 2.0) and the other
-projects listed in the `THIRD-PARTY-NOTICES.txt` file of either package, which
-reproduces every one of those notices in full. Every publish copies it into the
-`licenses` folder beside `Resonalyze.exe` as `THIRD-PARTY-NOTICES-Skia.txt`,
-with this file and Resonalyze's own `License.md`, so the release zip and the
-installer carry all three.
+| Package | Version | Copyright notice |
+|---------|---------|------------------|
+| MathNet.Numerics | 5.0.0 | Copyright (c) 2002-2022 Math.NET |
+| NAudio, NAudio.Asio, NAudio.Core, NAudio.Midi, NAudio.Wasapi, NAudio.WinForms, NAudio.WinMM | 2.3.0 | Copyright 2020 Mark Heath |
+| NetSparkleUpdater.SparkleUpdater, NetSparkleUpdater.UI.WinForms | 3.0.1 | Copyright (c) 2024 Deadpikle |
+| OxyPlot.Core, OxyPlot.WindowsForms, OxyPlot.SkiaSharp | 2.2.0 | Copyright (c) 2014 OxyPlot contributors |
+| PDFsharp-GDI, PDFsharp-MigraDoc-GDI (PDFsharp and MigraDoc) | 6.2.4 | Copyright (c) 2001-2026 empira Software GmbH, Troisdorf (Cologne Area), Germany |
+| YamlDotNet | 16.2.1 | Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014 Antoine Aubry and contributors |
+
+The packages with license files of their own, all MIT for their managed code:
+
+| Package | Version | Copyright notice |
+|---------|---------|------------------|
+| .NET runtime and Windows Forms | as built | Copyright (c) .NET Foundation and Contributors |
+| Microsoft.Extensions.DependencyInjection.Abstractions, Microsoft.Extensions.Logging.Abstractions | 8.0.2, 8.0.3 | Copyright (c) .NET Foundation and Contributors |
+| SkiaSharp, SkiaSharp.HarfBuzz, HarfBuzzSharp (and their NativeAssets.Win32) | 2.88.8, 7.3.0.2 | Copyright (c) 2015-2016 Xamarin, Inc.; Copyright (c) 2017-2018 Microsoft Corporation |
+| NetSparkleUpdater.Chaos.NaCl | 0.9.3 | Copyright (c) 2024 Deadpikle |
 
 ## Bundled reference data
 
@@ -59,8 +66,9 @@ by Bartosz Taudul, under the **BSD 3-Clause** license. Anyone redistributing a
 
 ## MIT License
 
-Every package in the released-application table above, and the `Tracy-CSharp`
-bindings themselves, are provided under the MIT License:
+Every package in the tables above (for the native libraries, their managed
+wrappers), and the `Tracy-CSharp` bindings themselves, are provided under the MIT
+License, each with its copyright notice listed above:
 
 ```
 Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -114,7 +122,3 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
-
-The full license text and copyright for each package is available in that package's
-distribution (in the local NuGet cache under `~/.nuget/packages/<package>/<version>/`)
-and on nuget.org.

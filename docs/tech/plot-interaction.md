@@ -271,4 +271,7 @@ block by its widest line with every line left-aligned inside it, and GDI+ substi
 lacks. The plot labels' `━━` swatch (U+2501) is not in Segoe UI; the substitute is looked up along Windows' font link
 chain for the family (`HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\FontLink\SystemLink`), as GDI+ does,
 because Skia's own character match picks a font whose box-drawing glyphs are half as wide.
-`SkiaPlotRenderContextTests` holds measured text within 8 % of GDI+.
+A run that needs shaping (combining marks, Hebrew, Arabic, Indic and other complex
+scripts, emoji) goes through HarfBuzz (`SKShaper`), as GDI+ shapes it; Latin, Greek, Cyrillic and symbols draw glyph
+by glyph, as GDI+ draws them, since shaping every label cost 0.6 ms a frame. `SkiaPlotRenderContextTests` holds
+measured text, an Arabic name included, within 8 % of GDI+.

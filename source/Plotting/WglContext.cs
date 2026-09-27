@@ -69,7 +69,7 @@ internal sealed class WglContext : IDisposable
 
         // Presenting must not wait for the vertical blank on the UI thread; DWM composes the window anyway.
         IntPtr swapInterval = wglGetProcAddress("wglSwapIntervalEXT");
-        if (swapInterval != IntPtr.Zero)
+        if (!IsFailedProcAddress(swapInterval))
         {
             Marshal.GetDelegateForFunctionPointer<SwapIntervalExt>(swapInterval)(0);
         }
@@ -96,6 +96,9 @@ internal sealed class WglContext : IDisposable
             deviceContext = IntPtr.Zero;
         }
     }
+
+    // Some drivers report a missing function as 1, 2, 3 or -1 rather than null.
+    private static bool IsFailedProcAddress(IntPtr address) => address is 0 or 1 or 2 or 3 or -1;
 
     private static bool IsSoftware(uint flags) =>
         (flags & GenericFormat) != 0 && (flags & GenericAccelerated) == 0;

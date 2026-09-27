@@ -12,7 +12,9 @@ public sealed class SkiaPlotRenderContextTests
     [InlineData("-60", 12, FontWeights.Normal)]
     [InlineData("Noise floor (11,72 Hz BW)\nCalculated overlay 3", 12, FontWeights.Bold)]
     // U+2501 is the plot labels' swatch; Segoe UI lacks it, and GDI+ substitutes a font.
-    [InlineData("━━ HD2", 12, FontWeights.Bold)]
+    [InlineData("\u2501\u2501 HD2", 12, FontWeights.Bold)]
+    // Joined only when shaped: a measurement named in Arabic.
+    [InlineData("\u0642\u064A\u0627\u0633 \u0627\u0644\u0633\u064A\u0627\u0631\u0629", 14, FontWeights.Bold)]
     public void MeasureText_MatchesTheGdiPlotView(string text, double fontSize, double fontWeight)
     {
         using var bitmap = new Bitmap(10, 10);

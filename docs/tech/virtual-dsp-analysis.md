@@ -669,14 +669,16 @@ lower channel) and the current phase score.
 - **Never holds the frame:** `ChainHeadroomReader` keeps each side's peak by its response (`DspChainResponseKey`:
   PEQ compared band by band, the delay dropped), so a knob turn re-reads one chain. A chain without a FIR reads in
   about half a millisecond, in the frame. A FIR chain takes 6–106 ms (1k–131k taps), so it shows **…** and is read
-  on a worker, one chain at a time; its landing requests a redraw, and a chain no longer on screen by then is
-  dropped. Only the last frame's chains are kept: an older one can hold a replaced FIR kernel. A side with no usable
+  on a worker, one chain at a time, each landing requesting a redraw as soon as it is read; a chain no longer on
+  screen by then is dropped. Only the last frame's chains are kept: an older one can hold a replaced FIR kernel. A side with no usable
   rate reads as unmeasured instead of failing the frame.
 - **Chain plot:** its magnitude mode fills red between each chain and 0 dB where the chain rises above it, one
   series per run above 0 dB (nothing lies along 0 dB for the tracker to snap to), with the crossings interpolated
   in log frequency so the fill meets the drawn line. The plot's 512-point grid is about 60 Hz apart at 4 kHz, so a
-  FIR lobe a few hertz wide can fall between its points: each curve also draws the peak the headroom found as a
-  point of its own, read apart from the grid so the kernel's per-grid cache still serves the rest.
+  FIR lobe a few hertz wide can fall between its points: each curve also draws the peak the headroom found, and for
+  a FIR points ½, 1 and 2 × rate / taps either side of it (the lobe's first nulls sit about rate / taps out), so
+  the lobe and its fill keep their own width instead of a spike as wide as the grid. They are read apart from the
+  grid, whose values come from the kernel's per-grid cache.
 
 ## Plots
 

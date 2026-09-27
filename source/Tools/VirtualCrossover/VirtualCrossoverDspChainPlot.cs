@@ -543,18 +543,15 @@ internal sealed class VirtualCrossoverDspChainPlot
             PreparedDspResponse response =
                 PreparedDspResponse.Create(curve.Chain, curve.ProcessorSampleRate);
             double[] values = Values(response, grid, mode);
-            var points = new List<DataPoint>(grid.Count + 1);
+            var points = new List<DataPoint>(grid.Count);
             for (int i = 0; i < grid.Count; i++)
             {
                 points.Add(new DataPoint(grid[i], values[i]));
             }
 
-            // Read on its own: the grid's values come from the kernel's per-grid cache, which a changed grid would miss.
-            if (mode == DspPlotMode.Magnitude && curve.PeakHz is { } peakHz && peakHz > grid[0] && peakHz < grid[^1])
+            if (mode == DspPlotMode.Magnitude && curve.PeakHz is { } peakHz)
             {
-                points.Insert(
-                    points.FindIndex(point => point.X > peakHz),
-                    new DataPoint(peakHz, DataHelper.AmplitudeToDecibels(response.Response(peakHz).Magnitude)));
+                points = WithPeak(points, response, curve, peakHz);
             }
 
             AddSeries(model, curve.Title, points, curve.Color);
@@ -565,6 +562,28 @@ internal sealed class VirtualCrossoverDspChainPlot
         }
 
         model.InvalidatePlot(true);
+    }
+
+    // A FIR's lobe is about rate / taps wide on each side of its peak, far under the grid's spacing, so a few points
+    // across it keep the drawn lobe (and its fill) its own width. Read apart from the grid, whose values come from the
+    // kernel's per-grid cache.
+    private static readonly double[] LobeOffsets = [-2, -1, -0.5, 0, 0.5, 1, 2];
+
+    private static List<DataPoint> WithPeak(
+        List<DataPoint> points, PreparedDspResponse response, DspChainCurve curve, double peakHz)
+    {
+        double lobeHz = curve.Chain.Fir is { } fir ? (double)curve.ProcessorSampleRate / fir.Length : 0;
+        IEnumerable<double> extra = lobeHz > 0
+            ? LobeOffsets.Select(offset => peakHz + offset * lobeHz)
+            : [peakHz];
+        return
+        [
+            .. points.Concat(extra
+                    .Where(frequency => frequency > points[0].X && frequency < points[^1].X)
+                    .Select(frequency => new DataPoint(
+                        frequency, DataHelper.AmplitudeToDecibels(response.Response(frequency).Magnitude))))
+                .OrderBy(point => point.X)
+        ];
     }
 
     private static double[] Values(

@@ -49,8 +49,8 @@ internal sealed class ChainHeadroomReader
 
     public bool Waiting => wanted.Count > 0;
 
-    /// <summary>Reads the waiting chains one at a time on a worker, then calls <paramref name="landed"/> on the caller's
-    /// context; a call while a read runs only lets that run pick up what is waiting by then.</summary>
+    /// <summary>Reads the waiting chains one at a time on a worker, calling <paramref name="landed"/> on the caller's
+    /// context after each; a call while a read runs only lets that run pick up what is waiting by then.</summary>
     public async Task FillAsync(Action landed)
     {
         if (reading)
@@ -59,7 +59,6 @@ internal sealed class ChainHeadroomReader
         }
 
         reading = true;
-        bool read = false;
         try
         {
             while (wanted.FirstOrDefault() is { } key)
@@ -70,18 +69,13 @@ internal sealed class ChainHeadroomReader
                 if (wanted.Remove(key))
                 {
                     known[key] = peak;
-                    read = true;
+                    landed();
                 }
             }
         }
         finally
         {
             reading = false;
-        }
-
-        if (read)
-        {
-            landed();
         }
     }
 }

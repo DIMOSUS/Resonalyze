@@ -282,15 +282,40 @@ public class VirtualCrossoverHeadroomTests
         var chain = new DspChannelChain(Fir: new FirFilter(kernel));
         (double peakHz, _) = DspChainPeak.InAudioBand(chain, rate);
 
-        int Fills(double? peak)
+        List<OxyPlot.Series.AreaSeries> Fills(double? peak)
         {
             using var plotView = new OxyPlot.WindowsForms.PlotView();
             var plot = new VirtualCrossoverDspChainPlot(plotView, DspPlotMode.Magnitude);
             plot.Draw(DspPlotMode.Magnitude, [new DspChainCurve("A filter", chain, rate, OxyColors.Red, peak)]);
-            return ((PlotModel)plotView.Model).Series.OfType<OxyPlot.Series.AreaSeries>().Count();
+            return [.. ((PlotModel)plotView.Model).Series.OfType<OxyPlot.Series.AreaSeries>()];
         }
 
-        Assert.Equal(0, Fills(null));
-        Assert.Equal(1, Fills(peakHz));
+        Assert.Empty(Fills(null));
+        // The lobe's own width: its first nulls sit rate / taps either side of the peak, the grid's points 59 Hz apart.
+        OxyPlot.Series.AreaSeries fill = Assert.Single(Fills(peakHz));
+        double lobeHz = (double)rate / kernel.Length;
+        Assert.InRange(fill.Points[0].X, peakHz - lobeHz, peakHz);
+        Assert.InRange(fill.Points[^1].X, peakHz, peakHz + lobeHz);
+    }
+
+    [Fact]
+    public async Task EachFirChainLandsAsSoonAsItIsRead()
+    {
+        var reader = new ChainHeadroomReader();
+        DspChainResponseKey[] keys = [FirKey(-1), FirKey(-2)];
+        int landings = 0;
+
+        Assert.All(keys, key => Assert.Null(reader.Peak(key)));
+        await reader.FillAsync(() => landings++);
+
+        Assert.Equal(2, landings);
+        Assert.All(keys, key => Assert.NotNull(reader.KnownPeak(key)));
+    }
+
+    private static DspChainResponseKey FirKey(double gainDb)
+    {
+        double[] kernel = new double[64];
+        kernel[32] = 1;
+        return new DspChainResponseKey(new DspChannelChain(GainDb: gainDb, Fir: new FirFilter(kernel)), 48_000);
     }
 }

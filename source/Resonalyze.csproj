@@ -51,7 +51,17 @@
     <PackageReference Include="OxyPlot.WindowsForms" Version="2.2.0" />
     <!-- The main plot renders through Skia on an OpenGL context (AcceleratedPlotView); GDI+ stays the fallback. -->
     <PackageReference Include="OxyPlot.SkiaSharp" Version="2.2.0" />
+    <!-- Direct only for its path: the native Skia and HarfBuzz notices ship in licenses\ (see below). -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="2.88.8" GeneratePathProperty="true" />
     <PackageReference Include="PDFsharp-MigraDoc-GDI" Version="6.2.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- In licenses\ beside the exe in every publish, so the zip and the installer carry them. The Skia file is the
+         full text of the native libraries' BSD, Apache and other notices that THIRD-PARTY-NOTICES.md summarises. -->
+    <None Include="..\License.md" Link="licenses\License.md" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" Visible="false" />
+    <None Include="..\THIRD-PARTY-NOTICES.md" Link="licenses\THIRD-PARTY-NOTICES.md" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" Visible="false" />
+    <None Include="$(PkgSkiaSharp_NativeAssets_Win32)\THIRD-PARTY-NOTICES.txt" Link="licenses\THIRD-PARTY-NOTICES-Skia.txt" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" Visible="false" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(Configuration)' == 'Tracy'">

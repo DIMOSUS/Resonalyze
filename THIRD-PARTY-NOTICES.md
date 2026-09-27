@@ -30,8 +30,10 @@ and, compiled into Skia, FreeType (FreeType License), libpng (libpng License),
 zlib (zlib License), libjpeg-turbo (IJG and BSD 3-Clause), libwebp (BSD
 3-Clause), expat (MIT), ICU (Unicode License), etc1 (Apache 2.0) and the other
 projects listed in the `THIRD-PARTY-NOTICES.txt` file of either package, which
-reproduces every one of those notices in full. Anyone redistributing Resonalyze
-has to carry that file with it.
+reproduces every one of those notices in full. Every publish copies it into the
+`licenses` folder beside `Resonalyze.exe` as `THIRD-PARTY-NOTICES-Skia.txt`,
+with this file and Resonalyze's own `License.md`, so the release zip and the
+installer carry all three.
 
 ## Bundled reference data
 

@@ -222,6 +222,7 @@ public sealed class ImpulseOverlayTests
     [InlineData(10_000.0, 1_808.0)]      // the detail window straddles the peak, a quarter of it before
     [InlineData(-95_000.0, -98_304.0)]   // a peak near the record's start: the window starts there
     [InlineData(98_000.0, 65_536.0)]     // and near its end, the window ends there
+    [InlineData(-90_111.0, -98_303.0)]   // one sample before the window: it still gets a bucket
     public void Thinning_KeepsEverySampleInAWindowAroundThePeak(double peakX, double expectedFirstX)
     {
         // A signed record of 196 608 samples, -98 304 .. 98 303.
@@ -243,6 +244,10 @@ public sealed class ImpulseOverlayTests
             Assert.Equal(points[(int)expectedFirstX + lead + k], thinned[first + k]);
         }
         Assert.InRange(peakX, thinned[first].X, thinned[first + ImpulseOverlayThinning.DetailSamples - 1].X);
+        if (expectedFirstX == points[0].X + 1)
+        {
+            Assert.Equal(points[0], thinned[0]);
+        }
         for (int i = 1; i < thinned.Count; i++)
         {
             Assert.True(thinned[i].X > thinned[i - 1].X);
@@ -287,14 +292,23 @@ public sealed class ImpulseOverlayTests
         Assert.Equal(0.5, stored.Y, precision: 9);
     }
 
-    [Fact]
-    public void BuildImpulseCapture_KeepsEverySampleAroundThePeakOfALongRecord()
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(1.0)]   // a one-octave band at 63 Hz, where this record has no content
+    public void BuildImpulseCapture_KeepsEverySampleOfALongRecord_AndItsBroadbandPeak(double bandOctaves)
     {
         var ir = new Complex[131_072];
         int peak = 40_000;
         for (int k = -200; k <= 200; k++)
         {
             ir[peak + k] = new Complex(Math.Exp(-Math.Abs(k) / 50.0) * Math.Cos(k * 0.7), 0.0);
+        }
+
+        ir[100_000] = new Complex(1e-6, 0.0);
+        // A weak 63 Hz burst far from the arrival: in that band it, not the arrival, is the peak.
+        for (int i = 80_000; i < 90_000; i++)
+        {
+            ir[i] += new Complex(0.05 * Math.Sin(2 * Math.PI * 63 * i / SampleRate), 0.0);
         }
 
         using var measurement = new TestAnalyzer();
@@ -306,18 +320,50 @@ public sealed class ImpulseOverlayTests
             sweepDeconvolutionImpulseResponse: ir, sweepDeconvolutionPeakIndex: peak,
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
             transferImpulseResponse: ir, transferPeakIndex: peak));
-        PlotModelFactory factory = CreateFactoryFor(measurement, new ImpulseResponseOptions());
+        PlotModelFactory factory = CreateFactoryFor(
+            measurement,
+            new ImpulseResponseOptions { BandFilterOctaves = bandOctaves, BandCenterHz = 63 });
 
         ImpulseOverlayCapture capture = Assert.NotNull(
             factory.BuildImpulseCapture(
                 new CurveTag(Mode.ImpulseResponse, AnalysisCurveKind.Primary)));
 
-        Assert.True(capture.Samples.Count <= ImpulseOverlayThinning.MaximumPoints);
-        var stored = capture.Samples.ToDictionary(point => point.X, point => point.Y);
-        for (int k = -200; k <= 200; k++)
+        Assert.Equal(ir.Length, capture.Samples.Count);
+        Assert.Equal(peak, capture.PeakSample);
+        if (bandOctaves == 0.0)
         {
-            Assert.Equal(ir[peak + k].Real, stored[peak + k], precision: 12);
+            var stored = capture.Samples.ToDictionary(point => point.X, point => point.Y);
+            Assert.Equal(ir[peak].Real, stored[peak], precision: 12);
+            Assert.Equal(1e-6, stored[100_000 - ir.Length], precision: 12);
         }
+    }
+
+    [Fact]
+    public void TheCopyForOlderBuilds_IsThinnedAndKeepsItsDetailAtTheBroadbandPeak()
+    {
+        int count = ImpulseOverlayThinning.MaximumPoints * 4;
+        var values = new double[count];
+        for (int i = 0; i < count; i++)
+        {
+            values[i] = Math.Sin(i * 0.3);
+        }
+
+        var capture = new ImpulseOverlayCapture(
+            new ImpulseSampleRun(-count / 2, values), AnalysisCurveKind.Primary, 1.0, SampleRate, PeakSample: 5_000);
+        var model = new OxyPlot.PlotModel();
+        var sources = new OverlayPlotSources(() => model, () => Mode.ImpulseResponse);
+        sources.SetImpulseCaptureProvider(_ => capture);
+        sources.SetImpulseFrameProvider(() => new ImpulseOverlayFrame(
+            new ImpulseResponseOptions { TimeUnit = ImpulseTimeUnit.Samples }, 0.0, 1.0, SampleRate));
+        var series = new OxyPlot.Series.LineSeries { Tag = new CurveTag(Mode.ImpulseResponse, AnalysisCurveKind.Primary) };
+        series.Points.AddRange(capture.Samples.Select(point => new OxyPlot.DataPoint(point.X, point.Y)));
+
+        CapturedCurve captured = OverlayCapture.FromSeries(series, sources, out _);
+
+        Assert.True(captured.Points.Length <= ImpulseOverlayThinning.MaximumPoints);
+        Assert.Contains(captured.Points, point => point.X == 5_000 && point.Y == values[5_000 + count / 2]);
+        Assert.Contains(captured.Points, point => point.X == 5_001);
+        Assert.Same(capture.Samples, captured.Impulse!.Value.Samples);
     }
 
     [Fact]

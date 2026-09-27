@@ -212,7 +212,7 @@ internal sealed record OverlaySlotState(
         file.PointsCalibrationCorrectionDb.ToArray(),
         file.CapturedSmoothingCode,
         file.SampleRateHz,
-        file.RawImpulse.Length >= 2
+        file.RawImpulseSamples.Length >= 2 || file.RawImpulse.Length >= 2
             ? new ImpulseOverlayCapture(
                 RawImpulseSamples(file),
                 file.CapturedCurveKind ?? AnalysisCurveKind.Primary,
@@ -222,6 +222,11 @@ internal sealed record OverlaySlotState(
 
     private static IReadOnlyList<SignalPoint> RawImpulseSamples(OverlayFile file)
     {
+        if (file.RawImpulseSamples.Length >= 2)
+        {
+            return new ImpulseSampleRun(file.RawImpulseFirstSample, file.RawImpulseSamples);
+        }
+
         SignalPoint[] samples = file.RawImpulse.Select(point => new SignalPoint(point.X, point.Y)).ToArray();
         return file.RawImpulseSignedLags
             ? samples
@@ -310,8 +315,12 @@ internal sealed record OverlaySlotState(
             file.PointsCalibrationCorrectionDb = (captured.PointsCalibrationCorrectionDb ?? []).ToArray();
             file.CapturedSmoothingCode = captured.BakedSmoothingCode;
             file.SampleRateHz = captured.SampleRateHz;
-            file.RawImpulse = captured.Impulse is { } impulse
-                ? impulse.Samples.Select(point => new OverlayPoint(point.X, point.Y)).ToArray()
+            // A legacy file's thinned points are not a run and keep their point form.
+            ImpulseSampleRun? run = captured.Impulse is { } impulse ? ImpulseSampleRun.TryFrom(impulse.Samples) : null;
+            file.RawImpulseSamples = run?.Values ?? Array.Empty<double>();
+            file.RawImpulseFirstSample = run?.FirstSample ?? 0;
+            file.RawImpulse = run == null && captured.Impulse is { } points
+                ? points.Samples.Select(point => new OverlayPoint(point.X, point.Y)).ToArray()
                 : Array.Empty<OverlayPoint>();
             file.RawImpulseSignedLags = captured.Impulse != null;
             file.RawImpulsePeakReference = captured.Impulse?.PeakReference;

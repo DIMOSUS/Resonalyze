@@ -1088,9 +1088,12 @@ view has later, so it follows the time unit, the time zero, the amplitude scale 
 the polarity flip instead of staying frozen in the ones it was taken under. Levels
 are re-normalized against the LIVE record's peak, so how far the snapshot sits below
 what is being measured now stays readable. Two things cannot be undone that way and
-travel baked in: the band filter and the ETC smoothing are part of the values. A very
-long record is stored thinned to its extremes, so zooming an overlay to sample level
-shows the thinned outline where the live trace shows samples.
+travel baked in: the band filter and the ETC smoothing are part of the values. A long
+record keeps every sample only around its peak — 32,768 of them, a quarter before
+the peak for pre-ringing: about 340 ms at 96 kHz — and the rest is stored thinned to
+its extremes, so zooming an overlay to sample level there shows the thinned outline
+where the live trace shows samples. A snapshot taken by an earlier version is thinned
+that way everywhere; take it again for full detail at the arrival.
 A snapshot saved by a version that drew the record from sample 0 is moved the same way
 when it loads, its second half before zero.
 

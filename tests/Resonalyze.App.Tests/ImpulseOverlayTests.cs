@@ -191,7 +191,7 @@ public sealed class ImpulseOverlayTests
             points.Add(new SignalPoint(i, i));
         }
 
-        Assert.Same(points, ImpulseOverlayThinning.Thin(points));
+        Assert.Same(points, ImpulseOverlayThinning.Thin(points, peakX: 0));
     }
 
     [Fact]
@@ -207,7 +207,7 @@ public sealed class ImpulseOverlayTests
         points[12_345] = new SignalPoint(12_345, 7.0);
         points[12_346] = new SignalPoint(12_346, -3.0);
 
-        IReadOnlyList<SignalPoint> thinned = ImpulseOverlayThinning.Thin(points);
+        IReadOnlyList<SignalPoint> thinned = ImpulseOverlayThinning.Thin(points, peakX: 150_000);
 
         Assert.True(thinned.Count <= ImpulseOverlayThinning.MaximumPoints);
         Assert.Contains(thinned, point => point.X == 12_345 && point.Y == 7.0);
@@ -215,6 +215,37 @@ public sealed class ImpulseOverlayTests
         for (int i = 1; i < thinned.Count; i++)
         {
             Assert.True(thinned[i].X >= thinned[i - 1].X);
+        }
+    }
+
+    [Theory]
+    [InlineData(10_000.0, 1_808.0)]      // the detail window straddles the peak, a quarter of it before
+    [InlineData(-95_000.0, -98_304.0)]   // a peak near the record's start: the window starts there
+    [InlineData(98_000.0, 65_536.0)]     // and near its end, the window ends there
+    public void Thinning_KeepsEverySampleInAWindowAroundThePeak(double peakX, double expectedFirstX)
+    {
+        // A signed record of 196 608 samples, -98 304 .. 98 303.
+        int count = ImpulseOverlayThinning.MaximumPoints * 4;
+        int lead = count / 2;
+        var points = new List<SignalPoint>(count);
+        for (int i = 0; i < count; i++)
+        {
+            points.Add(new SignalPoint(i - lead, Math.Sin(i * 0.3)));
+        }
+
+        IReadOnlyList<SignalPoint> thinned = ImpulseOverlayThinning.Thin(points, peakX);
+
+        Assert.True(thinned.Count <= ImpulseOverlayThinning.MaximumPoints);
+        int first = thinned.ToList().FindIndex(point => point.X == expectedFirstX);
+        Assert.True(first >= 0, $"the window does not start at {expectedFirstX}");
+        for (int k = 0; k < ImpulseOverlayThinning.DetailSamples; k++)
+        {
+            Assert.Equal(points[(int)expectedFirstX + lead + k], thinned[first + k]);
+        }
+        Assert.InRange(peakX, thinned[first].X, thinned[first + ImpulseOverlayThinning.DetailSamples - 1].X);
+        for (int i = 1; i < thinned.Count; i++)
+        {
+            Assert.True(thinned[i].X > thinned[i - 1].X);
         }
     }
 
@@ -254,6 +285,39 @@ public sealed class ImpulseOverlayTests
         Assert.Equal(0.5, capture.PeakReference, precision: 9);
         SignalPoint stored = capture.Samples.Single(point => point.X == peak);
         Assert.Equal(0.5, stored.Y, precision: 9);
+    }
+
+    [Fact]
+    public void BuildImpulseCapture_KeepsEverySampleAroundThePeakOfALongRecord()
+    {
+        var ir = new Complex[131_072];
+        int peak = 40_000;
+        for (int k = -200; k <= 200; k++)
+        {
+            ir[peak + k] = new Complex(Math.Exp(-Math.Abs(k) / 50.0) * Math.Cos(k * 0.7), 0.0);
+        }
+
+        using var measurement = new TestAnalyzer();
+        measurement.Open(TestMeasurementResults.Restored(
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000, sampleRate: SampleRate, bits: 24,
+            sweepDurationSeconds: 1.0,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: ir, sweepDeconvolutionPeakIndex: peak,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: ir, transferPeakIndex: peak));
+        PlotModelFactory factory = CreateFactoryFor(measurement, new ImpulseResponseOptions());
+
+        ImpulseOverlayCapture capture = Assert.NotNull(
+            factory.BuildImpulseCapture(
+                new CurveTag(Mode.ImpulseResponse, AnalysisCurveKind.Primary)));
+
+        Assert.True(capture.Samples.Count <= ImpulseOverlayThinning.MaximumPoints);
+        var stored = capture.Samples.ToDictionary(point => point.X, point => point.Y);
+        for (int k = -200; k <= 200; k++)
+        {
+            Assert.Equal(ir[peak + k].Real, stored[peak + k], precision: 12);
+        }
     }
 
     [Fact]

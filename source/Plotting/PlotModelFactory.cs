@@ -223,7 +223,7 @@ internal sealed class PlotModelFactory
             : curve.Points;
 
         return new ImpulseOverlayCapture(
-            ImpulseOverlayThinning.Thin(samples),
+            ImpulseOverlayThinning.Thin(samples, set.PeakSample),
             tag.Kind,
             set.PeakReference,
             source.SampleRate);

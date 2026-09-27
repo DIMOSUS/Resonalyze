@@ -32,7 +32,7 @@ namespace Resonalyze
             components = new System.ComponentModel.Container();
             var resources = new System.ComponentModel.ComponentResourceManager(typeof(Form1));
             buttonRecord = new ReleaseClickButton();
-            plotView1 = new OxyPlot.WindowsForms.PlotView();
+            plotView1 = new AcceleratedPlotView();
             overlays = new RoundedPanel();
             overlayPanel1 = new RoundedPanel();
             buttonSaveOverlay = new ReleaseClickButton();
@@ -536,7 +536,7 @@ namespace Resonalyze
         #endregion
 
         private ReleaseClickButton buttonRecord;
-        private OxyPlot.WindowsForms.PlotView plotView1;
+        private AcceleratedPlotView plotView1;
         private RoundedPanel overlays;
         private ReleaseClickButton buttonSaveOverlay;
         private Label labelOverlay1;

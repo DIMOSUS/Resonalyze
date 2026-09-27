@@ -2,7 +2,8 @@
 
 Resonalyze is distributed under the MIT License. The packages below ship inside
 the released application, each under its own license. All of them are
-MIT-licensed.
+MIT-licensed; the native graphics libraries two of them bundle are described
+under [Native graphics libraries](#native-graphics-libraries).
 
 | Package | Version | License | Authors |
 |---------|---------|---------|---------|
@@ -12,8 +13,25 @@ MIT-licensed.
 | NetSparkleUpdater.UI.WinForms | 3.0.1 | MIT | Deadpikle |
 | OxyPlot.Core | 2.2.0 | MIT | OxyPlot |
 | OxyPlot.WindowsForms | 2.2.0 | MIT | OxyPlot |
+| OxyPlot.SkiaSharp | 2.2.0 | MIT | OxyPlot |
+| SkiaSharp (incl. SkiaSharp.NativeAssets.Win32) | 2.88.8 | MIT | Microsoft |
+| SkiaSharp.HarfBuzz | 2.88.8 | MIT | Microsoft |
+| HarfBuzzSharp (incl. HarfBuzzSharp.NativeAssets.Win32) | 7.3.0.2 | MIT | Microsoft |
 | YamlDotNet | 16.2.1 | MIT | Antoine Aubry |
 | PDFsharp-MigraDoc-GDI (incl. PDFsharp, MigraDoc) | 6.2.4 | MIT | PDFsharp Team (empira Software GmbH) |
+
+## Native graphics libraries
+
+The main plot draws through Skia. `SkiaSharp.NativeAssets.Win32` and
+`HarfBuzzSharp.NativeAssets.Win32` ship the native `libSkiaSharp.dll` and
+`libHarfBuzzSharp.dll`, which Microsoft builds from third-party projects under
+their own licenses: **Skia** (Google, BSD 3-Clause), **HarfBuzz** ("Old MIT"),
+and, compiled into Skia, FreeType (FreeType License), libpng (libpng License),
+zlib (zlib License), libjpeg-turbo (IJG and BSD 3-Clause), libwebp (BSD
+3-Clause), expat (MIT), ICU (Unicode License), etc1 (Apache 2.0) and the other
+projects listed in the `THIRD-PARTY-NOTICES.txt` file of either package, which
+reproduces every one of those notices in full. Anyone redistributing Resonalyze
+has to carry that file with it.
 
 ## Bundled reference data
 

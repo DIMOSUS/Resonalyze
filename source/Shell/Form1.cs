@@ -72,7 +72,7 @@ namespace Resonalyze
             // PlotView paints only BackColor; axis colours come from the model (PlotModelStyle.ApplyChrome).
             plotView1.BackColor = UiPalette.GraphSurface;
             PlotInteraction.Enable(plotView1);
-            plotView1.Paint += (_, _) => AppProfiler.FrameMark("main-plot");
+            plotView1.FrameRendered += (_, _) => AppProfiler.FrameMark("main-plot");
             measurementSettings = MeasurementSettingsFile.LoadOrDefault();
             measurementSettingsSaver = new DebouncedSaver(
                 MeasurementSettingsSaveDelayMilliseconds,

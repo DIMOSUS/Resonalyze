@@ -49,6 +49,8 @@
          to compile — the audio boundary is enforced by the build. -->
     <PackageReference Include="NetSparkleUpdater.UI.WinForms" Version="3.0.1" />
     <PackageReference Include="OxyPlot.WindowsForms" Version="2.2.0" />
+    <!-- The main plot renders through Skia on an OpenGL context (AcceleratedPlotView); GDI+ stays the fallback. -->
+    <PackageReference Include="OxyPlot.SkiaSharp" Version="2.2.0" />
     <PackageReference Include="PDFsharp-MigraDoc-GDI" Version="6.2.4" />
   </ItemGroup>
 

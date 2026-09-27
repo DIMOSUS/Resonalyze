@@ -16,6 +16,9 @@ internal sealed class AppearanceSettingsFile
 
     public UiTheme Theme { get; set; } = UiTheme.Dark;
 
+    /// <summary>Whether the main graph may draw on the GPU; off is the way out for a driver that draws it wrong.</summary>
+    public bool HardwareAcceleratedPlots { get; set; } = true;
+
     /// <summary>Why the last <see cref="TrySave"/> failed; telling the user is the caller's job, not this layer's.</summary>
     [JsonIgnore]
     public string? SaveWarning { get; private set; }

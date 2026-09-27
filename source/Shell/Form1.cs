@@ -73,6 +73,9 @@ namespace Resonalyze
             plotView1.BackColor = UiPalette.GraphSurface;
             PlotInteraction.Enable(plotView1);
             plotView1.FrameRendered += (_, _) => AppProfiler.FrameMark("main-plot");
+            plotView1.GpuAllowed = AppearanceSettingsFile.LoadOrDefault().HardwareAcceleratedPlots;
+            chromeTitleBar.SettingsApplied += (_, appearance) =>
+                plotView1.GpuAllowed = appearance.HardwareAcceleratedPlots;
             measurementSettings = MeasurementSettingsFile.LoadOrDefault();
             measurementSettingsSaver = new DebouncedSaver(
                 MeasurementSettingsSaveDelayMilliseconds,

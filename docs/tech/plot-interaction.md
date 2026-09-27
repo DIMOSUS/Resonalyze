@@ -263,7 +263,10 @@ GDI+ stays the fallback, per window: when the pixel format is Windows' software 
 without a GPU driver), when Skia cannot build a GL context or its native library fails to load (it loads there, not
 in the constructor, so the window still opens), and for good after any frame throws. OxyPlot catches a model's own
 exceptions inside `Render`, so only GPU failures reach that point. A window keeps an OpenGL pixel format until it is
-destroyed, so a failure after the format was set recreates the handle and GDI+ draws on a fresh window. `DrawToBitmap`
+destroyed, so a failure after the format was set recreates the handle and GDI+ draws on a fresh window. Settings'
+**Hardware-accelerated graphs** (`AppearanceSettingsFile.HardwareAcceleratedPlots`, applied through
+`AcceleratedPlotView.GpuAllowed`) switches the GPU path off for a driver that draws wrong without failing; a change
+recreates the handle at once, and turning it back on gives a failed GPU another try. `DrawToBitmap`
 (WM_PRINTCLIENT) always takes the GDI+ path, since a GL frame never reaches a GDI bitmap; screen grabs
 (`CopyFromScreen`) see the GL frame. The other plots in the app are stock `PlotView`s: they are small, and PNG and PDF
 exports keep their GDI+ `PngExporter`.

@@ -19,6 +19,7 @@ internal sealed class AcceleratedPlotView : PlotView
     private SKSurface? surface;
     private bool printing;
     private bool gpuRefused;
+    private bool gpuAllowed = true;
 
     public AcceleratedPlotView()
     {
@@ -30,6 +31,30 @@ internal sealed class AcceleratedPlotView : PlotView
     public event EventHandler? FrameRendered;
 
     public bool IsAccelerated => gpu != null;
+
+    /// <summary>The user's choice; a change takes effect at once, on a fresh window, and gives a failed GPU another try.</summary>
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool GpuAllowed
+    {
+        get => gpuAllowed;
+        set
+        {
+            if (gpuAllowed == value)
+            {
+                return;
+            }
+
+            gpuAllowed = value;
+            gpuRefused = false;
+            if (IsHandleCreated)
+            {
+                ReleaseGpu();
+                SetGdiPainting(true);
+                RecreateHandle();
+            }
+        }
+    }
 
     protected override CreateParams CreateParams
     {
@@ -44,7 +69,7 @@ internal sealed class AcceleratedPlotView : PlotView
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        if (gpuRefused)
+        if (gpuRefused || !gpuAllowed)
         {
             return;
         }

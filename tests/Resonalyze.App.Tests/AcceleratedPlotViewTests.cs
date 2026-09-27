@@ -28,6 +28,20 @@ public sealed class AcceleratedPlotViewTests
             pixel => pixel.R > 200 && pixel.G < 80 && pixel.B < 80);
     }
 
+    [Fact]
+    public void TurningTheGpuOff_LeavesAPlotThatStillDraws()
+    {
+        using Form form = ShownForm(out AcceleratedPlotView view);
+        view.Model = LineModel();
+
+        view.GpuAllowed = false;
+
+        Assert.False(view.IsAccelerated);
+        using var bitmap = new Bitmap(view.Width, view.Height);
+        view.DrawToBitmap(bitmap, new Rectangle(Point.Empty, view.Size));
+        Assert.Equal(Surface.ToArgb(), bitmap.GetPixel(5, 5).ToArgb());
+    }
+
     private static PlotModel LineModel()
     {
         var model = new PlotModel { Background = OxyColor.FromRgb(Surface.R, Surface.G, Surface.B) };

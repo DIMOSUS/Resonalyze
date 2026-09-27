@@ -1,3 +1,5 @@
+using System.Drawing;
+using System.Windows.Forms;
 using Resonalyze.Ui;
 
 namespace Resonalyze.App.Tests;
@@ -85,6 +87,37 @@ public sealed class AppearanceSettingsFileTests : IDisposable
 
         Assert.True(settings.TrySave());
         Assert.Null(settings.SaveWarning);
+    }
+
+    [Fact]
+    public void AFileFromBeforeTheGraphSwitch_KeepsGraphsAccelerated()
+    {
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(Path_, "{ \"Theme\": \"Light\" }");
+
+        Assert.True(AppearanceSettingsFile.LoadOrDefault(Path_).HardwareAcceleratedPlots);
+    }
+
+    [Fact]
+    public void GraphsTurnedOffInTheDialog_AreSavedOff()
+    {
+        Directory.CreateDirectory(directory);
+        AppearanceSettingsFile appearance = AppearanceSettingsFile.LoadOrDefault(Path_);
+        appearance.Theme = UiPalette.Theme;
+        using var dialog = new ApplicationSettingsDialog(appearance)
+        {
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Location = new Point(-4000, -4000)
+        };
+        dialog.Show();
+        ((CheckBox)dialog.Controls.Find("checkBoxHardwareGraphs", searchAllChildren: true).Single()).Checked = false;
+
+        dialog.DialogResult = DialogResult.OK;
+        dialog.Close();
+
+        Assert.False(AppearanceSettingsFile.LoadOrDefault(Path_).HardwareAcceleratedPlots);
+        Assert.False(dialog.RestartRequested);
     }
 
     [Theory]

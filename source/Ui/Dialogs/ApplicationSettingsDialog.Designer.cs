@@ -26,6 +26,9 @@ namespace Resonalyze
             radioThemeDark = new ReleaseClickRadioButton();
             radioThemeLight = new ReleaseClickRadioButton();
             labelThemeHint = new Label();
+            labelGraphs = new Label();
+            checkBoxHardwareGraphs = new ReleaseClickCheckBox();
+            labelGraphsHint = new Label();
             buttonOk = new ReleaseClickButton();
             buttonCancel = new ReleaseClickButton();
             SuspendLayout();
@@ -77,16 +80,51 @@ namespace Resonalyze
                 "Resonalyze starts. Curve colours saved in overlay and Virtual DSP files are " +
                 "yours and are left alone.";
             //
+            // labelGraphs
+            //
+            labelGraphs.AutoSize = true;
+            labelGraphs.ForeColor = UiPalette.TextAccent;
+            labelGraphs.Location = new Point(12, 158);
+            labelGraphs.Name = "labelGraphs";
+            labelGraphs.Size = new Size(120, 15);
+            labelGraphs.TabIndex = 4;
+            labelGraphs.Text = "Graphs";
+            //
+            // checkBoxHardwareGraphs
+            //
+            checkBoxHardwareGraphs.AutoSize = true;
+            checkBoxHardwareGraphs.FlatStyle = FlatStyle.Flat;
+            checkBoxHardwareGraphs.ForeColor = UiPalette.TextPrimary;
+            checkBoxHardwareGraphs.Location = new Point(16, 186);
+            checkBoxHardwareGraphs.Name = "checkBoxHardwareGraphs";
+            checkBoxHardwareGraphs.Size = new Size(220, 19);
+            checkBoxHardwareGraphs.TabIndex = 5;
+            checkBoxHardwareGraphs.Text = "Hardware-accelerated graphs";
+            checkBoxHardwareGraphs.UseVisualStyleBackColor = true;
+            //
+            // labelGraphsHint
+            //
+            labelGraphsHint.AutoSize = true;
+            labelGraphsHint.ForeColor = UiPalette.TextMuted;
+            labelGraphsHint.Location = new Point(12, 214);
+            labelGraphsHint.MaximumSize = new Size(356, 0);
+            labelGraphsHint.Name = "labelGraphsHint";
+            labelGraphsHint.Size = new Size(356, 45);
+            labelGraphsHint.TabIndex = 6;
+            labelGraphsHint.Text = "Draws the main graph on the graphics card, so panning stays smooth with " +
+                "many curves. Turn it off if the graph shows black or garbled, as in some " +
+                "virtual machines.";
+            //
             // buttonOk
             //
             buttonOk.BackColor = UiPalette.ButtonBackground;
             buttonOk.DialogResult = DialogResult.OK;
             buttonOk.FlatStyle = FlatStyle.Popup;
             buttonOk.ForeColor = UiPalette.TextPrimary;
-            buttonOk.Location = new Point(192, 158);
+            buttonOk.Location = new Point(192, 276);
             buttonOk.Name = "buttonOk";
             buttonOk.Size = new Size(84, 26);
-            buttonOk.TabIndex = 4;
+            buttonOk.TabIndex = 7;
             buttonOk.Text = "OK";
             buttonOk.UseVisualStyleBackColor = false;
             //
@@ -95,10 +133,10 @@ namespace Resonalyze
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
             buttonCancel.ForeColor = UiPalette.TextPrimary;
-            buttonCancel.Location = new Point(284, 158);
+            buttonCancel.Location = new Point(284, 276);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(84, 26);
-            buttonCancel.TabIndex = 5;
+            buttonCancel.TabIndex = 8;
             buttonCancel.Text = "Cancel";
             buttonCancel.UseVisualStyleBackColor = true;
             //
@@ -107,11 +145,14 @@ namespace Resonalyze
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = UiPalette.ShellSurface;
-            ClientSize = new Size(380, 196);
+            ClientSize = new Size(380, 314);
             Controls.Add(labelAppearance);
             Controls.Add(radioThemeDark);
             Controls.Add(radioThemeLight);
             Controls.Add(labelThemeHint);
+            Controls.Add(labelGraphs);
+            Controls.Add(checkBoxHardwareGraphs);
+            Controls.Add(labelGraphsHint);
             Controls.Add(buttonOk);
             Controls.Add(buttonCancel);
             Font = new Font("Segoe UI", 9F);
@@ -133,6 +174,9 @@ namespace Resonalyze
         private ReleaseClickRadioButton radioThemeDark;
         private ReleaseClickRadioButton radioThemeLight;
         private Label labelThemeHint;
+        private Label labelGraphs;
+        private ReleaseClickCheckBox checkBoxHardwareGraphs;
+        private Label labelGraphsHint;
         private ReleaseClickButton buttonOk;
         private ReleaseClickButton buttonCancel;
     }

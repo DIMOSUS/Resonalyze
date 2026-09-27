@@ -7,12 +7,14 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>A channel's chain curve, drawn without bulk delay at the PROCESSOR's rate (this plot shows the device's filters).</summary>
+/// <summary>A channel's chain curve, drawn without bulk delay at the PROCESSOR's rate (this plot shows the device's filters).
+/// <see cref="PeakHz"/>: the headroom's peak, drawn as a point of its own so a lobe between grid points still shows.</summary>
 internal readonly record struct DspChainCurve(
     string Title,
     DspChannelChain Chain,
     int ProcessorSampleRate,
-    OxyColor Color);
+    OxyColor Color,
+    double? PeakHz = null);
 
 /// <summary>Junction-correlation data from two PROCESSED channels: lag 0 is the applied alignment, lags correct the upper channel.
 /// See docs/tech/virtual-dsp-analysis.md#plots.</summary>
@@ -547,10 +549,41 @@ internal sealed class VirtualCrossoverDspChainPlot
                 points.Add(new DataPoint(grid[i], values[i]));
             }
 
+            if (mode == DspPlotMode.Magnitude && curve.PeakHz is { } peakHz)
+            {
+                points = WithPeak(points, response, curve, peakHz);
+            }
+
             AddSeries(model, curve.Title, points, curve.Color);
+            if (mode == DspPlotMode.Magnitude)
+            {
+                AddOverUnity(model, curve.Title, points);
+            }
         }
 
         model.InvalidatePlot(true);
+    }
+
+    // A FIR's lobe is about rate / taps wide on each side of its peak, far under the grid's spacing, so a few points
+    // across it keep the drawn lobe (and its fill) its own width. Read apart from the grid, whose values come from the
+    // kernel's per-grid cache.
+    private static readonly double[] LobeOffsets = [-2, -1, -0.5, 0, 0.5, 1, 2];
+
+    private static List<DataPoint> WithPeak(
+        List<DataPoint> points, PreparedDspResponse response, DspChainCurve curve, double peakHz)
+    {
+        double lobeHz = curve.Chain.Fir is { } fir ? (double)curve.ProcessorSampleRate / fir.Length : 0;
+        IEnumerable<double> extra = lobeHz > 0
+            ? LobeOffsets.Select(offset => peakHz + offset * lobeHz)
+            : [peakHz];
+        return
+        [
+            .. points.Concat(extra
+                    .Where(frequency => frequency > points[0].X && frequency < points[^1].X)
+                    .Select(frequency => new DataPoint(
+                        frequency, DataHelper.AmplitudeToDecibels(response.Response(frequency).Magnitude))))
+                .OrderBy(point => point.X)
+        ];
     }
 
     private static double[] Values(
@@ -608,6 +641,29 @@ internal sealed class VirtualCrossoverDspChainPlot
             {
                 model.Series.RemoveAt(index);
             }
+        }
+    }
+
+    // Red between the curve and 0 dB wherever the chain gains: a full-scale input clips there.
+    private static void AddOverUnity(PlotModel model, string title, List<DataPoint> points)
+    {
+        // One series per run, so nothing lies along 0 dB for the tracker to snap to between them.
+        foreach (List<DataPoint> run in VirtualCrossoverHeadroom.OverUnity(points))
+        {
+            var area = new AreaSeries
+            {
+                Title = $"{title} over 0 dB",
+                RenderInLegend = false,
+                Tag = SeriesTag,
+                Color = OxyColors.Transparent,
+                Color2 = OxyColors.Transparent,
+                Fill = UiPalette.CurveClipFill.ToOxy(),
+                TrackerFormatString = TrackerFormat,
+                YAxisKey = ValueAxisKey,
+                ConstantY2 = 0
+            };
+            area.Points.AddRange(run);
+            model.Series.Insert(0, area);
         }
     }
 

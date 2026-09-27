@@ -93,6 +93,7 @@ internal sealed class UiThemePalette
     // lightness moves, because the same ink has to read on a dark plot and on a white one.
     public required Color CurveNeutral { get; init; }
     public required Color CurveMuted { get; init; }
+    public required Color CurveClipFill { get; init; }
     public required Color CurveHarmonic2 { get; init; }
     public required Color CurveHarmonic3 { get; init; }
     public required Color CurveHarmonic4 { get; init; }
@@ -277,6 +278,7 @@ internal sealed class UiThemePalette
 
         CurveNeutral = Color.White,
         CurveMuted = Color.FromArgb(128, 128, 128),
+        CurveClipFill = Color.FromArgb(230, 30, 30),
         CurveHarmonic2 = Color.FromArgb(255, 64, 0),
         CurveHarmonic3 = Color.FromArgb(128, 64, 127),
         CurveHarmonic4 = Color.FromArgb(1, 64, 254),
@@ -476,6 +478,7 @@ internal sealed class UiThemePalette
 
         CurveNeutral = Color.FromArgb(24, 28, 36),
         CurveMuted = Color.FromArgb(110, 116, 128),
+        CurveClipFill = Color.FromArgb(220, 0, 0),
         CurveHarmonic2 = Color.FromArgb(198, 44, 0),
         CurveHarmonic3 = Color.FromArgb(122, 40, 120),
         CurveHarmonic4 = Color.FromArgb(24, 52, 196),

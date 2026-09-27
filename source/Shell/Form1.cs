@@ -200,9 +200,10 @@ namespace Resonalyze
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
             };
-            virtualCrossoverPanel.MetricChanged = (text, detail) =>
+            // Scroll kept: the read-out refreshes on every drag frame while its reader may be further down.
+            virtualCrossoverPanel.MetricChanged = (lines, detail) =>
             {
-                virtualDspMetricLabel.Text = text;
+                virtualDspMetricText.ShowLines(lines, keepScroll: true);
                 virtualDspMetricDetail = detail;
             };
             // Warning in the free right column; WinForms tooltips never wrap prose, so wrap here.
@@ -214,7 +215,8 @@ namespace Resonalyze
                 virtualDspWarningLabel.Visible =
                     text.Length > 0 && virtualCrossoverPanel.Visible;
             };
-            WirePersistentTooltip(virtualDspMetricLabel, () => virtualDspMetricDetail);
+            Ui.ThemedScrollBars.Apply(virtualDspMetricText);
+            WirePersistentTooltip(virtualDspMetricText, () => virtualDspMetricDetail);
             WirePersistentTooltip(virtualDspWarningLabel, () => virtualDspWarningDetail);
             ApplyPersistedSettings();
             WireControllerEvents();

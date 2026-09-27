@@ -52,10 +52,8 @@ public sealed class VirtualCrossoverMetricTests
         {
             string text = VirtualCrossoverMetric.FormatDetail([Junction]);
 
-            Assert.Equal(
-                "Sum loss avg\r\nA/B: -1.23 dB avg, dip -6.50 dB " +
-                "(900 Hz – 3.6 kHz)",
-                text);
+            Assert.Contains("A/B: 900 Hz – 3.6 kHz", text);
+            Assert.DoesNotContain("-1.23", text);
         });
     }
 
@@ -70,12 +68,11 @@ public sealed class VirtualCrossoverMetricTests
 
             Assert.StartsWith("Sum loss (direct, dB)\r\n         avg /   dip\r\n\r\n", compact);
             Assert.Contains("A/B    -1.23 / -6.50", compact);
-            Assert.StartsWith("Sum loss (direct) avg\r\nA/B: -1.23 dB avg, dip -6.50 dB", detail);
-            Assert.Contains("not comparable", detail);
+            Assert.StartsWith("Sum loss (direct)", detail);
+            Assert.DoesNotContain("(direct)", VirtualCrossoverMetric.FormatDetail([Junction]));
             Assert.Equal("Sum loss (direct, dB)\r\n         avg /   dip\r\n\r\n—",
                 VirtualCrossoverMetric.FormatCompact([], direct: true));
-            Assert.Equal("Sum loss (direct) avg: —",
-                VirtualCrossoverMetric.FormatDetail([], direct: true));
+            Assert.StartsWith("Sum loss (direct)", VirtualCrossoverMetric.FormatDetail([], direct: true));
         });
     }
 
@@ -151,39 +148,22 @@ public sealed class VirtualCrossoverMetricTests
     }
 
     [Fact]
-    public void FormatStereoDeltasDetail_ExplainsAModalLatchedRow()
+    public void FormatStereoDeltasDetail_ExplainsTheLatchMarkOnlyWhenARowLatched()
     {
         RunWithInvariantCulture(() =>
         {
-            string text = VirtualCrossoverMetric.FormatStereoDeltasDetail(
-            [
-                new VirtualCrossoverMetric.StereoDelta(
-                    "B", 15.514, 21.811, 80, 220, RightLatched: true)
-            ]);
+            string latched = VirtualCrossoverMetric.FormatStereoDeltasDetail(
+                [new VirtualCrossoverMetric.StereoDelta("B", 15.514, 21.811, 80, 220, RightLatched: true)]);
+            string clean = VirtualCrossoverMetric.FormatStereoDeltasDetail(
+                [new VirtualCrossoverMetric.StereoDelta("B", 15.514, 21.811, 80, 220)]);
 
-            Assert.Contains("B: L 15.514 / R ~21.811 ms, Δ ~-6.297 ms", text);
-            Assert.Contains("modal", text);
-            Assert.Contains("trust its log over this row", text);
+            Assert.Contains("~", latched);
+            Assert.DoesNotContain("~", clean);
         });
     }
 
     [Fact]
-    public void FormatStereoDeltasDetail_OmitsTheLatchLegendWhenNothingLatched()
-    {
-        RunWithInvariantCulture(() =>
-        {
-            string text = VirtualCrossoverMetric.FormatStereoDeltasDetail(
-            [
-                new VirtualCrossoverMetric.StereoDelta("B", 15.514, 21.811, 80, 220)
-            ]);
-
-            Assert.DoesNotContain("modal", text);
-            Assert.DoesNotContain("nergy onset", text);
-        });
-    }
-
-    [Fact]
-    public void FormatStereoDeltasDetail_NamesTheEnergyOnsetRowsAndExplainsThem()
+    public void FormatStereoDeltasDetail_NamesTheEnergyOnsetRows()
     {
         RunWithInvariantCulture(() =>
         {
@@ -194,10 +174,8 @@ public sealed class VirtualCrossoverMetricTests
                 new VirtualCrossoverMetric.StereoDelta("C", 16.533, 16.213, 200, 1_610)
             ]);
 
-            Assert.Contains("B: L 16.488 / R 17.512 ms, Δ -1.024 ms (65 Hz – 200 Hz, energy onsets)", text);
-            Assert.Contains("C: L 16.533 / R 16.213 ms, Δ +0.320 ms (200 Hz – 1.61 kHz)", text);
-            Assert.Contains("Energy onsets: a pair whose shared band is centred below 300 Hz", text);
-            Assert.Contains("30 dB", text);
+            Assert.Contains("B: 65 Hz – 200 Hz, energy onsets", text);
+            Assert.Contains("C: 200 Hz – 1.61 kHz\r\n", text);
         });
     }
 
@@ -212,10 +190,9 @@ public sealed class VirtualCrossoverMetricTests
                     "B", 16.628, 22.248, 65, 200, EnergyOnsetWithheld: true)
             ]);
 
-            Assert.Contains(
-                "(65 Hz – 200 Hz, first peaks: a side is under the 30 dB an energy onset needs)",
-                text);
-            Assert.DoesNotContain("Energy onsets:", text);
+            Assert.Contains("B: 65 Hz – 200 Hz, first peaks", text);
+            Assert.Contains("30 dB", text);
+            Assert.DoesNotContain("energy onsets", text);
         });
     }
 
@@ -228,7 +205,7 @@ public sealed class VirtualCrossoverMetricTests
     }
 
     [Fact]
-    public void FormatStereoDeltasDetail_ListsSidesExplainsTheSignAndIncludesBands()
+    public void FormatStereoDeltasDetail_GivesEachRowItsBandAndStatesTheSigns()
     {
         RunWithInvariantCulture(() =>
         {
@@ -242,16 +219,11 @@ public sealed class VirtualCrossoverMetricTests
                     "D", null, null, 1_800, 20_000)
             ]);
 
-            Assert.Contains("positive: right leads", text);
-            Assert.Contains(
-                "B: L 25.977 / R 25.724 ms, \u0394 +0.253 ms, level +1.6 dB " +
-                "(175 Hz \u2013 1.3 kHz)",
-                text);
-            Assert.Contains(
-                "C: L \u2014 / R 13.618 ms, \u0394 \u2014 (1.8 kHz \u2013 20 kHz)",
-                text);
-            Assert.Contains("D: \u2014 (no measurable arrival)", text);
-            Assert.Contains("positive: LEFT louder", text);
+            Assert.Contains("positive = right leads", text);
+            Assert.Contains("B: 175 Hz – 1.3 kHz", text);
+            Assert.Contains("C: 1.8 kHz – 20 kHz\r\n", text);
+            Assert.Contains("D: 1.8 kHz – 20 kHz, no measurable arrival", text);
+            Assert.Contains("positive = LEFT louder", text);
         });
     }
 
@@ -260,17 +232,18 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            string text = VirtualCrossoverMetric.FormatStereoDeltasDetail(
+            string spatial = VirtualCrossoverMetric.FormatStereoDeltasDetail(
             [
                 new VirtualCrossoverMetric.StereoDelta(
                     "B", 25.977, 25.724, 175, 1_300, LevelDeltaDb: 1.63,
                     LevelFromSpatialAverage: true)
             ]);
+            string gated = VirtualCrossoverMetric.FormatStereoDeltasDetail(
+                [new VirtualCrossoverMetric.StereoDelta("B", 25.977, 25.724, 175, 1_300, LevelDeltaDb: 1.63)]);
 
-            Assert.Contains("spatial averages", text);
-            Assert.Contains("positive: LEFT louder", text);
-            Assert.DoesNotContain("gated band level", text);
-            Assert.DoesNotContain("(point mic)", text);
+            Assert.Contains("spatial averages", spatial);
+            Assert.DoesNotContain("point mic", spatial);
+            Assert.DoesNotContain("spatial averages", gated);
         });
     }
 
@@ -288,18 +261,17 @@ public sealed class VirtualCrossoverMetricTests
                     "C", 15.341, 15.412, 1_800, 20_000, LevelDeltaDb: -0.62)
             ]);
 
-            Assert.Contains("level +1.6 dB (175 Hz", text);
-            Assert.Contains("level -0.6 dB (point mic)", text);
-            Assert.Contains("(point mic): that pair's captures cannot produce", text);
+            string[] lines = text.Split("\r\n");
+            Assert.DoesNotContain("point mic", lines.Single(line => line.StartsWith("B:")));
+            Assert.Contains("point mic", lines.Single(line => line.StartsWith("C:")));
         });
     }
 
     [Fact]
-    public void FormatStereoDeltasDetail_KeepsTheSpatialLevelWhenNoArrivalIsMeasurable()
+    public void FormatStereoDeltasDetail_KeepsTheSpatialLevelLegendWhenNoArrivalIsMeasurable()
     {
         RunWithInvariantCulture(() =>
         {
-            // A capture's level outlives the arrivals, so the early "no measurable arrival" row must not swallow it.
             string text = VirtualCrossoverMetric.FormatStereoDeltasDetail(
             [
                 new VirtualCrossoverMetric.StereoDelta(
@@ -307,8 +279,8 @@ public sealed class VirtualCrossoverMetricTests
                     LevelFromSpatialAverage: true)
             ]);
 
-            Assert.Contains(
-                "B: — (no measurable arrival), level -2.5 dB", text);
+            Assert.Contains("no measurable arrival", text);
+            Assert.Contains("spatial averages", text);
         });
     }
 
@@ -326,10 +298,13 @@ public sealed class VirtualCrossoverMetricTests
                     VirtualCrossoverZone.Center, -0.35, -2.1, 290, 20_000)
             ]);
 
-            Assert.Contains("6.3 dB quieter.", text);
-            Assert.Contains("2.1 dB quieter (point mic).", text);
+            string[] lines = text.Split("\r\n");
+            string rear = VirtualCrossoverZones.DisplayName(VirtualCrossoverZone.Rear);
+            string center = VirtualCrossoverZones.DisplayName(VirtualCrossoverZone.Center);
+            Assert.DoesNotContain("point mic", lines.Single(line => line.StartsWith(rear + ":")));
+            Assert.Contains("point mic", lines.Single(line => line.StartsWith(center + ":")));
+            Assert.Contains("290 Hz – 20 kHz", text);
             Assert.Contains("spatial averages", text);
-            Assert.Contains("could not be read from the captures", text);
         });
     }
 
@@ -467,8 +442,8 @@ public sealed class VirtualCrossoverMetricTests
 
             string text = VirtualCrossoverMetric.FormatPhaseDetail([incoherent]);
 
-            Assert.Contains("no delay aligns this band (ceiling 0.34)", text);
-            Assert.DoesNotContain("best 0.34 at", text);
+            Assert.Contains("ceiling 0.34", text);
+            Assert.DoesNotContain("best 0.34", text);
         });
     }
 
@@ -611,7 +586,7 @@ public sealed class VirtualCrossoverMetricTests
             string text = VirtualCrossoverMetric.FormatPhaseDetail(
                 [PhaseJunction(bestInvert: false, oppositePolarityScore: 0.42)]);
 
-            Assert.Contains("flip scores 0.42", text);
+            Assert.Contains("flip 0.42", text);
         });
     }
 
@@ -624,22 +599,17 @@ public sealed class VirtualCrossoverMetricTests
     }
 
     [Fact]
-    public void FormatPhaseDetail_ListsEveryFigureAndTheLegend()
+    public void FormatPhaseDetail_ListsWhatTheColumnLeavesOut()
     {
         RunWithInvariantCulture(() =>
         {
             string text = VirtualCrossoverMetric.FormatPhaseDetail([PhaseJunction()]);
 
-            Assert.Contains(
-                "A/B @ 80 Hz: φ -3° at fc (R 0.93); phase score 0.96 now, " +
-                "best 0.97 at -1.30 ms on A (flip scores 0.42);",
-                text);
-            Assert.Contains(
-                "rival lobe 0.78 at -12.20 ms (margin 0.19); " +
-                "fit Δτ +2.62 ms, rms 10° (40 Hz – 160 Hz)",
-                text);
-            Assert.Contains("the delay to add to the LOWER channel", text);
-            Assert.Contains("φ near ±180° never settles it either", text);
+            Assert.Contains("A/B @ 80 Hz:", text);
+            Assert.Contains("best 0.97 at -1.30 ms on A", text);
+            Assert.Contains("flip 0.42", text);
+            Assert.Contains("rival 0.78 at -12.20 ms (margin 0.19)", text);
+            Assert.Contains("LOWER channel", text);
         });
     }
 

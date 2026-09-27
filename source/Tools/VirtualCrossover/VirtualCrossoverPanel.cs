@@ -31,6 +31,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private readonly VirtualCrossoverAudition audition;
     private readonly VirtualCrossoverSharedScale sharedScale;
     private readonly VirtualCrossoverSideLock sideLock = new();
+    private readonly ChainHeadroomReader headroomReader = new();
 
     private readonly VirtualCrossoverProcessingCoordinator processingCoordinator = new();
     private readonly VirtualCrossoverMetrics metrics;
@@ -151,7 +152,7 @@ public partial class VirtualCrossoverPanel : UserControl
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    internal Action<string, string>? MetricChanged { get; set; }
+    internal Action<IReadOnlyList<ToneLine>, string>? MetricChanged { get; set; }
 
     /// <summary>Warning line for the host: text, tooltip, colour; empty text hides it.</summary>
     [System.ComponentModel.Browsable(false)]

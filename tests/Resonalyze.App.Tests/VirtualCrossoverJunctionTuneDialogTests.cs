@@ -9,7 +9,7 @@ namespace Resonalyze.App.Tests;
 public sealed class VirtualCrossoverJunctionTuneDialogTests
 {
     private static readonly JunctionTuneOutcome Found =
-        new([JunctionTuneLine.Of("Junction tune A/B: applied.")], CanApply: true, "A better crossover was found.", false);
+        new([ToneLine.Of("Junction tune A/B: applied.")], CanApply: true, "A better crossover was found.", false);
 
     private static Func<int, JunctionTuneDefaults> Defaults => index => index == 0
         ? new JunctionTuneDefaults(80, 200, [CrossoverFilterFamily.LinkwitzRiley],

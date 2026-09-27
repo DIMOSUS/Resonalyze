@@ -187,6 +187,12 @@ public partial class VirtualCrossoverPanel
         // The whole set is kept: the junction views and opposite-side read-outs need channels this view does not draw.
         session.LastRender = render;
 
+        // Every enabled block, whatever the view shows. A FIR chain not read yet shows as pending and never holds the
+        // frame: it is read on a worker and lands by a redraw.
+        List<HeadroomRow> headroom =
+            VirtualCrossoverHeadroom.Read(headroomReader, VirtualCrossoverHeadroom.Capture(session.Channels));
+        ReadWaitingHeadroom();
+
         // Read once: a control changed during the awaits below requests the next frame. Filtered by group view once, so
         // curves, sum, loss and read-out describe the same channels.
         VirtualCrossoverViewState view = CaptureViewState();
@@ -202,9 +208,10 @@ public partial class VirtualCrossoverPanel
                 [],
                 null,
                 SharedScaleFor(view, drawn: null)));
-            MetricChanged?.Invoke(string.Empty, string.Empty);
             // A warning about channels no longer visible would read as a fault in this view.
             HideWarning();
+            (List<ToneLine> compact, string detail) = VirtualCrossoverMetric.FormatHeadroomOnly(headroom);
+            MetricChanged?.Invoke(compact, detail);
             return;
         }
 
@@ -257,6 +264,7 @@ public partial class VirtualCrossoverPanel
                     response => ImpulseWindowPreview.EnvelopeOf(response));
             });
         }
+
         if (mainPlotView.IsDisposed || !processingCoordinator.IsCurrent(revision))
         {
             return;
@@ -318,7 +326,7 @@ public partial class VirtualCrossoverPanel
         using (AppProfiler.Zone("VirtualDSP.UpdateMetric"))
         {
             UpdateMetric(
-                frame.Summed, shownLoss, phaseEntries, stereoDeltas, hybrid,
+                headroom, frame.Summed, shownLoss, phaseEntries, stereoDeltas, hybrid,
                 groupDeltas, lossDirect);
         }
 
@@ -394,8 +402,23 @@ public partial class VirtualCrossoverPanel
         }
     }
 
+    private void ReadWaitingHeadroom()
+    {
+        if (headroomReader.Waiting)
+        {
+            _ = headroomReader.FillAsync(() =>
+            {
+                if (!IsDisposed)
+                {
+                    RequestRedraw();
+                }
+            });
+        }
+    }
+
     // Junction read-outs use the SUMMED channels: a drawn-only centre would invent a crossover.
     private void UpdateMetric(
+        IReadOnlyList<HeadroomRow> headroom,
         List<ProcessedChannel> summed,
         List<SignalPoint>? lossCurve,
         IReadOnlyList<VirtualCrossoverMetric.PhaseEntry> phaseEntries,
@@ -411,8 +434,8 @@ public partial class VirtualCrossoverPanel
             entries = metrics.BuildEntries(summed, lossCurve);
         }
 
-        (string compact, string detail) = VirtualCrossoverMetric.FormatReadOut(
-            entries, lossDirect, phaseEntries, groupDeltas, stereoDeltas, hybridReader.ReadOut(hybrid));
+        (List<ToneLine> compact, string detail) = VirtualCrossoverMetric.FormatReadOut(
+            headroom, entries, lossDirect, phaseEntries, groupDeltas, stereoDeltas, hybridReader.ReadOut(hybrid));
         MetricChanged?.Invoke(compact, detail);
     }
 

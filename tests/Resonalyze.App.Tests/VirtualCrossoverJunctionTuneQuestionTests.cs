@@ -11,7 +11,7 @@ public sealed class VirtualCrossoverJunctionTuneQuestionTests
         CrossoverFamilyChoice.Offered.First(choice => choice.Value == CrossoverFilterFamily.LinkwitzRiley);
 
     private static readonly JunctionTuneOutcome Found =
-        new([JunctionTuneLine.Of("Junction tune A/B: applied.")], CanApply: true, "A better crossover was found.", false);
+        new([ToneLine.Of("Junction tune A/B: applied.")], CanApply: true, "A better crossover was found.", false);
 
     private static JunctionTuneDefaults FirstAcoustic(int index) => index == 0
         ? new JunctionTuneDefaults(80, 200, [CrossoverFilterFamily.LinkwitzRiley],

@@ -59,12 +59,14 @@ namespace Resonalyze
             virtualCrossoverPanel = new VirtualCrossoverPanel();
             firConstructorPanel = new FirConstructorPanel();
             eqResultsPanel = new EqResultsPanel();
-            virtualDspMetricLabel = new Label();
+            virtualDspMetricPanel = new Panel();
+            virtualDspMetricText = new StatusRichTextBox();
             virtualDspWarningLabel = new Label();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
             (numericUpDown1).BeginInit();
             panel1.SuspendLayout();
+            virtualDspMetricPanel.SuspendLayout();
             SuspendLayout();
             // 
             // buttonRecord
@@ -458,26 +460,36 @@ namespace Resonalyze
             eqResultsPanel.TabIndex = 30;
             eqResultsPanel.Visible = false;
             // 
-            // virtualDspMetricLabel
+            // virtualDspMetricPanel
             // 
-            virtualDspMetricLabel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
-            virtualDspMetricLabel.BackColor = UiPalette.PanelSurfaceDeep;
-            virtualDspMetricLabel.BorderStyle = BorderStyle.FixedSingle;
-            virtualDspMetricLabel.Font = new Font("Consolas", 9F);
-            virtualDspMetricLabel.ForeColor = UiPalette.Warning;
+            virtualDspMetricPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
+            virtualDspMetricPanel.BackColor = UiPalette.PanelSurfaceDeep;
+            virtualDspMetricPanel.BorderStyle = BorderStyle.FixedSingle;
+            virtualDspMetricPanel.Controls.Add(virtualDspMetricText);
             // High in the column, not beside the plot: Virtual DSP hides the whole
             // capture block (meters, History, Mode Settings), so everything from the
-            // warning box down is this read-out's to use — and it needs the room. The
-            // text grows with the CHANNEL COUNT (a junction row, a phase row and a
-            // stereo-delta row per block), and at the 12-block ceiling the worst case
-            // measures 856 px against the 431 this label used to get. Clearing the
-            // warning box above (a long one runs to about y=143) buys 239 px of it.
-            virtualDspMetricLabel.Location = new Point(1268, 150);
-            virtualDspMetricLabel.Name = "virtualDspMetricLabel";
-            virtualDspMetricLabel.Padding = new Padding(8);
-            virtualDspMetricLabel.Size = new Size(214, 670);
-            virtualDspMetricLabel.TabIndex = 31;
-            virtualDspMetricLabel.Visible = false;
+            // warning box down is this read-out's to use. The text grows with the
+            // CHANNEL COUNT and scrolls past the column's height.
+            virtualDspMetricPanel.Location = new Point(1268, 150);
+            virtualDspMetricPanel.Name = "virtualDspMetricPanel";
+            virtualDspMetricPanel.Padding = new Padding(8, 8, 0, 8);
+            virtualDspMetricPanel.Size = new Size(214, 670);
+            virtualDspMetricPanel.TabIndex = 31;
+            virtualDspMetricPanel.Visible = false;
+            // 
+            // virtualDspMetricText
+            // 
+            virtualDspMetricText.BackColor = UiPalette.PanelSurfaceDeep;
+            virtualDspMetricText.BorderStyle = BorderStyle.None;
+            virtualDspMetricText.Dock = DockStyle.Fill;
+            virtualDspMetricText.Font = new Font("Consolas", 9F);
+            virtualDspMetricText.ForeColor = UiPalette.Warning;
+            virtualDspMetricText.Name = "virtualDspMetricText";
+            virtualDspMetricText.ReadOnly = true;
+            virtualDspMetricText.ScrollBars = RichTextBoxScrollBars.Vertical;
+            virtualDspMetricText.TabIndex = 0;
+            virtualDspMetricText.TabStop = false;
+            virtualDspMetricText.WordWrap = false;
             // 
             // virtualDspWarningLabel
             // 
@@ -505,7 +517,7 @@ namespace Resonalyze
             Controls.Add(chromeTitleBar);
             Controls.Add(eqResultsPanel);
             Controls.Add(virtualDspWarningLabel);
-            Controls.Add(virtualDspMetricLabel);
+            Controls.Add(virtualDspMetricPanel);
             Controls.Add(virtualCrossoverPanel);
             Controls.Add(firConstructorPanel);
             Controls.Add(signalGeneratorPanel);
@@ -529,6 +541,7 @@ namespace Resonalyze
             overlayPanel1.PerformLayout();
             (numericUpDown1).EndInit();
             panel1.ResumeLayout(false);
+            virtualDspMetricPanel.ResumeLayout(false);
             ResumeLayout(false);
 
         }
@@ -560,7 +573,8 @@ namespace Resonalyze
         private VirtualCrossoverPanel virtualCrossoverPanel;
         private FirConstructorPanel firConstructorPanel;
         private EqResultsPanel eqResultsPanel;
-        private Label virtualDspMetricLabel;
+        private Panel virtualDspMetricPanel;
+        private StatusRichTextBox virtualDspMetricText;
         private Label virtualDspWarningLabel;
         private ReleaseClickButton buttonCompare;
         private ReleaseClickButton buttonRewExport;

@@ -1,13 +1,15 @@
 namespace Resonalyze;
 
 /// <param name="RmsErrorDb">Null, like <paramref name="MaxErrorDb"/>, when no point of the curve lies in the window.</param>
+/// <param name="PeakBoostDb">The bank's own highest gain (EQ boost).</param>
+/// <param name="HeadroomDb">0 dB less the whole chain's peak gain; null while it is being read.</param>
 internal sealed record EqTuneStats(
     double? RmsErrorDb,
     double? MaxErrorDb,
     int FiltersUsed,
     double PeakBoostDb,
     double PeakCutDb,
-    double HeadroomDb);
+    double? HeadroomDb);
 
 public sealed partial class EqResultsPanel : UserControl
 {
@@ -41,11 +43,12 @@ public sealed partial class EqResultsPanel : UserControl
             "Largest absolute deviation of Source + EQ from the target, within the window.");
         SetTip(filtersCaption, filtersValue, "Number of active bands (non-zero gain).");
         SetTip(boostCaption, boostValue,
-            "Largest positive gain of the combined EQ. A net boost risks clipping.");
+            "Largest gain of the EQ alone, preamp included. The channel's gain and crossover are not counted: " +
+            "Headroom is.");
         SetTip(cutCaption, cutValue, "Largest attenuation of the combined EQ.");
         SetTip(headroomCaption, headroomValue,
-            "Margin to 0 dB (−peak boost). Negative means the EQ nets a boost that " +
-            "could clip.");
+            "0 dB less the whole chain's peak gain (a Virtual DSP channel's gain, crossover and FIR with this EQ), " +
+            "20 Hz – 20 kHz. Negative clips a full-scale signal.");
     }
 
     private void SetTip(Label caption, Label value, string text)
@@ -93,8 +96,10 @@ public sealed partial class EqResultsPanel : UserControl
         cutValue.Text = $"{stats.PeakCutDb:+0.0;-0.0;0.0} dB";
         cutValue.ForeColor = InfoColor;
 
-        headroomValue.Text = $"{stats.HeadroomDb:+0.0;-0.0;0.0} dB";
-        headroomValue.ForeColor = stats.HeadroomDb < -0.05 ? BadColor : GoodColor;
+        headroomValue.Text = stats.HeadroomDb is { } headroom ? $"{headroom:+0.0;-0.0;0.0} dB" : "…";
+        headroomValue.ForeColor = stats.HeadroomDb is { } shown
+            ? HeadroomReading.IsClip(shown) ? BadColor : GoodColor
+            : NeutralColor;
     }
 
     private static void ShowError(Label value, double? errorDb, double goodBelow, double badAbove)

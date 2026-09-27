@@ -74,20 +74,20 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
     {
         (JunctionTunePlan plan, JunctionTuneResult result) = LinkwitzRiley24Goal.Value;
 
-        List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
+        List<ToneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
         int header = report.FindIndex(line => line.Text.Contains("sum loss", StringComparison.Ordinal));
-        JunctionTuneLine row = report[header + 1];
+        ToneLine row = report[header + 1];
 
         Assert.Contains("→", row.Text, StringComparison.Ordinal);
         Assert.Equal(7, row.Spans.Count);
         Assert.All(
             row.Spans.Where((_, index) => index is 0 or 1 or 3 or 5),
-            span => Assert.Equal(JunctionTuneTone.Plain, span.Tone));
-        JunctionTuneSpan ripple = row.Spans[^1];
-        Assert.Equal(JunctionTuneTone.Better, ripple.Tone);
+            span => Assert.Equal(TextTone.Plain, span.Tone));
+        ToneSpan ripple = row.Spans[^1];
+        Assert.Equal(TextTone.Good, ripple.Tone);
         Assert.DoesNotContain("→", ripple.Text, StringComparison.Ordinal);
-        Assert.Equal(JunctionTuneTone.Better, report[0].Spans[^1].Tone);
-        Assert.All(report[header].Spans, span => Assert.Equal(JunctionTuneTone.Plain, span.Tone));
+        Assert.Equal(TextTone.Good, report[0].Spans[^1].Tone);
+        Assert.All(report[header].Spans, span => Assert.Equal(TextTone.Plain, span.Tone));
     }
 
     [Fact]
@@ -114,7 +114,7 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
             ClosestAcousticCostDb: 1.1,
             BestSumScoreDb: 5.5);
 
-        List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
+        List<ToneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
 
         Assert.EndsWith("a crossover nearer the acoustic goal was found.", report[0].Text, StringComparison.Ordinal);
         Assert.Contains(report, line => line.Text.Contains("(budget 1.0 dB)", StringComparison.Ordinal));
@@ -170,15 +170,15 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
             ClosestAcousticCostDb: 1.3,
             BestSumScoreDb: 3.5);
 
-        List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
+        List<ToneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
 
-        JunctionTuneLine verdict = report[^1];
+        ToneLine verdict = report[^1];
         Assert.Contains("Apply writes it anyway", verdict.Text, StringComparison.Ordinal);
         Assert.Contains(
             report,
             line => line.Text.Contains("it costs 0.5 dB of summation score", StringComparison.Ordinal) &&
                 line.Text.Contains("(budget 0.2 dB)", StringComparison.Ordinal));
-        Assert.Equal(JunctionTuneTone.Worse, verdict.Spans[^1].Tone);
+        Assert.Equal(TextTone.Bad, verdict.Spans[^1].Tone);
         Assert.All(report, line => Assert.True(
             line.Text.Length <= Columns, $"{line.Text.Length} characters: {line.Text}"));
     }
@@ -188,7 +188,7 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
     {
         (JunctionTunePlan plan, JunctionTuneResult result) = TwoSides(rightTweeterFallsDbPerOctave: 9.0, closestDb: 1.0);
 
-        List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
+        List<ToneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
         List<string> text = report.Select(line => line.Text).ToList();
         output.WriteLine(string.Join(Environment.NewLine, text));
 
@@ -198,10 +198,10 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
         Assert.Contains(text, line => line.Contains("landing right B on it takes about 15.0 dB/oct", StringComparison.Ordinal));
         Assert.Contains(text, line => line.Contains("one shift of B for both sides", StringComparison.Ordinal) &&
             line.Contains("+0.20 ms", StringComparison.Ordinal));
-        JunctionTuneLine verdict = report[^1];
+        ToneLine verdict = report[^1];
         Assert.Contains("Apply writes it anyway", verdict.Text, StringComparison.Ordinal);
         Assert.Contains("a filter that lands on it sums worse.", verdict.Text, StringComparison.Ordinal);
-        Assert.Equal(JunctionTuneTone.Worse, verdict.Spans[^1].Tone);
+        Assert.Equal(TextTone.Bad, verdict.Spans[^1].Tone);
         Assert.All(text, line => Assert.True(line.Length <= Columns, $"{line.Length} characters: {line}"));
         Assert.True(report.Count <= PaneLines, $"{report.Count} lines.");
     }
@@ -231,14 +231,14 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
         ];
         var candidate = result.Current with { Sides = halfRead, RankingSides = halfRead };
 
-        List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(
+        List<ToneLine> report = VirtualCrossoverJunctionTuneReport.Build(
             plan, result with { Current = candidate, Best = candidate });
 
         Assert.Contains(report, line => line.Text.Contains("right B not read.", StringComparison.Ordinal));
         Assert.Contains(report, line => line.Text.Contains("not enough data", StringComparison.Ordinal));
         Assert.DoesNotContain(report, line => line.Text.Contains("OUT OF REACH", StringComparison.Ordinal));
         Assert.Contains("right B could not be read against it.", report[^1].Text, StringComparison.Ordinal);
-        Assert.Equal(JunctionTuneTone.Worse, report[^1].Spans[^1].Tone);
+        Assert.Equal(TextTone.Bad, report[^1].Spans[^1].Tone);
     }
 
     private static (JunctionTunePlan Plan, JunctionTuneResult Result) TwoSides(

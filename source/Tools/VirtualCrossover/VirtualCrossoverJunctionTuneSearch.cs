@@ -24,7 +24,7 @@ internal sealed record JunctionTuneDefaults(
 
 /// <param name="Recommended">Whether Apply writes what the search advises; it is offered either way.</param>
 internal sealed record JunctionTuneOutcome(
-    IReadOnlyList<JunctionTuneLine> Report,
+    IReadOnlyList<ToneLine> Report,
     bool CanApply,
     string Status,
     bool Refused,
@@ -56,11 +56,11 @@ internal static class VirtualCrossoverJunctionTuneSearch
     }
 
     public static JunctionTuneOutcome NotInView() =>
-        new([JunctionTuneLine.Of("The junction is no longer in this view.")], false, "Nothing to search.", true);
+        new([ToneLine.Of("The junction is no longer in this view.")], false, "Nothing to search.", true);
 
     public static JunctionTuneOutcome GateMisplaced() =>
         new(
-            [JunctionTuneLine.Of("The phase gate is misplaced, so the junction cannot be read through it.")],
+            [ToneLine.Of("The phase gate is misplaced, so the junction cannot be read through it.")],
             false,
             "Place the gate first.",
             true);
@@ -68,7 +68,7 @@ internal static class VirtualCrossoverJunctionTuneSearch
     /// <param name="because">A phrase: capitalised and closed with a full stop here.</param>
     public static JunctionTuneOutcome Refusal(string because) =>
         new(
-            [JunctionTuneLine.Of(because[..1].ToUpperInvariant() + because[1..] + ".")],
+            [ToneLine.Of(because[..1].ToUpperInvariant() + because[1..] + ".")],
             false,
             "Refused.",
             true);
@@ -125,7 +125,7 @@ internal static class VirtualCrossoverJunctionTuneSearch
     public static JunctionTuneOutcome Outcome(
         JunctionTunePlan plan, JunctionTuneRequest request, JunctionTuneResult result)
     {
-        List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
+        List<ToneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
         string searched =
             $"{result.CandidatesEvaluated} candidates read over " +
             $"{plan.Options.MinCrossoverHz:0.###}–{plan.Options.MaxCrossoverHz:0.###} Hz.";

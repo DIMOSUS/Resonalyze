@@ -75,10 +75,12 @@ internal static class EqWizardRender
     }
 
     /// <summary>Error against the target within the Auto Tune window, and the bank's reach; null without a corrected curve.</summary>
+    /// <param name="headroomDb">The whole chain's (<see cref="EqWizardHeadroom"/>); null while it is being read.</param>
     public static EqTuneStats? Stats(
         EqWizardSession session,
         EqWizardRenderSet? render,
-        EqualizationCurve eq)
+        EqualizationCurve eq,
+        double? headroomDb)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(eq);
@@ -132,8 +134,7 @@ internal static class EqWizardRender
             peakCut = Math.Min(peakCut, gain);
         }
 
-        double headroom = -peakBoost;
-        return new EqTuneStats(rms, maxInWindow, filtersUsed, peakBoost, peakCut, headroom);
+        return new EqTuneStats(rms, maxInWindow, filtersUsed, peakBoost, peakCut, headroomDb);
     }
 
     /// <summary>The statistics of the bank a tuning sheet prints: under Bypass the plot draws no bank, the sheet still does.</summary>
@@ -158,7 +159,11 @@ internal static class EqWizardRender
             };
         }
 
-        return Stats(session, render, eq);
+        return Stats(
+            session,
+            render,
+            eq,
+            EqWizardHeadroom.Input(session, eq) is { } chain ? EqWizardHeadroom.Of(chain) : null);
     }
 
     /// <summary>The bank's own gain (no preamp) on the baseline's frequencies.</summary>

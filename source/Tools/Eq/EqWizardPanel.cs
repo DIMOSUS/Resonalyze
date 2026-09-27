@@ -40,6 +40,9 @@ public partial class EqWizardPanel : UserControl
     private readonly EqWizardImportExportCoordinator importExportCoordinator = new();
     private readonly EqWizardPlot plot = new();
     private readonly EqDoubleSkirtCheck.Cache doubleSkirtCheck = new();
+    private readonly ChainHeadroomReader headroom = new();
+    private EqTuneStats? shownStats;
+    private DspChainResponseKey? shownChain;
     private PlotLabelsPanelController plotLabels = null!;
     // Set while the panel writes its own controls, so their handlers do not write the value back.
     private bool presenting;
@@ -484,7 +487,23 @@ public partial class EqWizardPanel : UserControl
         buttonOverlaySettings.Enabled = true;
         NumericTargetOffset.Enabled = true;
         NumericGain.Enabled = !session.Bypass && render.SourcePlusEq != null;
-        ResultsChanged?.Invoke(EqWizardRender.Stats(session, render, eq));
+        shownChain = EqWizardHeadroom.Input(session, eq);
+        shownStats = EqWizardRender.Stats(
+            session, render, eq, shownChain == null ? null : EqWizardHeadroom.Read(headroom, shownChain));
+        ResultsChanged?.Invoke(shownStats);
+        if (headroom.Waiting)
+        {
+            _ = headroom.FillAsync(() =>
+            {
+                if (shownStats is { HeadroomDb: null } waiting && shownChain != null &&
+                    headroom.KnownPeak(shownChain) is { } peak)
+                {
+                    shownStats = waiting with { HeadroomDb = -peak.PeakDb };
+                    ResultsChanged?.Invoke(shownStats);
+                }
+            });
+        }
+
         WarningChanged?.Invoke(doubleSkirtCheck.Warning(
             session.Target.Spec,
             session.TargetCrossover,

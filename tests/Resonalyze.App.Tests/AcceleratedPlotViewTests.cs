@@ -5,35 +5,23 @@ using OxyPlot.Series;
 
 namespace Resonalyze.App.Tests;
 
-// Both paths are covered wherever the tests run: a machine with a GPU draws on it, CI's software OpenGL falls back.
+// DrawToBitmap takes the GDI+ path on any machine; a headless runner never paints an off-screen window.
 public sealed class AcceleratedPlotViewTests
 {
     private static readonly Color Surface = Color.FromArgb(40, 44, 90);
 
     [Fact]
-    public void Paint_AppliesThePendingUpdateAndReportsTheFrame()
+    public void DrawToBitmap_DrawsThePlotAndReportsTheFrame()
     {
         using Form form = ShownForm(out AcceleratedPlotView view);
         int frames = 0;
         view.FrameRendered += (_, _) => frames++;
         view.Model = LineModel();
 
-        view.Update();
-
-        Assert.True(frames > 0);
-        Assert.True(view.Model.PlotArea.Width > 0);
-    }
-
-    [Fact]
-    public void DrawToBitmap_DrawsThePlot()
-    {
-        using Form form = ShownForm(out AcceleratedPlotView view);
-        view.Model = LineModel();
-        view.Update();
-
         using var bitmap = new Bitmap(view.Width, view.Height);
         view.DrawToBitmap(bitmap, new Rectangle(Point.Empty, view.Size));
 
+        Assert.True(frames > 0);
         Assert.Equal(Surface.ToArgb(), bitmap.GetPixel(5, 5).ToArgb());
         Assert.Contains(
             Enumerable.Range(0, bitmap.Height).Select(y => bitmap.GetPixel(bitmap.Width / 2, y)),

@@ -151,6 +151,7 @@ internal sealed class MeasurementPlotContext
         var distortionOptions = new DistortionOptions(
             // HD2..HDn at the fundamental's resolution; the psychoacoustic dip floor applies to its trace only.
             SmoothingOctaves: SpectrumSmoothing.MagnitudeFwhmOctaves(options.SmoothingInverseOctaves),
+            PsychoacousticSmoothing: SpectrumSmoothing.IsPsychoacoustic(options.SmoothingInverseOctaves),
             IncludeNoise: (curves & SpectrumCurves.NoiseFloor) != 0);
 
         DistortionAnalysis analysis = DistortionAnalysisOf(result, sweepMetadata, distortionOptions);

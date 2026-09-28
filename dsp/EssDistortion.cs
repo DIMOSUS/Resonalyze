@@ -16,7 +16,9 @@ public sealed record DistortionOptions(
     bool IncludeNoise = false,
     int NoiseWindowLength = 8_192,
     int NoiseWindowCount = 6,
-    double MinNoiseConfidence = 0.5)
+    double MinNoiseConfidence = 0.5,
+    // The width follows SpectrumSmoothing.PsychoacousticOctaves instead, as the primary's psychoacoustic mean does.
+    bool PsychoacousticSmoothing = false)
 {
     public void Validate()
     {
@@ -314,7 +316,7 @@ public static class EssDistortion
 
             result.Add(new AnalysisCurve(
                 name,
-                BuildDbCurve(spectrum.Frequencies, ratio, options.SmoothingOctaves),
+                BuildDbCurve(spectrum.Frequencies, ratio, options),
                 kind));
         }
 
@@ -327,7 +329,7 @@ public static class EssDistortion
         {
             result.Add(new AnalysisCurve(
                 "THD",
-                BuildDbCurve(spectrum.Frequencies, spectrum.ThdRatio, options.SmoothingOctaves),
+                BuildDbCurve(spectrum.Frequencies, spectrum.ThdRatio, options),
                 AnalysisCurveKind.ThdPlusNoise));
         }
 
@@ -339,7 +341,7 @@ public static class EssDistortion
                 : "Noise floor";
             result.Add(new AnalysisCurve(
                 label,
-                BuildDbCurve(spectrum.Frequencies, spectrum.NoiseFloorRatio!, options.SmoothingOctaves),
+                BuildDbCurve(spectrum.Frequencies, spectrum.NoiseFloorRatio!, options),
                 AnalysisCurveKind.NoiseFloor));
         }
 
@@ -409,7 +411,7 @@ public static class EssDistortion
     private static List<SignalPoint> BuildDbCurve(
         double[] frequencies,
         double[] ratio,
-        double smoothingOctaves)
+        DistortionOptions options)
     {
         int count = frequencies.Length;
         double[] db = new double[count];
@@ -420,7 +422,7 @@ public static class EssDistortion
                 : double.NaN;
         }
 
-        double[] smoothed = SmoothOctaves(frequencies, db, smoothingOctaves);
+        double[] smoothed = SmoothOctaves(frequencies, db, options.SmoothingOctaves, options.PsychoacousticSmoothing);
         var points = new List<SignalPoint>(count);
         for (int i = 0; i < count; i++)
         {
@@ -434,33 +436,29 @@ public static class EssDistortion
     public static double[] SmoothOctaves(
         double[] frequencies,
         double[] db,
-        double widthOctaves)
+        double widthOctaves,
+        bool psychoacoustic = false)
     {
         ArgumentNullException.ThrowIfNull(frequencies);
         ArgumentNullException.ThrowIfNull(db);
 
         int count = frequencies.Length;
         double[] output = new double[count];
-        if (widthOctaves <= 0.0 || count < 2)
+        double octavesPerStep = count < 2
+            ? 0.0
+            : (Math.Log2(frequencies[^1]) - Math.Log2(frequencies[0])) / (count - 1);
+        if ((widthOctaves <= 0.0 && !psychoacoustic) || !(octavesPerStep > 0.0))
         {
             Array.Copy(db, output, count);
             return output;
         }
 
         const double fwhmToSigma = 2.354820045;
-        double sigmaOctaves = widthOctaves / fwhmToSigma;
-        double octavesPerStep =
-            (Math.Log2(frequencies[^1]) - Math.Log2(frequencies[0])) / (count - 1);
-        double sigmaIndices = octavesPerStep > 0.0 ? sigmaOctaves / octavesPerStep : 0.0;
-        if (sigmaIndices <= 0.0)
-        {
-            Array.Copy(db, output, count);
-            return output;
-        }
-
-        int radius = (int)Math.Ceiling(3.0 * sigmaIndices);
         for (int i = 0; i < count; i++)
         {
+            double width = psychoacoustic ? SpectrumSmoothing.PsychoacousticOctaves(frequencies[i]) : widthOctaves;
+            double sigmaIndices = width / fwhmToSigma / octavesPerStep;
+            int radius = (int)Math.Ceiling(3.0 * sigmaIndices);
             // Masked points stay gaps: filling them would draw distortion where the harmonic is unobservable.
             if (!double.IsFinite(db[i]))
             {

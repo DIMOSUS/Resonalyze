@@ -10,6 +10,9 @@ public partial class VirtualCrossoverPanel
 
     private readonly VirtualCrossoverEqHandoff eqHandoff;
 
+    // One handoff at a time: it awaits the side's processing when the last render is stale.
+    private bool peqHandoffPending;
+
     // Rebuilt per click: enabled states follow channel state.
     private void ShowPeqMenu(VirtualCrossoverChannel channel)
     {
@@ -83,33 +86,41 @@ public partial class VirtualCrossoverPanel
     // The gate mirrors the magnitude view: shared template, active pin, last redraw's anchor.
     private async Task RequestPeqHandoffAsync(VirtualCrossoverChannel channel, bool withChain)
     {
-        if (EditPeqInWizardRequested is not { } requested)
+        if (EditPeqInWizardRequested is not { } requested || peqHandoffPending)
         {
             return;
         }
 
-        bool hybridRequested = HybridRequested;
-        if (await eqHandoff.SpatialAverageAsync(channel, channel.ActiveRight, hybridRequested) is not { } average)
+        peqHandoffPending = true;
+        try
         {
-            ShowError(
-                "The spatial average could not be read.",
-                "The plot changed while the handoff was being prepared. Try Edit in EQ Wizard again.");
-            return;
-        }
+            bool rightSide = channel.ActiveRight;
+            bool hybridRequested = HybridRequested;
+            (LiveCaptureDocument? Capture, double OffsetDb)? average =
+                await eqHandoff.SpatialAverageAsync(channel, rightSide, hybridRequested);
+            // A side flipped or a tick moved meanwhile: the average read belongs to another view.
+            if (IsDisposed || !session.Channels.Contains(channel) ||
+                channel.ActiveRight != rightSide || HybridRequested != hybridRequested)
+            {
+                return;
+            }
 
-        if (IsDisposed || !session.Channels.Contains(channel))
-        {
-            return;
-        }
+            if (average is not { } read)
+            {
+                ShowError(
+                    "The spatial average could not be read.",
+                    "The plot changed while the handoff was being prepared. Try Edit in EQ Wizard again.");
+                return;
+            }
 
-        VirtualDspEqHandoffRequest? request = eqHandoff.Request(
-            channel,
-            withChain,
-            hybridRequested,
-            average);
-        if (request != null)
+            if (eqHandoff.Request(channel, withChain, hybridRequested, read) is { } request)
+            {
+                requested(request);
+            }
+        }
+        finally
         {
-            requested(request);
+            peqHandoffPending = false;
         }
     }
 

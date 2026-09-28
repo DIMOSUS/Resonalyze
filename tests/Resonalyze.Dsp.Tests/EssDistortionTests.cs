@@ -241,6 +241,34 @@ public sealed class EssDistortionTests
         Assert.InRange(fwhmOctaves, width * 0.85, width * 1.15);
     }
 
+    [Theory]
+    [InlineData(60.0)]
+    [InlineData(5_000.0)]
+    public void SmoothOctaves_Psychoacoustic_FollowsThePrimarysWidthAtEachFrequency(double hz)
+    {
+        double[] f = LogGrid(20, 20_000, 4_096);
+        double[] db = new double[f.Length];
+        int center = Array.FindIndex(f, frequency => frequency >= hz);
+        db[center] = 10.0;
+
+        double[] smoothed = EssDistortion.SmoothOctaves(f, db, 1.0 / 6.0, psychoacoustic: true);
+
+        int left = center;
+        while (smoothed[left] > smoothed[center] / 2.0)
+        {
+            left--;
+        }
+
+        int right = center;
+        while (smoothed[right] > smoothed[center] / 2.0)
+        {
+            right++;
+        }
+
+        double width = SpectrumSmoothing.PsychoacousticOctaves(f[center]);
+        Assert.InRange(Math.Log2(f[right] / f[left]), width * 0.85, width * 1.15);
+    }
+
     [Fact]
     public void SmoothOctaves_TwelfthOctaveStaysLocalNotAnOctaveWide()
     {

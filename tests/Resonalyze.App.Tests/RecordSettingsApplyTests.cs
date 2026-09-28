@@ -223,6 +223,20 @@ public sealed class RecordSettingsApplyTests
     }
 
     [Fact]
+    public void TheWasapiRoute_SurvivesATripThroughAsioInTheOpenPanel()
+    {
+        MeasurementSettingsFile.SweepMeasurementSettings loaded = Settings(AudioBackend.WasapiShared);
+        loaded.WaveInputChannelOffset = 2;
+        loaded.WaveLoopbackInputChannelOffset = 3;
+        (RecordSettingsSession session, _) = Load(loaded);
+
+        session.Backend.SelectedIndex = (int)AudioBackend.Asio;
+        session.Backend.SelectedIndex = (int)AudioBackend.WasapiShared;
+
+        Assert.Equal((2, 3), (session.SelectedWaveInputOffset, session.SelectedWaveLoopbackOffset));
+    }
+
+    [Fact]
     public void ASavedWaveRouteWithOneChannelForBoth_OpensWithoutALoopbackRatherThanRefusing()
     {
         // What an ASIO route whose driver is gone falls back to, once ASIO had collapsed the Wave lists.

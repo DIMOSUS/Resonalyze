@@ -166,12 +166,14 @@ internal sealed class VirtualCrossoverEqHandoff(
         }
 
         // Mid-redraw the last render is stale: process the side now rather than send the point measurement.
+        long revision = coordinator.CurrentRevision;
         IReadOnlyList<ProcessedChannel>? channels = CurrentRender?.Channels ??
             (await metrics.ComputeSideSumAsync(
-                session.Channels, rightSide, coordinator.CurrentRevision, minimumChannels: 1))?.Channels;
+                session.Channels, rightSide, revision, minimumChannels: 1))?.Channels;
         if (channels == null)
         {
-            return null;
+            // Nothing to process is no race: the handoff goes without a hybrid, as the plot draws none.
+            return coordinator.IsCurrent(revision) ? (null, 0.0) : null;
         }
 
         int smoothing = session.MagnitudeGate.SmoothingInverseOctaves;

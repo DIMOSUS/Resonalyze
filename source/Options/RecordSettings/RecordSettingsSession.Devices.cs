@@ -19,6 +19,9 @@ internal sealed partial class RecordSettingsSession
     private int preferredWavePlaybackDeviceNumber = -1;
     private int preferredWaveRecordingDeviceNumber = -1;
     private (ExclusiveFormat Format, bool Supported)? exclusiveVerdict;
+    // The Wave lists offer only Left/Right off WASAPI; the WASAPI route is kept here for the way back.
+    private (int Input, int? Loopback)? wasapiRoute;
+    private bool wasapiListsShown;
 
     public RecordChoice Backend { get; } = new();
     public RecordChoice PlaybackDevice { get; } = new();
@@ -323,6 +326,7 @@ internal sealed partial class RecordSettingsSession
 
         recordingDevices = devices.GetRecordingDevices();
         LoadWasapiEndpoints();
+        wasapiRoute = (settings.WaveInputChannelOffset, settings.WaveLoopbackInputChannelOffset);
         PopulateDeviceChoices(settings.WaveInputChannelOffset, settings.WaveLoopbackInputChannelOffset);
 
         asioDrivers = devices.GetAsioDrivers();
@@ -351,7 +355,15 @@ internal sealed partial class RecordSettingsSession
             }
 
             int preferredSampleRate = SelectedSampleRate;
-            PopulateDeviceChoices(SelectedWaveInputOffset, SelectedWaveLoopbackOffset);
+            if (wasapiListsShown)
+            {
+                wasapiRoute = (SelectedWaveInputOffset, SelectedWaveLoopbackOffset);
+            }
+
+            (int input, int? loopback) = IsWasapi && wasapiRoute is { } kept
+                ? kept
+                : (SelectedWaveInputOffset, SelectedWaveLoopbackOffset);
+            PopulateDeviceChoices(input, loopback);
             if (IsAsio)
             {
                 // Opening ASIO is a slow synchronous COM call; skip it for Wave changes.
@@ -499,6 +511,8 @@ internal sealed partial class RecordSettingsSession
                 SelectDeviceOrShowMissing(RecordingDevice, recordingDevices, preferredWaveRecordingDeviceNumber);
                 FillWaveChannelChoices(preferredInputOffset, preferredLoopbackOffset);
             }
+
+            wasapiListsShown = IsWasapi;
         }
         finally
         {

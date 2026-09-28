@@ -312,6 +312,11 @@ internal sealed class AgentSessionReader(
                 {
                     hybridSum = hybridReader.OppositeSum(summedSide, hybrid.OffsetDb, hybridGate)?.Points;
                 }
+
+                if (!coordinator.IsCurrent(revision))
+                {
+                    return null;
+                }
             }
 
             for (int index = 0; index < shown.Count; index++)

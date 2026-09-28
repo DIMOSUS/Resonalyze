@@ -223,6 +223,27 @@ public sealed class RecordSettingsApplyTests
     }
 
     [Fact]
+    public void AnAsioApply_KeepsTheWasapiRouteAsLastEdited()
+    {
+        MeasurementSettingsFile.SweepMeasurementSettings loaded = Settings(AudioBackend.WasapiShared);
+        loaded.WaveInputChannelOffset = 2;
+        loaded.WaveLoopbackInputChannelOffset = 3;
+        (RecordSettingsSession session, _) = Load(loaded);
+        using ExpSweepMeasurement engine = Engine();
+        RecordSettingsApply.Apply(session, engine, new MeasurementSettingsFile.SweepMeasurementSettings());
+        session.WaveInput.SelectedIndex = IndexOf(session.WaveInput, 4);
+        session.WaveLoopback.SelectedIndex = IndexOf(session.WaveLoopback, 5);
+
+        session.Backend.SelectedIndex = (int)AudioBackend.Asio;
+        RecordSettingsApply.Apply(session, engine, new MeasurementSettingsFile.SweepMeasurementSettings());
+
+        Assert.Equal((4, 5), (engine.WaveInputChannelOffset, engine.WaveLoopbackInputChannelOffset));
+    }
+
+    private static int IndexOf(RecordChoice choice, int offset) =>
+        choice.Items.ToList().FindIndex(item => item is InputChannelOption option && option.Offset == offset);
+
+    [Fact]
     public void TheWasapiRoute_SurvivesATripThroughAsioInTheOpenPanel()
     {
         MeasurementSettingsFile.SweepMeasurementSettings loaded = Settings(AudioBackend.WasapiShared);

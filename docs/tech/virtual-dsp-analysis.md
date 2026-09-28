@@ -466,7 +466,8 @@ together in the noise floor still read as overlap. A confidence read-out, not a 
 
 `CutDirectSound` zeroes everything outside [front − T/2, front + 2T + T/2] (T = one crossover
 period) with half-period raised-cosine fades, front from `FindGateAnchor` (a FIR lead moves the
-front earlier and lengthens the plateau by the same amount). Two periods reads the
+front earlier and lengthens the plateau by the same amount; a front nearer sample 0 than one fade
+shrinks the fade-in to fit). Two periods reads the
 drivers: on the archived mid/tweeter junctions the whitened correlation peaks at the drivers'
 timing one period behind the front (r ≈ 0.85 on the reference car); from two-and-some periods
 the cabin's early reflections take the extremum over and carry it whole periods away (−2.5 ms,

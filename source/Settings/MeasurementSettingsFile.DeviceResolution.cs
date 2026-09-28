@@ -153,6 +153,17 @@ internal sealed partial class MeasurementSettingsFile
             : 0;
     }
 
+    // ASIO does not read the Wave route, so it keeps it whole for WASAPI; equal channels would refuse to open, so mean no loopback.
+    private static (int Input, int? Loopback) NormalizeWaveRoute(AudioBackend backend, int input, int? loopback)
+    {
+        (int normalizedInput, int? normalizedLoopback) = backend.IsWasapi() || backend == AudioBackend.Asio
+            ? (Math.Max(0, input), NormalizeOptionalWasapiChannelOffset(loopback))
+            : (NormalizeWaveChannelOffset(input), NormalizeOptionalWaveChannelOffset(loopback));
+        return backend != AudioBackend.Asio && normalizedLoopback == normalizedInput
+            ? (normalizedInput, null)
+            : (normalizedInput, normalizedLoopback);
+    }
+
     private static int NormalizeWaveChannelOffset(int offset) =>
         Math.Clamp(offset, 0, 1);
 

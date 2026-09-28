@@ -24,6 +24,26 @@ public sealed class VirtualCrossoverSourceLocatorTests
     }
 
     [Fact]
+    public void ANewPick_WhoseFileGoesMissing_IsNotResolvedBackToThePickItReplaced()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            WriteFile(Path.Combine(root, "meas"), "a_r.json");
+            var settings = new VirtualCrossoverChannelSettings { SourceRelativePath = Path.Combine("meas", "a_r.json") };
+
+            new VirtualCrossoverSourceReference("new", Path.Combine(root, "gone", "new.json"), null).ApplyTo(settings);
+
+            Assert.Null(VirtualCrossoverSourceLocator.Locate(
+                settings.SourceFilePath, settings.SourceRelativePath, root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Locate_FindsTheMeasurementBesideTheSessionFile()
     {
         string root = CreateTemporaryDirectory();

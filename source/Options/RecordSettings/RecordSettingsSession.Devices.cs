@@ -19,6 +19,10 @@ internal sealed partial class RecordSettingsSession
     private int preferredWavePlaybackDeviceNumber = -1;
     private int preferredWaveRecordingDeviceNumber = -1;
     private (ExclusiveFormat Format, bool Supported)? exclusiveVerdict;
+    // The Wave lists offer only Left/Right off WASAPI and mean nothing under ASIO: the routes last shown are kept here.
+    private (int Input, int? Loopback)? wasapiRoute;
+    private (int Input, int? Loopback)? waveRoute;
+    private AudioBackend? listsBackend;
 
     public RecordChoice Backend { get; } = new();
     public RecordChoice PlaybackDevice { get; } = new();
@@ -62,6 +66,11 @@ internal sealed partial class RecordSettingsSession
 
     public int SelectedRecordingDeviceNumber =>
         RecordingDevice.SelectedItem is AudioDeviceInfo device ? device.DeviceNumber : -1;
+
+    /// <summary>The Wave route a Wave backend last showed (or the one loaded): what ASIO keeps for the backends that read it.</summary>
+    public (int Input, int? Loopback) KeptWaveRoute =>
+        !IsAsio ? (SelectedWaveInputOffset, SelectedWaveLoopbackOffset)
+        : waveRoute ?? (SelectedWaveInputOffset, SelectedWaveLoopbackOffset);
 
     public int SelectedWaveInputOffset =>
         WaveInput.SelectedItem is InputChannelOption option ? option.Offset ?? 0 : 0;
@@ -323,6 +332,8 @@ internal sealed partial class RecordSettingsSession
 
         recordingDevices = devices.GetRecordingDevices();
         LoadWasapiEndpoints();
+        wasapiRoute = (settings.WaveInputChannelOffset, settings.WaveLoopbackInputChannelOffset);
+        waveRoute = wasapiRoute;
         PopulateDeviceChoices(settings.WaveInputChannelOffset, settings.WaveLoopbackInputChannelOffset);
 
         asioDrivers = devices.GetAsioDrivers();
@@ -351,7 +362,19 @@ internal sealed partial class RecordSettingsSession
             }
 
             int preferredSampleRate = SelectedSampleRate;
-            PopulateDeviceChoices(SelectedWaveInputOffset, SelectedWaveLoopbackOffset);
+            if (listsBackend is { } shown && shown != AudioBackend.Asio)
+            {
+                waveRoute = (SelectedWaveInputOffset, SelectedWaveLoopbackOffset);
+                if (shown.IsWasapi())
+                {
+                    wasapiRoute = waveRoute;
+                }
+            }
+
+            (int input, int? loopback) = IsWasapi && wasapiRoute is { } kept
+                ? kept
+                : (SelectedWaveInputOffset, SelectedWaveLoopbackOffset);
+            PopulateDeviceChoices(input, loopback);
             if (IsAsio)
             {
                 // Opening ASIO is a slow synchronous COM call; skip it for Wave changes.
@@ -499,6 +522,8 @@ internal sealed partial class RecordSettingsSession
                 SelectDeviceOrShowMissing(RecordingDevice, recordingDevices, preferredWaveRecordingDeviceNumber);
                 FillWaveChannelChoices(preferredInputOffset, preferredLoopbackOffset);
             }
+
+            listsBackend = SelectedBackend;
         }
         finally
         {

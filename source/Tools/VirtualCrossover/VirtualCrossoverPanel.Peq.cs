@@ -10,6 +10,9 @@ public partial class VirtualCrossoverPanel
 
     private readonly VirtualCrossoverEqHandoff eqHandoff;
 
+    // One handoff at a time: it awaits the side's processing when the last render is stale.
+    private bool peqHandoffPending;
+
     // Rebuilt per click: enabled states follow channel state.
     private void ShowPeqMenu(VirtualCrossoverChannel channel)
     {
@@ -42,7 +45,7 @@ public partial class VirtualCrossoverPanel
                 ? "Edit in EQ Wizard (chain — block is bypassed)"
                 : "Edit in EQ Wizard",
             null,
-            (_, _) => RequestPeqHandoff(channel, withChain: true))
+            async (_, _) => await RequestPeqHandoffAsync(channel, withChain: true))
         {
             Enabled = hasMeasurement,
             ToolTipText = "Tune this channel's PEQ in the EQ Wizard against its\r\n" +
@@ -59,7 +62,7 @@ public partial class VirtualCrossoverPanel
         var editRawItem = new ToolStripMenuItem(
             "Edit raw in EQ Wizard",
             null,
-            (_, _) => RequestPeqHandoff(channel, withChain: false))
+            async (_, _) => await RequestPeqHandoffAsync(channel, withChain: false))
         {
             Enabled = hasMeasurement,
             ToolTipText = "The same handoff against the raw measurement — the\r\n" +
@@ -81,21 +84,43 @@ public partial class VirtualCrossoverPanel
     }
 
     // The gate mirrors the magnitude view: shared template, active pin, last redraw's anchor.
-    private void RequestPeqHandoff(VirtualCrossoverChannel channel, bool withChain)
+    private async Task RequestPeqHandoffAsync(VirtualCrossoverChannel channel, bool withChain)
     {
-        if (EditPeqInWizardRequested is not { } requested)
+        if (EditPeqInWizardRequested is not { } requested || peqHandoffPending)
         {
             return;
         }
 
-        VirtualDspEqHandoffRequest? request = eqHandoff.Request(
-            channel,
-            withChain,
-            HybridRequested,
-            eqHandoff.SpatialAverage(channel, channel.ActiveRight, HybridRequested));
-        if (request != null)
+        peqHandoffPending = true;
+        try
         {
-            requested(request);
+            bool rightSide = channel.ActiveRight;
+            bool hybridRequested = HybridRequested;
+            (LiveCaptureDocument? Capture, double OffsetDb)? average =
+                await eqHandoff.SpatialAverageAsync(channel, rightSide, hybridRequested);
+            // A side flipped or a tick moved meanwhile: the average read belongs to another view.
+            if (IsDisposed || !session.Channels.Contains(channel) ||
+                channel.ActiveRight != rightSide || HybridRequested != hybridRequested)
+            {
+                return;
+            }
+
+            if (average is not { } read)
+            {
+                ShowError(
+                    "The spatial average could not be read.",
+                    "The plot changed while the handoff was being prepared. Try Edit in EQ Wizard again.");
+                return;
+            }
+
+            if (eqHandoff.Request(channel, withChain, hybridRequested, read) is { } request)
+            {
+                requested(request);
+            }
+        }
+        finally
+        {
+            peqHandoffPending = false;
         }
     }
 

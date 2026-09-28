@@ -314,7 +314,12 @@ and present it as the whole.
 `VirtualCrossoverHybrid.Build` is all-or-nothing per redraw for a moving-microphone set: a channel failing to
 yield a curve would sum a spatial average against a point measurement. In an array set such a channel
 falls back to its point response and is flagged in `PointMeasuredChannels`. For efficiency each channel is built unsmoothed once and
-smoothed locally, since the shared builder's last step is that same smoothing.
+smoothed locally, since the shared builder's last step is that same smoothing. A fallback is drawn from the
+display curve it already has and summed from its unsmoothed twin (`VirtualCrossoverMetrics.BuildGatedCurves`):
+smoothing the display curve again drew it broader than the point response it stands for.
+
+The Sum adds the **summing** channels only: a centre drawn in Front + Center or Everything is compared,
+not added, as in the measured Sum.
 
 ## Level read-outs
 

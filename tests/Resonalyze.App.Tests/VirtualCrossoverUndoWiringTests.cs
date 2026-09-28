@@ -105,6 +105,7 @@ public sealed class VirtualCrossoverUndoWiringTests
         ((Button)live.Card(woofer).Controls.Find("buttonMoveDown", searchAllChildren: true).Single()).PerformClick();
         live.Settle();
         List<VirtualCrossoverChannel> order = [.. live.Session.Channels];
+        live.Session.Project.DspProcessorPhaseControl = true;
         foreach ((VirtualCrossoverChannel channel, bool rightSide) in live.Session.Sides())
         {
             channel.SideSettings(rightSide).PhaseRotationDegrees = 40;

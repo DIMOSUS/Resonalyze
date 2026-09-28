@@ -123,15 +123,17 @@ internal sealed class VirtualCrossoverSharedScale(
         int smoothing = session.MagnitudeGate.SmoothingInverseOctaves;
         VirtualCrossoverMetrics sideMetrics = VirtualCrossoverMetrics.Through(
             coordinator, () => session.MagnitudeGate, oppositeSide: true, session.Calibration.For);
-        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum, List<SignalPoint>? loss) =
-            sideMetrics.BuildCurves(frame.Shown, smoothing, frame.Summed);
-        if (magnitudes == null)
+        (List<GatedMagnitude>? gated, AnalysisCurve? sum, List<SignalPoint>? loss) =
+            sideMetrics.BuildGatedCurves(frame.Shown, smoothing, frame.Summed);
+        if (gated == null)
         {
             return (true, null);
         }
 
+        List<AnalysisCurve> magnitudes = [.. gated.Select(curve => curve.Display)];
         HybridMagnitudes? hybrid = view.HybridRequested
-            ? hybridReader.Build(frame.Shown, magnitudes, rightSide, smoothing)
+            ? hybridReader.Build(
+                frame.Shown, magnitudes, rightSide, smoothing, [.. gated.Select(curve => curve.Unsmoothed)])
             : null;
         var curves = new List<AcousticCurve>();
         if (VirtualCrossoverGroupViews.DrawsGroupSums(view.GroupView))
@@ -204,6 +206,14 @@ internal sealed class VirtualCrossoverSharedScale(
             inputs.Add(item.Channel.Pair.ShowProcessedCurve);
             inputs.Add((object?)state.TransferImpulseResponse ?? string.Empty);
             inputs.Add((object?)state.SpatialAverageFor(session.SpatialAverageMode) ?? string.Empty);
+        }
+
+        // Sides that form one hybrid set share an offset read off the shown side's captures and responses too.
+        foreach (VirtualCrossoverChannel channel in session.Channels)
+        {
+            VirtualCrossoverChannelState shown = channel.SideState(!rightSide);
+            inputs.Add((object?)shown.TransferImpulseResponse ?? string.Empty);
+            inputs.Add((object?)shown.SpatialAverageFor(session.SpatialAverageMode) ?? string.Empty);
         }
 
         return inputs;

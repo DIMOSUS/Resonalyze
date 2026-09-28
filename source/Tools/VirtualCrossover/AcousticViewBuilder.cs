@@ -78,12 +78,13 @@ internal sealed class AcousticViewBuilder(VirtualCrossoverSession session, Virtu
                     shown, step: true, frame.Summed, curves.OppositeSide, view.ShowSum, view.RightSide)),
             _ when VirtualCrossoverGroupViews.DrawsGroupSums(view.GroupView) => new AcousticRender(
                 hint, GroupSumCurves(shown, curves.Magnitudes, curves.Hybrid, view), null),
-            _ => new AcousticRender(hint, MagnitudeCurves(shown, curves, view), null)
+            _ => new AcousticRender(hint, MagnitudeCurves(shown, frame.Summed, curves, view), null)
         };
     }
 
     private List<AcousticCurve> MagnitudeCurves(
         List<ProcessedChannel> processed,
+        List<ProcessedChannel> summed,
         AcousticFrameCurves frame,
         VirtualCrossoverViewState view)
     {
@@ -138,7 +139,7 @@ internal sealed class AcousticViewBuilder(VirtualCrossoverSession session, Virtu
         {
             // Hybrid: averages hold no phase, so cancellation comes from the IR loss curve (VirtualCrossoverHybrid.Sum).
             IReadOnlyList<SignalPoint> sumPoints =
-                (hybrid != null ? hybridReader.ActiveSum(processed, magnitudes, hybrid) : null)
+                (hybrid != null ? hybridReader.ActiveSum(processed, summed, magnitudes, hybrid) : null)
                 ?? frame.Sum.Points;
             curves.Add(new AcousticCurve(
                 "Sum", sumPoints, VirtualCrossoverColors.Sum, 2.4, LineStyle.Solid));

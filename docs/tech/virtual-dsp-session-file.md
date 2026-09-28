@@ -23,7 +23,7 @@ Code lives in `source/Tools/VirtualCrossover/`:
 
 ## Schema versions and migrations
 
-`VirtualCrossoverProjectFile.CurrentVersion` is 11. An incompatible change bumps it and adds a step to
+`VirtualCrossoverProjectFile.CurrentVersion` is 12. An incompatible change bumps it and adds a step to
 `Migrate`, which runs before `Validate`. Files from a newer version (a downgraded app) are never migrated:
 validation rejects them, `LoadOrDefault` moves the file to `.backup` and starts fresh, `LoadFrom` throws.
 

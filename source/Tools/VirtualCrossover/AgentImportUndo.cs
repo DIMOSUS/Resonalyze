@@ -33,9 +33,9 @@ internal sealed record AgentImportUndo(
             session.Project.RearFillOffsetMs,
             view.TargetLevelDb);
 
-    /// <summary>Puts the session back as this holds it. Returns the channels whose controls show a restored side and
-    /// whether the blocks moved.</summary>
-    public (List<VirtualCrossoverChannel> Written, bool Reordered) Restore(
+    /// <summary>Puts the session back as this holds it, less what the processor chosen since cannot run. Returns the
+    /// channels whose controls show a restored side, whether the blocks moved and what the processor refused.</summary>
+    public (List<VirtualCrossoverChannel> Written, bool Reordered, DspProcessorWrite Cleared) Restore(
         VirtualCrossoverSession session, AgentSessionReader reader)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -56,7 +56,12 @@ internal sealed record AgentImportUndo(
         session.Project.StereoLevelDifferenceDb = StereoLevelDifferenceDb;
         session.Project.RearFillOffsetMs = RearFillOffsetMs;
         session.Project.TargetLevelDb = (double)VirtualCrossoverLimits.TargetLevel.Clamp(TargetLevelDb);
-        return (written, reordered);
+        int clearedRotations = session.Project.ClearUnavailablePhaseRotations();
+        int clearedFirFilters = session.Project.ClearUnavailableFirFilters();
+        return (
+            written,
+            reordered,
+            new DspProcessorWrite(clearedRotations + clearedFirFilters > 0, clearedRotations, clearedFirFilters));
     }
 
     /// <summary>Whether two snapshots hold the same session as far as <see cref="Restore"/> reaches: the view, the

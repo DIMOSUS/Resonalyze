@@ -58,16 +58,23 @@ public sealed class GainBalanceEngineTests
         GainBalanceInput rightMid = Input(
             "mid R", 1.0, rightSide: true, leftPeer: leftMid.Channel);
         var log = new StringBuilder();
-
-        IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
-            [leftMid, rightMid], levelDifferenceDb: -1.0, log);
+        System.Globalization.CultureInfo culture = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("ru-RU");
+        IReadOnlyList<GainBalanceResult> results;
+        try
+        {
+            results = GainBalanceEngine.Compute([leftMid, rightMid], levelDifferenceDb: -1.0, log);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = culture;
+        }
 
         Assert.Equal(-1.0, results[0].ProposedGainDb, 1);
         Assert.Equal(0.0, results[1].ProposedGainDb, 1);
-        // The log uses the current culture (the report is invariant).
-        Assert.Contains(
-            $"L-R level difference {-1.0:+0.00;-0.00} dB (positive: left side louder)",
-            log.ToString());
+        // One separator for the whole log, whatever the locale.
+        Assert.Contains("L-R level difference -1.00 dB (positive: left side louder)", log.ToString());
+        Assert.DoesNotMatch(@"\d,\d", log.ToString());
     }
 
     [Fact]

@@ -50,8 +50,9 @@ public partial class VirtualCrossoverPanel
     /// snapshot holds them.</summary>
     private void RestoreChannels(AgentImportUndo undo)
     {
-        (List<VirtualCrossoverChannel> written, bool reordered) = undo.Restore(session, agentReader);
-        foreach (VirtualCrossoverChannel channel in written)
+        (List<VirtualCrossoverChannel> written, bool reordered, DspProcessorWrite cleared) =
+            undo.Restore(session, agentReader);
+        foreach (VirtualCrossoverChannel channel in cleared.Changed ? session.Channels : written)
         {
             ShowChannel(channel);
         }
@@ -82,5 +83,9 @@ public partial class VirtualCrossoverPanel
         // Remember the restored state as it stands: a difference could carry a side where it never was (L=A,R=B; import wrote L=B; undo restores L=A and would carry A onto R).
         sideLock.Remember(session.Channels.Select(channel => channel.Pair));
         SaveAndRedraw();
+        if (DspProcessorApply.Notice(cleared) is { } notice)
+        {
+            ShowMessage(notice, "Virtual DSP", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
     }
 }

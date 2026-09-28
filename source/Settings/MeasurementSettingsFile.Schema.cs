@@ -214,6 +214,8 @@ internal sealed partial class MeasurementSettingsFile
                 renderEndpointId,
                 Clamp(SampleRate, 44_100, 384_000));
             (double lowFrequencyHz, double highFrequencyHz) = ResolveBand(sampleRate);
+            (int waveInput, int? waveLoopback) = NormalizeWaveRoute(
+                backend, WaveInputChannelOffset, WaveLoopbackInputChannelOffset);
             return new SweepMeasurementConfiguration(
                 new SweepSignalConfiguration(
                     lowFrequencyHz,
@@ -235,12 +237,8 @@ internal sealed partial class MeasurementSettingsFile
                     InputDeviceNumber: NormalizeDeviceNumber(
                         AudioDeviceCatalog.GetRecordingDevices(),
                         InputDeviceNumber),
-                    WaveInputChannelOffset: backend.IsWasapi()
-                        ? Math.Max(0, WaveInputChannelOffset)
-                        : NormalizeWaveChannelOffset(WaveInputChannelOffset),
-                    WaveLoopbackInputChannelOffset: backend.IsWasapi()
-                        ? NormalizeOptionalWasapiChannelOffset(WaveLoopbackInputChannelOffset)
-                        : NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset),
+                    WaveInputChannelOffset: waveInput,
+                    WaveLoopbackInputChannelOffset: waveLoopback,
                     AsioDriverName: NormalizeAsioDriverName(AsioDriverName),
                     AsioInputChannelOffset: NormalizeAsioChannelOffset(
                         AsioDriverName,
@@ -263,12 +261,8 @@ internal sealed partial class MeasurementSettingsFile
                     WasapiBufferMilliseconds: Clamp(WasapiBufferMilliseconds, 10, 100),
                     WaveArrayInputChannelOffsets: ResolveArrayChannels(
                         WaveArrayMicrophones,
-                        backend.IsWasapi()
-                            ? Math.Max(0, WaveInputChannelOffset)
-                            : NormalizeWaveChannelOffset(WaveInputChannelOffset),
-                        backend.IsWasapi()
-                            ? NormalizeOptionalWasapiChannelOffset(WaveLoopbackInputChannelOffset)
-                            : NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset),
+                        waveInput,
+                        waveLoopback,
                         ReachableInput(backend, AsioDriverName, sampleRate, captureEndpointId),
                         // Raw selection, not resolved: must answer the same whether the device is plugged in now.
                         ArrayMatchesDevice(WaveArrayDeviceId, WasapiCaptureEndpointId)),

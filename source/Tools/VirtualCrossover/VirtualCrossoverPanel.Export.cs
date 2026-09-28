@@ -18,17 +18,27 @@ public partial class VirtualCrossoverPanel
         }
         // The Sum as drawn: the group view decides which channels enter it, and a centre never does.
         var frame = VirtualCrossoverFrame.Of(render.Channels, groupView);
-        if (OverlayCaptureRequested == null ||
-            frame.ReadSum(metrics, session.MagnitudeGate.SmoothingInverseOctaves).Sum is not { } sumCurve)
+        int smoothing = session.MagnitudeGate.SmoothingInverseOctaves;
+        (List<GatedMagnitude>? gated, AnalysisCurve? sumCurve, _) =
+            metrics.BuildGatedCurves([.. frame.Shown], smoothing, frame.Summed);
+        if (OverlayCaptureRequested == null || gated == null || sumCurve == null)
         {
             System.Media.SystemSounds.Beep.Play();
             return;
         }
 
+        List<AnalysisCurve> magnitudes = [.. gated.Select(curve => curve.Display)];
+        IReadOnlyList<SignalPoint>? hybridSum =
+            HybridRequested &&
+            hybridReader.Build(
+                frame.Shown, magnitudes, session.ActiveSideRight, smoothing,
+                [.. gated.Select(curve => curve.Unsmoothed)]) is { } hybrid
+                ? hybridReader.ActiveSum(frame.Shown, frame.Summed, magnitudes, hybrid)
+                : null;
         string title = "vDSP Sum " + string.Join(
             "+",
-            frame.Summed.Select(item => item.Channel.Name));
-        OverlayPoint[] points = sumCurve.Points
+            frame.Summed.Select(item => item.Channel.Name)) + (hybridSum != null ? " hybrid" : "");
+        OverlayPoint[] points = (hybridSum ?? sumCurve.Points)
             .Select(point => new OverlayPoint(point.X, point.Y))
             .ToArray();
 

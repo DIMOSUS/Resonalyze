@@ -206,6 +206,77 @@ public sealed class RecordSettingsApplyTests
     }
 
     [Fact]
+    public void AnAsioApply_KeepsTheWasapiRouteTheWaveListsCannotShow()
+    {
+        MeasurementSettingsFile.SweepMeasurementSettings loaded = Settings(AudioBackend.WasapiShared);
+        loaded.WaveInputChannelOffset = 2;
+        loaded.WaveLoopbackInputChannelOffset = 3;
+        (RecordSettingsSession session, _) = Load(loaded);
+        using ExpSweepMeasurement engine = Engine();
+        RecordSettingsApply.Apply(session, engine, new MeasurementSettingsFile.SweepMeasurementSettings());
+
+        session.Backend.SelectedIndex = (int)AudioBackend.Asio;
+        RecordSettingsApply.Apply(session, engine, new MeasurementSettingsFile.SweepMeasurementSettings());
+
+        Assert.Equal(AudioBackend.Asio, engine.AudioBackend);
+        Assert.Equal((2, 3), (engine.WaveInputChannelOffset, engine.WaveLoopbackInputChannelOffset));
+    }
+
+    [Fact]
+    public void AnAsioApply_KeepsTheWasapiRouteAsLastEdited()
+    {
+        MeasurementSettingsFile.SweepMeasurementSettings loaded = Settings(AudioBackend.WasapiShared);
+        loaded.WaveInputChannelOffset = 2;
+        loaded.WaveLoopbackInputChannelOffset = 3;
+        (RecordSettingsSession session, _) = Load(loaded);
+        using ExpSweepMeasurement engine = Engine();
+        RecordSettingsApply.Apply(session, engine, new MeasurementSettingsFile.SweepMeasurementSettings());
+        session.WaveInput.SelectedIndex = IndexOf(session.WaveInput, 4);
+        session.WaveLoopback.SelectedIndex = IndexOf(session.WaveLoopback, 5);
+
+        session.Backend.SelectedIndex = (int)AudioBackend.Asio;
+        RecordSettingsApply.Apply(session, engine, new MeasurementSettingsFile.SweepMeasurementSettings());
+
+        Assert.Equal((4, 5), (engine.WaveInputChannelOffset, engine.WaveLoopbackInputChannelOffset));
+    }
+
+    private static int IndexOf(RecordChoice choice, int offset) =>
+        choice.Items.ToList().FindIndex(item => item is InputChannelOption option && option.Offset == offset);
+
+    [Fact]
+    public void TheWasapiRoute_SurvivesATripThroughAsioInTheOpenPanel()
+    {
+        MeasurementSettingsFile.SweepMeasurementSettings loaded = Settings(AudioBackend.WasapiShared);
+        loaded.WaveInputChannelOffset = 2;
+        loaded.WaveLoopbackInputChannelOffset = 3;
+        (RecordSettingsSession session, _) = Load(loaded);
+
+        session.Backend.SelectedIndex = (int)AudioBackend.Asio;
+        session.Backend.SelectedIndex = (int)AudioBackend.WasapiShared;
+
+        Assert.Equal((2, 3), (session.SelectedWaveInputOffset, session.SelectedWaveLoopbackOffset));
+    }
+
+    [Fact]
+    public void ASavedWaveRouteWithOneChannelForBoth_OpensWithoutALoopbackRatherThanRefusing()
+    {
+        // What an ASIO route whose driver is gone falls back to, once ASIO had collapsed the Wave lists.
+        var saved = new MeasurementSettingsFile.SweepMeasurementSettings
+        {
+            AudioBackend = AudioBackend.Wave,
+            WaveInputChannelOffset = 0,
+            WaveLoopbackInputChannelOffset = 0
+        };
+        SweepMeasurementConfiguration configuration = saved.BuildConfiguration();
+        using var engine = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+
+        engine.Init(configuration);
+
+        Assert.Equal(AudioBackend.Wave, engine.AudioBackend);
+        Assert.Null(engine.WaveLoopbackInputChannelOffset);
+    }
+
+    [Fact]
     public void TheLoopbackIsRequired_AndNeedsAStereoDevice()
     {
         Assert.Contains(

@@ -98,6 +98,33 @@ public sealed class VirtualCrossoverHybridSumTests
         Assert.Contains("frame length", verdict.Reason);
     }
 
+    [Fact]
+    public void ActiveSum_AddsOnlyTheSummingChannels_WhileAShownCentreIsCompared()
+    {
+        var reader = new VirtualCrossoverHybrid(new VirtualCrossoverSession());
+        List<ProcessedChannel> shown = [Impulse("woofer"), Impulse("tweeter"), Impulse("centre")];
+        var hybrid = new HybridMagnitudes(
+            [SumGrid(-20), SumGrid(-20), SumGrid(-20)], [SumGrid(-20), SumGrid(-20), SumGrid(-20)], [0.0, 0.0, 0.0],
+            OffsetDb: 0);
+        AnalysisCurve[] references = [new("w", SumGrid(-20)), new("t", SumGrid(-20)), new("c", SumGrid(-20))];
+
+        List<SignalPoint> sum = reader.ActiveSum(shown, shown[..2], references, hybrid)!;
+
+        // Two equal in-phase channels: +6.02 dB over one; the centre would make it +9.54.
+        Assert.Equal(-20 + 20 * Math.Log10(2), sum.MinBy(point => Math.Abs(point.X - 1_000))!.Y, 1);
+    }
+
+    // The grid the gated sum is resampled onto; the hybrid lists are read against it point by point.
+    private static List<SignalPoint> SumGrid(double db) =>
+        [.. EqualizationCurve.LogFrequencyGrid(20, 20_000, 1_024).Select(frequency => new SignalPoint(frequency, db))];
+
+    private static ProcessedChannel Impulse(string name)
+    {
+        var impulse = new System.Numerics.Complex[4_096];
+        impulse[64] = System.Numerics.Complex.One;
+        return new ProcessedChannel(new VirtualCrossoverChannel(name), impulse, 64, 48_000, OxyPlot.OxyColors.White);
+    }
+
     private static List<SignalPoint> Flat(double db)
     {
         var points = new List<SignalPoint>();

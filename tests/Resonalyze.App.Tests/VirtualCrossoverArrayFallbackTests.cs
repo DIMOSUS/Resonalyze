@@ -39,7 +39,8 @@ public sealed class VirtualCrossoverArrayFallbackTests
     private static HybridMagnitudes? Build(
         VirtualCrossoverHybrid reader,
         IReadOnlyList<VirtualCrossoverChannel> channels,
-        IReadOnlyList<AnalysisCurve> references)
+        IReadOnlyList<AnalysisCurve> references,
+        int smoothingCode = 0)
     {
         List<ProcessedChannel> processed = channels
             .Select(channel => new ProcessedChannel(
@@ -49,7 +50,7 @@ public sealed class VirtualCrossoverArrayFallbackTests
                 SampleRate: 48_000,
                 OxyPlot.OxyColors.White))
             .ToList();
-        return reader.Build(processed, references, rightSide: false, smoothingCode: 0);
+        return reader.Build(processed, references, rightSide: false, smoothingCode);
     }
 
     private static VirtualCrossoverChannel Channel(string name, LiveCaptureDocument? array)
@@ -90,6 +91,26 @@ public sealed class VirtualCrossoverArrayFallbackTests
         // Set curves are held without the offset, so the fallback curve arrives pre-subtracted.
         double drawn = hybrid.Channels[1][Points / 2].Y + hybrid.OffsetDb;
         Assert.Equal(-30, drawn, 6);
+    }
+
+    [Fact]
+    public void AChannelWithoutAnArray_IsDrawnAtTheWidthItsCurveAlreadyHas()
+    {
+        VirtualCrossoverHybrid reader = Reader(VirtualCrossoverSpatialAverageMode.MicArray);
+        var channels = new[]
+        {
+            Channel("mid", Capture(-20, SpatialAverageMethod.MicArray)),
+            Channel("sub", array: null)
+        };
+        // A display curve as the panel hands it: already smoothed, so a notch left in it is the drawn curve's own.
+        AnalysisCurve sub = Reference(-30);
+        List<SignalPoint> notched = [.. sub.Points];
+        notched[Points / 2] = notched[Points / 2] with { Y = -45 };
+        AnalysisCurve[] references = [Reference(-24), sub with { Points = notched }];
+
+        HybridMagnitudes? hybrid = Build(reader, channels, references, smoothingCode: 3);
+
+        Assert.Equal(-45, hybrid!.Channels[1][Points / 2].Y + hybrid.OffsetDb, 6);
     }
 
     [Fact]

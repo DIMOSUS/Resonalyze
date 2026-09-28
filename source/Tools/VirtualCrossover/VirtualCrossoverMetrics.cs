@@ -79,6 +79,18 @@ internal sealed class VirtualCrossoverMetrics
             int smoothingInverseOctaves,
             IReadOnlyList<ProcessedChannel>? summed = null)
     {
+        (List<GatedMagnitude>? magnitudes, AnalysisCurve? sum, List<SignalPoint>? loss) =
+            BuildGatedCurves(processed, smoothingInverseOctaves, summed);
+        return (magnitudes?.Select(curve => curve.Display).ToList(), sum, loss);
+    }
+
+    /// <summary><see cref="BuildCurves"/> keeping each channel's unsmoothed curve, which a hybrid fallback sums with.</summary>
+    public (List<GatedMagnitude>? Magnitudes, AnalysisCurve? Sum, List<SignalPoint>? Loss)
+        BuildGatedCurves(
+            List<ProcessedChannel> processed,
+            int smoothingInverseOctaves,
+            IReadOnlyList<ProcessedChannel>? summed = null)
+    {
         if (processed.Count == 0)
         {
             return (null, null, null);
@@ -103,7 +115,7 @@ internal sealed class VirtualCrossoverMetrics
             .Where(index => summed.Contains(processed[index]))];
         if (summedIndices.Count < 2)
         {
-            return (magnitudes.Select(curve => curve.Display).ToList(), null, null);
+            return (magnitudes, null, null);
         }
 
         List<ProcessedChannel> summedChannels =
@@ -125,10 +137,7 @@ internal sealed class VirtualCrossoverMetrics
             .ToList();
         List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(
             sumCurve.Unsmoothed.Points, operands, smoothingInverseOctaves);
-        return (
-            magnitudes.Select(curve => curve.Display).ToList(),
-            sumCurve.Display,
-            loss);
+        return (magnitudes, sumCurve.Display, loss);
     }
 
     public List<VirtualCrossoverMetric.Entry> BuildEntries(
@@ -230,7 +239,8 @@ internal sealed class VirtualCrossoverMetrics
                 pair.Lower.SampleRate,
                 pair.CrossoverHz,
                 pair.BandLowHz,
-                pair.BandHighHz);
+                pair.BandHighHz,
+                pair.Lower.Channel.ProcessorSampleRate);
             if (result != null)
             {
                 entries.Add(new VirtualCrossoverMetric.PhaseEntry(

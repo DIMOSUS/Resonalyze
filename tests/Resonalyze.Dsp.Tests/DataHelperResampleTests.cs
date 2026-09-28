@@ -16,6 +16,54 @@ public sealed class DataHelperResampleTests
         Assert.All(output, point => Assert.Equal(5.0, point.Y, precision: 3));
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(6)]
+    [InlineData(24)]
+    public void MagnitudeFwhmOctaves_IsTheHalfHeightWidthTheResamplerSmoothsWith(int inverseOctaves)
+    {
+        // One loud bin in silence: the smoothed curve around it is the kernel itself.
+        List<SignalPoint> input = BuildLinearGrid(startHz: 1, stepHz: 1, count: 20_000, decibels: -160);
+        input[999] = input[999] with { Y = 0 };
+
+        List<SignalPoint> output = DataHelper.LogarithmicResample(
+            input, 250, 4_000, 40_001, smoothingOctaves: 1.0 / inverseOctaves);
+
+        double halfHeight = output.Max(point => point.Y) - 20 * Math.Log10(2);
+        List<SignalPoint> above = [.. output.Where(point => point.Y >= halfHeight)];
+        double measured = Math.Log2(above[^1].X / above[0].X);
+        Assert.InRange(measured / SpectrumSmoothing.MagnitudeFwhmOctaves(inverseOctaves), 0.97, 1.03);
+    }
+
+    [Theory]
+    [InlineData(60)]
+    [InlineData(2_000)]
+    public void PsychoacousticDistortionSmoothing_ResolvesASmallDetailAsThePrimaryDoes(int hz)
+    {
+        // A small detail on a level, as a harmonic's ripple is: the cubic mean is linear there (a lone peak on silence
+        // spreads √3 wider, the mean's deliberate lift of peaks, not its resolution).
+        List<SignalPoint> input = BuildLinearGrid(startHz: 1, stepHz: 1, count: 20_000, decibels: 0);
+        input[hz - 1] = input[hz - 1] with { Y = 0.05 };
+        List<SignalPoint> primary = DataHelper.LogarithmicResample(
+            input, hz / 4.0, hz * 4.0, 8_001, smoothingOctaves: 1.0 / 6.0, psychoacoustic: true);
+
+        double[] grid = [.. primary.Select(point => point.X)];
+        double[] detail = new double[grid.Length];
+        detail[Array.FindIndex(grid, frequency => frequency >= hz)] = 0.05;
+        double[] harmonic = EssDistortion.SmoothOctaves(grid, detail, 1.0 / 6.0, psychoacoustic: true);
+
+        double primaryWidth = HalfHeightOctaves(grid, [.. primary.Select(point => point.Y)]);
+        Assert.InRange(HalfHeightOctaves(grid, harmonic) / primaryWidth, 0.95, 1.05);
+    }
+
+    private static double HalfHeightOctaves(double[] frequencies, double[] levels)
+    {
+        double half = levels.Max() / 2;
+        int first = Array.FindIndex(levels, level => level >= half);
+        int last = Array.FindLastIndex(levels, level => level >= half);
+        return Math.Log2(frequencies[last] / frequencies[first]);
+    }
+
     [Fact]
     public void LogarithmicResample_DoesNotRepeatTheLastBinPastTheTopOfTheGrid()
     {

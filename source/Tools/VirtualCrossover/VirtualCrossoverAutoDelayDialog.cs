@@ -19,6 +19,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
 
     private Func<AutoDelayRunRequest, Task<AutoDelayRunResult>>? runner;
     private bool stereo;
+    private bool hasRearFill;
     private bool running;
     private string? undoable;
 
@@ -94,6 +95,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         string? undoable = null)
     {
         this.stereo = stereo;
+        this.hasRearFill = hasRearFill;
         this.runner = runner;
         this.undoable = undoable;
         buttonUndo.Enabled = undoable != null;
@@ -240,6 +242,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         UiStyle.SetTextEnabledLook(checkBoxGains, false, interactive: true);
         UiStyle.SetTextEnabledLook(labelNearSideCut, false);
         numericNearSideCut.Enabled = false;
+        numericRearFill.Enabled = false;
         SetStatus("Aligning…", StatusNeutral);
         UseWaitCursor = true;
         try
@@ -288,6 +291,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
                 numericSceneOffset.Enabled = stereo;
                 UiStyle.SetTextEnabledLook(checkBoxGains, true, interactive: true);
                 UpdateNearSideCutEnabled();
+                numericRearFill.Enabled = hasRearFill;
                 UseWaitCursor = false;
             }
         }

@@ -1375,7 +1375,8 @@ public static class CrossoverJunctionTuner
                 result.Add(new JunctionProbePhase(
                     sides[i].Name,
                     JunctionPhaseAlignment.Analyze(
-                        lower, upper, sides[i].SampleRate, cornerHz, bandLowHz, bandHighHz)));
+                        lower, upper, sides[i].SampleRate, cornerHz, bandLowHz, bandHighHz,
+                        options.ProcessorSampleRateHz)));
             }
 
             return result;

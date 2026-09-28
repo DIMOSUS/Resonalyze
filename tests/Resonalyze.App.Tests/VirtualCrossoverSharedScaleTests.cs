@@ -1,4 +1,5 @@
 using System.Numerics;
+using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
@@ -60,4 +61,53 @@ public sealed class VirtualCrossoverSharedScaleTests : IDisposable
         Assert.True(again);
         Assert.Equal(measured, reread);
     }
+
+    [Fact]
+    public async Task ANewCaptureOnTheShownSide_MovesTheHiddenSidesHybridWhenBothAreOneSet()
+    {
+        var captureSession = Guid.NewGuid();
+        session.Project.SpatialAverageMode = VirtualCrossoverSpatialAverageMode.MovingMic;
+        session.Project.ActiveSideRight = true;
+        foreach (VirtualCrossoverChannel channel in session.Channels.Take(2))
+        {
+            channel.SideState(rightSide: false).SpatialAverage = Capture(captureSession, -20);
+            channel.SideState(rightSide: true).SpatialAverage = Capture(captureSession, -20);
+        }
+
+        var view = new VirtualCrossoverViewState(
+            AcousticView.Magnitude, VirtualCrossoverGroupView.FrontAndSub, RightSide: true, ShowSum: false,
+            SumLossWindow.Off, HybridRequested: true, Target: null, session.Project.TargetLevelDb);
+        (_, ScaleExtent? before) = await scale.MeasureOtherSideAsync(view, coordinator.CurrentRevision);
+        foreach (VirtualCrossoverChannel channel in session.Channels.Take(2))
+        {
+            channel.SideState(rightSide: true).SpatialAverage = Capture(captureSession, -10);
+        }
+
+        (_, ScaleExtent? after) = await scale.MeasureOtherSideAsync(view, coordinator.CurrentRevision);
+
+        Assert.NotNull(before);
+        Assert.NotEqual(before, after);
+    }
+
+    private static LiveCaptureDocument Capture(Guid captureSession, double db) =>
+        new()
+        {
+            SavedAtUtc = DateTimeOffset.UnixEpoch,
+            Title = "average",
+            Method = SpatialAverageMethod.MovingMic,
+            CaptureSessionId = captureSession,
+            CurveDb = Enumerable.Repeat(db, 1_024).ToArray(),
+            GridStartHz = 20,
+            GridStopHz = 20_000,
+            Recipe = new LiveCaptureRecipe
+            {
+                AnalysisMode = LiveAnalysisMode.Mmm,
+                SampleRateHz = 48_000,
+                SequenceLength = 32_768,
+                WindowType = WindowType.Rectangular,
+                NoiseColor = NoiseColor.PinkPeriodic,
+                SlopeCompensation = true,
+                MagnitudeScale = MagnitudeScale.SoundPressureLevel
+            }
+        };
 }

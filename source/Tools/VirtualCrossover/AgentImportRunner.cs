@@ -415,13 +415,20 @@ internal sealed class AgentImportRunner(
             return false;
         }
 
-        (LiveCaptureDocument? Capture, double OffsetDb) average =
-            handoff.SpatialAverage(channel, channel.ActiveRight, host.HybridRequested);
-        if (operation.Source == AgentProposalValidator.PointSource)
+        (LiveCaptureDocument? Capture, double OffsetDb) average = (null, 0.0);
+        if (operation.Source != AgentProposalValidator.PointSource)
         {
-            average = (null, 0.0);
+            if (await handoff.SpatialAverageAsync(channel, channel.ActiveRight, host.HybridRequested) is not
+                { } resolved)
+            {
+                summary.Add($"{label}: skipped (the responses changed while the spatial average was read).");
+                return false;
+            }
+
+            average = resolved;
         }
-        else if (operation.Source == AgentProposalValidator.SpatialAverageSource &&
+
+        if (operation.Source == AgentProposalValidator.SpatialAverageSource &&
             average.Capture == null)
         {
             summary.Add(

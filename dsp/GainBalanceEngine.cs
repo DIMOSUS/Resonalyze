@@ -110,8 +110,8 @@ public static class GainBalanceEngine
             : 0;
         // Targets are relative to the left side, so the right offset is the negated L-R request.
         double tiltDb = -differenceDb;
-        log.AppendLine(
-            $"Gain balance: L-R level difference {differenceDb:+0.00;-0.00} dB " +
+        log.AppendLine(FormattableString.Invariant(
+            $"Gain balance: L-R level difference {differenceDb:+0.00;-0.00} dB ") +
             "(positive: left side louder), cut-only");
 
         var spectra = new Dictionary<IAlignmentChannel, (double[] Power, double BinWidthHz)>();
@@ -194,9 +194,8 @@ public static class GainBalanceEngine
         }
         else
         {
-            log.AppendLine(
-                $"  target: left {targetLeftDb:0.00} dB, " +
-                $"right {targetLeftDb + tiltDb:0.00} dB (at 0 dB gain)");
+            log.AppendLine(FormattableString.Invariant(
+                $"  target: left {targetLeftDb:0.00} dB, right {targetLeftDb + tiltDb:0.00} dB (at 0 dB gain)"));
         }
 
         var results = new List<GainBalanceResult>(channels.Count);
@@ -208,7 +207,7 @@ public static class GainBalanceEngine
             {
                 log.AppendLine(
                     $"  {input.Channel.Name}: skipped ({reason})" +
-                    (double.IsNaN(levelDb) ? "" : $", level {levelDb:0.00} dB"));
+                    (double.IsNaN(levelDb) ? "" : FormattableString.Invariant($", level {levelDb:0.00} dB")));
                 results.Add(new GainBalanceResult(
                     input.Channel, Adjusted: false, reason, levelDb,
                     input.CurrentGainDb, double.NaN, Confidence: null,
@@ -225,18 +224,16 @@ public static class GainBalanceEngine
             if (gainDb < -MaxProposedCutDb)
             {
                 // Unreachable while the credibility gate holds; the |GainDb| <= 60 invariant must not depend on it.
-                log.AppendLine(
-                    $"  {input.Channel.Name}: proposed cut clamped to " +
-                    $"-{MaxProposedCutDb:0} dB (settings range)");
+                log.AppendLine(FormattableString.Invariant(
+                    $"  {input.Channel.Name}: proposed cut clamped to -{MaxProposedCutDb:0} dB (settings range)"));
                 gainDb = -MaxProposedCutDb;
             }
 
             (double spreadDb, string spreadDetail) = SpreadOf(input, channels, spectra);
             AlignmentConfidence confidence = ConfidenceOf(spreadDb);
-            log.AppendLine(
-                $"  {input.Channel.Name}: level {levelDb:0.00} dB " +
-                $"in {input.BandLowHz:0}-{input.BandHighHz:0} Hz, " +
-                $"gain {input.CurrentGainDb:0.0} -> {gainDb:0.0} dB, " +
+            log.AppendLine(FormattableString.Invariant(
+                $"  {input.Channel.Name}: level {levelDb:0.00} dB in {input.BandLowHz:0}-{input.BandHighHz:0} Hz, ") +
+                FormattableString.Invariant($"gain {input.CurrentGainDb:0.0} -> {gainDb:0.0} dB, ") +
                 $"{spreadDetail} ({confidence})");
             results.Add(new GainBalanceResult(
                 input.Channel, Adjusted: true, SkipReason: null, levelDb,

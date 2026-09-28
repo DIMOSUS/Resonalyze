@@ -93,9 +93,6 @@ internal sealed class MeasurementPlotContext
         FrequencyResponseOptions options) =>
         DataHelper.GetOversampledPrimarySpectrum(measurement, options);
 
-    // HD curves smoothed at the primary's width so HD2..HDn read at HD1's resolution.
-    private const double HarmonicSmoothingWidthFactor = 1.0;
-
     // The last results drawn: a decomposition and noise floor depend on nothing a build changes, but hold megabytes
     // that the results history keeps in memory must not multiply.
     private const int KeptDistortionAnalyses = 2;
@@ -152,9 +149,9 @@ internal sealed class MeasurementPlotContext
 
         // Noise floor as its own trace (REW-style), so THD stays harmonics-only.
         var distortionOptions = new DistortionOptions(
-            // The psychoacoustic dip floor applies to the fundamental's trace only.
-            SmoothingOctaves: HarmonicSmoothingWidthFactor *
-                SpectrumSmoothing.SmoothingOctaves(options.SmoothingInverseOctaves),
+            // HD2..HDn at the fundamental's resolution; the psychoacoustic dip floor applies to its trace only.
+            SmoothingOctaves: SpectrumSmoothing.MagnitudeFwhmOctaves(options.SmoothingInverseOctaves),
+            PsychoacousticSmoothing: SpectrumSmoothing.IsPsychoacoustic(options.SmoothingInverseOctaves),
             IncludeNoise: (curves & SpectrumCurves.NoiseFloor) != 0);
 
         DistortionAnalysis analysis = DistortionAnalysisOf(result, sweepMetadata, distortionOptions);

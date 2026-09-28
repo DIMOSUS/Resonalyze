@@ -123,15 +123,17 @@ internal sealed class VirtualCrossoverSharedScale(
         int smoothing = session.MagnitudeGate.SmoothingInverseOctaves;
         VirtualCrossoverMetrics sideMetrics = VirtualCrossoverMetrics.Through(
             coordinator, () => session.MagnitudeGate, oppositeSide: true, session.Calibration.For);
-        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum, List<SignalPoint>? loss) =
-            sideMetrics.BuildCurves(frame.Shown, smoothing, frame.Summed);
-        if (magnitudes == null)
+        (List<GatedMagnitude>? gated, AnalysisCurve? sum, List<SignalPoint>? loss) =
+            sideMetrics.BuildGatedCurves(frame.Shown, smoothing, frame.Summed);
+        if (gated == null)
         {
             return (true, null);
         }
 
+        List<AnalysisCurve> magnitudes = [.. gated.Select(curve => curve.Display)];
         HybridMagnitudes? hybrid = view.HybridRequested
-            ? hybridReader.Build(frame.Shown, magnitudes, rightSide, smoothing)
+            ? hybridReader.Build(
+                frame.Shown, magnitudes, rightSide, smoothing, [.. gated.Select(curve => curve.Unsmoothed)])
             : null;
         var curves = new List<AcousticCurve>();
         if (VirtualCrossoverGroupViews.DrawsGroupSums(view.GroupView))

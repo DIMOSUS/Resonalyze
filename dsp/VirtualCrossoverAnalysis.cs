@@ -639,11 +639,13 @@ public static class VirtualCrossoverAnalysis
     {
         (int start, int end, int fade, int plateau) = DirectSoundWindowBounds(
             front, leadSamples, sampleRate, crossoverHz, impulseResponse.Length);
+        // A front nearer sample 0 than one fade gets a shorter fade-in, not one cut off before it reaches 1.
+        double fadeIn = front - start;
         for (int i = start; i < end; i++)
         {
             double weight =
                 i < front
-                    ? 0.5 - 0.5 * Math.Cos(Math.PI * (i - start) / (double)fade)
+                    ? 0.5 - 0.5 * Math.Cos(Math.PI * (i - start) / fadeIn)
                     : i >= front + plateau
                         ? 0.5 + 0.5 * Math.Cos(
                             Math.PI * (i - front - plateau) / (double)fade)

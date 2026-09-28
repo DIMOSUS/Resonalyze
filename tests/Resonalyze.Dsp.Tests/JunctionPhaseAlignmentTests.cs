@@ -208,6 +208,26 @@ public sealed class JunctionPhaseAlignmentTests
     }
 
     [Fact]
+    public void Analyze_SuppressesACornerOnlyTheProcessorCannotRealize()
+    {
+        // A 96 kHz record through a 44.1 kHz processor: the record could show 23 kHz, the device clamps it.
+        const int recordRate = 96_000;
+        const int processorRate = 44_100;
+        var impulse = new Complex[16_384];
+        impulse[960] = Complex.One;
+        Complex[] Through(CrossoverSpec crossover) => VirtualCrossoverAnalysis.ApplyChain(
+            impulse, new DspChannelChain(Crossover: crossover), recordRate, processorRate);
+        var edge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 23_000, 24);
+
+        JunctionPhaseResult? result = JunctionPhaseAlignment.Analyze(
+            Through(new CrossoverSpec(CrossoverKind.LowPass, LowPassEdge: edge)),
+            Through(new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: edge)),
+            recordRate, 23_000, 11_500, 20_000, processorRate);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
     public void AnalyzeSpectra_RejectsForeignSpectrumLengths()
     {
         Assert.Throws<ArgumentException>(() =>

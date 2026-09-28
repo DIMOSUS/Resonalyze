@@ -267,13 +267,16 @@ internal sealed class AgentSessionReader(
             List<SignalPoint>? loss = null;
             // At the hybrid's width so a point-measurement fallback is not smoothed twice; built only when the hybrid is asked for (a second gated pass).
             List<AnalysisCurve>? hybridReferences = null;
+            List<AnalysisCurve>? hybridUnsmoothed = null;
             if (shown.Count > 0)
             {
                 (magnitudes, sumCurve, loss) = sideMetrics.BuildCurves(shown, smoothing, summed);
                 if (view.HybridRequested)
                 {
-                    (hybridReferences, _, _) = MetricsThrough(hybridGate)
-                        .BuildCurves(shown, HybridSmoothingInverseOctaves, summed);
+                    (List<GatedMagnitude>? gated, _, _) = MetricsThrough(hybridGate)
+                        .BuildGatedCurves(shown, HybridSmoothingInverseOctaves, summed);
+                    hybridReferences = gated?.Select(curve => curve.Display).ToList();
+                    hybridUnsmoothed = gated?.Select(curve => curve.Unsmoothed).ToList();
                 }
             }
 
@@ -292,14 +295,24 @@ internal sealed class AgentSessionReader(
                 ? sideMetrics.BuildEntries(summed, directLoss)
                 : [];
             HybridMagnitudes? hybrid = hybridReferences != null
-                ? hybridReader.Build(shown, hybridReferences, rightSide, HybridSmoothingInverseOctaves)
+                ? hybridReader.Build(shown, hybridReferences, rightSide, HybridSmoothingInverseOctaves, hybridUnsmoothed)
                 : null;
-            // The hybrid view's sum; null, as on screen, when the sides cannot share one offset.
-            IReadOnlyList<SignalPoint>? hybridSum = hybrid == null || hybridReferences == null
-                ? null
-                : rightSide == activeRight
-                    ? hybridReader.ActiveSum(shown, hybridReferences, hybrid, hybridGate)
-                    : hybridReader.OppositeSum(sideSum, hybrid.OffsetDb, hybridGate)?.Points;
+            // The hybrid view's sum over the summing channels; null, as on screen, when the sides cannot share one offset.
+            IReadOnlyList<SignalPoint>? hybridSum = null;
+            if (hybrid != null && hybridReferences != null)
+            {
+                if (rightSide == activeRight)
+                {
+                    hybridSum = hybridReader.ActiveSum(shown, summed, hybridReferences, hybrid, hybridGate);
+                }
+                else if (await metrics.ComputeSideSumAsync(
+                    session.Channels, rightSide, revision, minimumChannels: 2,
+                    includePair: pair => VirtualCrossoverGroupViews.ParticipatesInTotalSum(groupView, pair.Zone))
+                    is { } summedSide)
+                {
+                    hybridSum = hybridReader.OppositeSum(summedSide, hybrid.OffsetDb, hybridGate)?.Points;
+                }
+            }
 
             for (int index = 0; index < shown.Count; index++)
             {

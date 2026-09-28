@@ -36,6 +36,23 @@ public static class SpectrumSmoothing
                 ? 1.0 / PsychoacousticBaseInverseOctaves
                 : 0.0;
 
+    /// <summary>Half height of sinc(x)·sinc(x/2), where the magnitude resampler's Lanczos-2 mean falls to one half.</summary>
+    private const double LanczosHalfHeightX = 0.5522198099135098;
+
+    /// <summary>Full width at half maximum, octaves, of the kernel a magnitude curve is smoothed with at this code: the
+    /// Lanczos mean reaches the nominal width but halves far inside it; the psychoacoustic Gaussian is its base width.</summary>
+    public static double MagnitudeFwhmOctaves(double smoothingInverseOctaves)
+    {
+        double width = SmoothingOctaves(smoothingInverseOctaves);
+        if (width <= 0.0 || IsPsychoacoustic(smoothingInverseOctaves))
+        {
+            return width;
+        }
+
+        double reach = 0.5 * LanczosHalfHeightX * (Math.Pow(2.0, 0.5 * width) - 1.0);
+        return Math.Log2((1.0 + reach) / (1.0 - reach));
+    }
+
     public static int EquivalentInverseOctaves(int smoothingInverseOctaves) =>
         IsPsychoacoustic(smoothingInverseOctaves)
             ? PsychoacousticBaseInverseOctaves

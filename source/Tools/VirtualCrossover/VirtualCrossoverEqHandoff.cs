@@ -148,8 +148,9 @@ internal sealed class VirtualCrossoverEqHandoff(
             ? channel.SideState(rightSide).SpatialAverageFor(session.SpatialAverageMode)
             : null;
 
-    /// <summary>The capture plus its offset onto the IR axis; resolved here when no current magnitude render carries it.</summary>
-    public (LiveCaptureDocument? Capture, double OffsetDb) SpatialAverage(
+    /// <summary>The capture plus its offset onto the IR axis, none when the set draws no hybrid; null when the responses
+    /// could not be read (a newer edit overtook them).</summary>
+    public async Task<(LiveCaptureDocument? Capture, double OffsetDb)?> SpatialAverageAsync(
         VirtualCrossoverChannel channel, bool rightSide, bool hybridRequested)
     {
         if (HybridCapture(channel, rightSide, hybridRequested) is not { } capture)
@@ -157,28 +158,27 @@ internal sealed class VirtualCrossoverEqHandoff(
             return (null, 0.0);
         }
 
-        if (session.LastHybridOffset is { } cached && coordinator.IsCurrent(cached.Revision))
+        if (session.LastHybridOffset is { } cached &&
+            cached.Mode == session.SpatialAverageMode &&
+            coordinator.IsCurrent(cached.Revision))
         {
             return (capture, cached.OffsetDb);
         }
 
-        if (CurrentRender is not { } render)
+        // Mid-redraw the last render is stale: process the side now rather than send the point measurement.
+        IReadOnlyList<ProcessedChannel>? channels = CurrentRender?.Channels ??
+            (await metrics.ComputeSideSumAsync(
+                session.Channels, rightSide, coordinator.CurrentRevision, minimumChannels: 1))?.Channels;
+        if (channels == null)
         {
-            return (null, 0.0);
+            return null;
         }
 
-        (List<AnalysisCurve>? magnitudes, _, _) =
-            metrics.BuildCurves(render.Channels, session.MagnitudeGate.SmoothingInverseOctaves);
-        if (magnitudes == null ||
-            hybridReader.Build(
-                render.Channels,
-                magnitudes,
-                rightSide,
-                session.MagnitudeGate.SmoothingInverseOctaves) is not { } hybrid)
-        {
-            return (null, 0.0);
-        }
-
-        return (capture, hybrid.OffsetDb);
+        int smoothing = session.MagnitudeGate.SmoothingInverseOctaves;
+        (List<AnalysisCurve>? magnitudes, _, _) = metrics.BuildCurves([.. channels], smoothing);
+        return magnitudes != null &&
+            hybridReader.Build([.. channels], magnitudes, rightSide, smoothing) is { } hybrid
+            ? (capture, hybrid.OffsetDb)
+            : (null, 0.0);
     }
 }

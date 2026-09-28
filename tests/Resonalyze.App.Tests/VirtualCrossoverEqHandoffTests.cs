@@ -72,6 +72,40 @@ public sealed class VirtualCrossoverEqHandoffTests : IDisposable
             request.Token, new EqualizationCurve([new PeqBand(1_000, 2, -3)], -1), spatialAverage: null));
     }
 
+    [Fact]
+    public async Task MidRedraw_TheSpatialAverageStillTravels_WithTheOffsetOfItsOwnFamily()
+    {
+        VirtualCrossoverChannel channel = session.Channels[0];
+        LiveCaptureDocument capture = MovingMicCapture(-20);
+        channel.SideState(rightSide: false).SpatialAverage = capture;
+        session.Project.SpatialAverageMode = VirtualCrossoverSpatialAverageMode.MovingMic;
+
+        (LiveCaptureDocument? Capture, double OffsetDb) resolved =
+            Assert.NotNull(await handoff.SpatialAverageAsync(channel, rightSide: false, hybridRequested: true));
+        session.LastHybridOffset = (coordinator.CurrentRevision, VirtualCrossoverSpatialAverageMode.MicArray, 42.0);
+        (LiveCaptureDocument? Capture, double OffsetDb) afterSwitch =
+            Assert.NotNull(await handoff.SpatialAverageAsync(channel, rightSide: false, hybridRequested: true));
+
+        Assert.Same(capture, resolved.Capture);
+        Assert.True(double.IsFinite(resolved.OffsetDb));
+        Assert.Equal(resolved, afterSwitch);
+    }
+
+    private static LiveCaptureDocument MovingMicCapture(double db)
+    {
+        IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(20, 20_000, 64);
+        return new LiveCaptureDocument
+        {
+            SavedAtUtc = DateTimeOffset.UnixEpoch,
+            Title = "average",
+            Method = SpatialAverageMethod.MovingMic,
+            CurveDb = [.. grid.Select(_ => db)],
+            GridStartHz = grid[0],
+            GridStopHz = grid[^1],
+            Recipe = new LiveCaptureRecipe { SampleRateHz = 48_000 }
+        };
+    }
+
     // As the panel's redraw does: the snapshot carries the shown side's pin and the other side's stored one.
     private void ShowSide(bool rightSide)
     {

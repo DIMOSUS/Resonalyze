@@ -33,8 +33,8 @@ internal sealed class VirtualCrossoverSession
     public VirtualCrossoverProcessedRender? LastRender { get; set; }
 
     /// <summary>The hybrid offset the last magnitude redraw drew with: it belongs to the capture SET, which one
-    /// handed-over channel could not re-derive.</summary>
-    public (long Revision, double OffsetDb)? LastHybridOffset { get; set; }
+    /// handed-over channel could not re-derive. Keyed by family too: switching it moves no revision.</summary>
+    public (long Revision, VirtualCrossoverSpatialAverageMode Mode, double OffsetDb)? LastHybridOffset { get; set; }
 
     /// <summary>Extra search root from relinking an imported session's missing measurements; cleared on bind.</summary>
     public string? RelinkDirectory { get; set; }

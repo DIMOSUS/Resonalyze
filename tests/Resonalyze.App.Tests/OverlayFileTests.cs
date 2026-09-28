@@ -911,6 +911,30 @@ public sealed class OverlayFileTests
     }
 
     [Fact]
+    public void QuarantineCorruptFile_KeepsTheFileItSetAsideBefore()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            string path = OverlayFile.GetPath(Mode.FrequencyResponse, 3, root);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "first");
+            string? first = OverlayFile.QuarantineCorruptFile(Mode.FrequencyResponse, 3, root);
+            File.WriteAllText(path, "second");
+
+            string? second = OverlayFile.QuarantineCorruptFile(Mode.FrequencyResponse, 3, root);
+
+            Assert.NotEqual(first, second);
+            Assert.Equal("first", File.ReadAllText(first!));
+            Assert.Equal("second", File.ReadAllText(second!));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Load_ReturnsTheCachedInstanceWhileTheFileIsUnchanged()
     {
         string root = CreateTemporaryDirectory();

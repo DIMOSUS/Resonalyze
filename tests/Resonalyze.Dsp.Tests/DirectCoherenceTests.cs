@@ -52,6 +52,25 @@ public sealed class DirectCoherenceTests
     }
 
     [Fact]
+    public void CutDirectSound_RisesSmoothlyToAFrontNearerTheStartThanOneFade()
+    {
+        // 80 Hz: a 300-sample fade, with the front 150 samples in.
+        var ir = new Complex[8_192];
+        for (int i = 0; i < ir.Length; i++)
+        {
+            ir[i] = 0.01;
+        }
+
+        ir[150] = 1.0;
+
+        Complex[] cut = VirtualCrossoverAnalysis.CutDirectSound(ir, SampleRate, 40, 160, 80);
+
+        double largestStep = Enumerable.Range(0, 400)
+            .Max(i => Math.Abs(cut[i + 1].Real / ir[i + 1].Real - cut[i].Real / ir[i].Real));
+        Assert.True(largestStep < 0.05, $"the weight jumps by {largestStep:0.000} on its way up");
+    }
+
+    [Fact]
     public void CutDirectSound_HonorsTheValidRange()
     {
         // An in-band artifact before the valid range: the cut must honour the range and land on the real front.

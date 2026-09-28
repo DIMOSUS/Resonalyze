@@ -541,14 +541,14 @@ and the opposite side short of a capture, the curve is dropped.
 
 ### Opposite-side hybrid sum
 
-`VirtualCrossoverHybrid.OppositeSum` uses that side's own channels, captures, loss and gate placement, and the
+`VirtualCrossoverHybrid.OppositeSum` uses that side's own summing channels, captures and gate placement, and the
 offset both sides share (none for arrays; one median over both sides for a moving mic, see
 [spatial-average.md](spatial-average.md#set-offset-and-spread)). Separate offsets would erase exactly the L/R
 level difference the captures measured, and moved a mono channel by their difference whenever the side
 selector flipped (1.7 dB on #214's set). Sharing an offset holds only if both sides' captures are one set,
 which `CanDrawOppositeSum` checks (per-side checks cannot: two relative capture runs are each consistent
 but say nothing about their relative level). One anchor and offset serve that side's channels and its sum,
-and the loss is smoothed only at the end of the reconstruction.
+and the sum is smoothed only at the end of the reconstruction.
 
 ## Hybrid handoff to the EQ Wizard
 

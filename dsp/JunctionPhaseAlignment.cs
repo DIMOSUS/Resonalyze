@@ -121,14 +121,16 @@ public static class JunctionPhaseAlignment
         int sampleRate,
         double crossoverHz,
         double bandLowHz,
-        double bandHighHz) =>
+        double bandHighHz,
+        int? processorSampleRate = null) =>
         AnalyzeSpectra(
             BuildAnalysisSpectrum(lowerImpulseResponse, sampleRate),
             BuildAnalysisSpectrum(upperImpulseResponse, sampleRate),
             sampleRate,
             crossoverHz,
             bandLowHz,
-            bandHighHz);
+            bandHighHz,
+            processorSampleRate);
 
     public static JunctionPhaseResult? AnalyzeSpectra(
         Complex[] lowerSpectrum,
@@ -136,7 +138,8 @@ public static class JunctionPhaseAlignment
         int sampleRate,
         double crossoverHz,
         double bandLowHz,
-        double bandHighHz)
+        double bandHighHz,
+        int? processorSampleRate = null)
     {
         ArgumentNullException.ThrowIfNull(lowerSpectrum);
         ArgumentNullException.ThrowIfNull(upperSpectrum);
@@ -155,18 +158,20 @@ public static class JunctionPhaseAlignment
 
         return AnalyzeWindowedSpectra(
             lowerSpectrum, upperSpectrum, sampleRate,
-            crossoverHz, bandLowHz, bandHighHz);
+            crossoverHz, bandLowHz, bandHighHz, processorSampleRate);
     }
 
     /// <summary>Junction arithmetic over gated/FDW spectra (what the Virtual DSP read-out calls). Both spectra must share length AND one absolute time origin
     /// (<see cref="Resonalyze.Dsp.DataHelper.SumGatedSpectra"/>), or window placement reads as delay.</summary>
+    /// <param name="processorSampleRate">The rate the filters are realized at, when it is not the record's.</param>
     public static JunctionPhaseResult? AnalyzeWindowedSpectra(
         Complex[] lowerSpectrum,
         Complex[] upperSpectrum,
         int sampleRate,
         double crossoverHz,
         double bandLowHz,
-        double bandHighHz)
+        double bandHighHz,
+        int? processorSampleRate = null)
     {
         ArgumentNullException.ThrowIfNull(lowerSpectrum);
         ArgumentNullException.ThrowIfNull(upperSpectrum);
@@ -187,7 +192,8 @@ public static class JunctionPhaseAlignment
         }
 
         // Bilinear clamps a corner at/above the realizable limit to another frequency: suppress rather than mislabel.
-        if (crossoverHz >= sampleRate * BilinearTransform.NyquistFraction)
+        int realizingRate = Math.Min(sampleRate, processorSampleRate ?? sampleRate);
+        if (crossoverHz >= realizingRate * BilinearTransform.NyquistFraction)
         {
             return null;
         }

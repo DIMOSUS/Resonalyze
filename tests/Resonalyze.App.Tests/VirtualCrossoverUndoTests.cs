@@ -49,6 +49,8 @@ public sealed class VirtualCrossoverUndoTests : IDisposable
         session.Project.SetStereoScene(0.25, rightHandDrive: false);
         session.Project.StereoLevelDifferenceDb = -1;
         session.Project.RearFillOffsetMs = 12;
+        session.Project.DspProcessorPhaseControl = true;
+        session.Project.DspProcessorFirFilters = true;
         reader = new AgentSessionReader(
             session,
             coordinator,
@@ -84,6 +86,26 @@ public sealed class VirtualCrossoverUndoTests : IDisposable
         AssertAsTaken(taken);
         Assert.Equal(["A", "B", "C", "D"], session.Channels.Select(channel => channel.Name));
         Assert.Equal(35, session.Channels[0].SideSettings(true).PhaseRotationDegrees);
+    }
+
+    [Fact]
+    public void AnUndo_LeavesOutTheRotationsAndKernelsAProcessorChosenSinceCannotRun()
+    {
+        session.Channels[0].SideSettings(false).Fir = new FirFilter([1.0, 0.5], 48_000);
+        Taken taken = Take();
+        // What the processor dialog writes for a device without phase control or a FIR stage.
+        session.Project.DspProcessorPhaseControl = false;
+        session.Project.DspProcessorFirFilters = false;
+        session.Project.ClearUnavailablePhaseRotations();
+        session.Project.ClearUnavailableFirFilters();
+
+        (_, _, DspProcessorWrite cleared) = taken.Before.Restore(session, reader);
+
+        // Three stereo blocks and a mono one: seven sides.
+        Assert.Equal(7, cleared.ClearedRotations);
+        Assert.Equal(1, cleared.ClearedFirFilters);
+        Assert.All(session.Sides(), side => Assert.Equal(0, side.Channel.SideSettings(side.RightSide).PhaseRotationDegrees));
+        Assert.Null(session.Channels[0].SideSettings(false).Fir);
     }
 
     [Fact]

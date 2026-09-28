@@ -54,8 +54,13 @@ internal static class RecordSettingsApply
             throw new InvalidOperationException("Microphone and loopback inputs must use different ASIO channels.");
         }
         int asioOutputChannelOffset = session.SelectedAsioOutputOffset;
-        int waveInputChannelOffset = session.SelectedWaveInputOffset;
-        int? waveLoopbackInputChannelOffset = session.SelectedWaveLoopbackOffset;
+        // Under ASIO the Wave lists offer only Left/Right: keep the route in force for the backend that reads it.
+        int waveInputChannelOffset = audioBackend == AudioBackend.Asio
+            ? expSweepMeasurement.WaveInputChannelOffset
+            : session.SelectedWaveInputOffset;
+        int? waveLoopbackInputChannelOffset = audioBackend == AudioBackend.Asio
+            ? expSweepMeasurement.WaveLoopbackInputChannelOffset
+            : session.SelectedWaveLoopbackOffset;
         int averageRunCount = (int)session.AverageRunCount.Value;
         string? wasapiCaptureEndpointId = session.SelectedCaptureEndpoint?.Id ?? session.PreferredWasapiCaptureEndpointId;
         string? wasapiRenderEndpointId = session.SelectedRenderEndpoint?.Id ?? session.PreferredWasapiRenderEndpointId;

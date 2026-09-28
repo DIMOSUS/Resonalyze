@@ -44,7 +44,7 @@ public sealed class AgentImportRunnerTests : IDisposable
         import.Session.Reorder(import.Session.MoveOrder(Channels[0], 1)!);
         Project.TargetLevelDb = level + 3;
 
-        (List<VirtualCrossoverChannel> written, bool reordered) = undo.Restore(import.Session, import.Reader);
+        (List<VirtualCrossoverChannel> written, bool reordered, _) = undo.Restore(import.Session, import.Reader);
 
         Assert.True(reordered);
         Assert.Equal(VirtualCrossoverSpatialAverageMode.Off, Project.SpatialAverageMode);
@@ -68,7 +68,7 @@ public sealed class AgentImportRunnerTests : IDisposable
         Project.SetStereoScene(0.6, rightHandDrive: true);
         Project.StereoLevelDifferenceDb = 2.5;
         Project.RearFillOffsetMs = 9.0;
-        (_, bool reordered) = undo.Restore(import.Session, import.Reader);
+        (_, bool reordered, _) = undo.Restore(import.Session, import.Reader);
 
         Assert.False(reordered);
         Assert.Equal(0.25, Project.StereoSceneOffsetMagnitudeMs);

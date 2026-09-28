@@ -240,7 +240,7 @@ public sealed class OverlayFile
         return file;
     }
 
-    /// <summary>Renames a failed slot file to "&lt;name&gt;.corrupt"; null when there is no file.</summary>
+    /// <summary>Renames a failed slot file to "&lt;name&gt;.corrupt", numbered past any kept before; null when there is no file.</summary>
     public static string? QuarantineCorruptFile(
         Mode mode,
         int slot,
@@ -253,7 +253,12 @@ public sealed class OverlayFile
         }
 
         string quarantinePath = path + ".corrupt";
-        File.Move(path, quarantinePath, overwrite: true);
+        for (int suffix = 1; File.Exists(quarantinePath); suffix++)
+        {
+            quarantinePath = path + $".corrupt.{suffix}";
+        }
+
+        File.Move(path, quarantinePath);
         LoadCache.TryRemove(path, out _);
         return quarantinePath;
     }

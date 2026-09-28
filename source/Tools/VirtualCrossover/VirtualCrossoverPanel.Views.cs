@@ -272,14 +272,16 @@ public partial class VirtualCrossoverPanel
 
         // The synchronous UI-thread part of the frame; each step carries its own zone.
         using var _ = AppProfiler.Zone("VirtualDSP.RedrawMainPlot");
-        List<AnalysisCurve>? magnitudes;
+        List<GatedMagnitude>? gated;
         AnalysisCurve? sumCurve;
         List<SignalPoint>? lossCurve;
         using (AppProfiler.Zone("VirtualDSP.BuildCurves"))
         {
-            (magnitudes, sumCurve, lossCurve) = metrics.BuildCurves(
+            (gated, sumCurve, lossCurve) = metrics.BuildGatedCurves(
                 frame.Shown, session.MagnitudeGate.SmoothingInverseOctaves, frame.Summed);
         }
+
+        List<AnalysisCurve>? magnitudes = gated?.Select(curve => curve.Display).ToList();
 
         // Decided before the awaits, where the junction phase block uses it.
         if (!frame.QuotesJunctions)
@@ -302,12 +304,13 @@ public partial class VirtualCrossoverPanel
                     frame.Shown,
                     magnitudes,
                     view.RightSide,
-                    session.MagnitudeGate.SmoothingInverseOctaves);
+                    session.MagnitudeGate.SmoothingInverseOctaves,
+                    gated!.Select(curve => curve.Unsmoothed).ToList());
             }
 
             if (hybrid != null)
             {
-                session.LastHybridOffset = (revision, hybrid.OffsetDb);
+                session.LastHybridOffset = (revision, session.SpatialAverageMode, hybrid.OffsetDb);
             }
         }
 

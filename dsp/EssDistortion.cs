@@ -11,7 +11,7 @@ public sealed record DistortionOptions(
     int GridPoints = 1024,
     double MaxDenominatorDropDb = 45.0,
     double FadeFraction = 0.5,
-    // Fractional-octave WIDTH (FWHM), same convention as the primary response; 0 disables.
+    // Gaussian FWHM, octaves; SpectrumSmoothing.MagnitudeFwhmOctaves matches the primary response's kernel. 0 disables.
     double SmoothingOctaves = 0.0,
     bool IncludeNoise = false,
     int NoiseWindowLength = 8_192,

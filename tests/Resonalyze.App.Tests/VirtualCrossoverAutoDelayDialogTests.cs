@@ -47,6 +47,28 @@ public sealed class VirtualCrossoverAutoDelayDialogTests
     });
 
     [Fact]
+    public void TheRearFillIsHeldWhileARunReadsIt() => StaTest.Run(() =>
+    {
+        var running = new TaskCompletionSource<AutoDelayRunResult>();
+        using var dialog = new VirtualCrossoverAutoDelayDialog
+        {
+            StartPosition = FormStartPosition.Manual,
+            Location = new(-5000, -5000)
+        };
+        dialog.Init(true, 0.25, false, 1.0, _ => running.Task, hasRearFill: true, rearFillOffsetMs: 15.0);
+        dialog.Show();
+        ThemedNumericUpDown rearFill = Field<ThemedNumericUpDown>(dialog, "numericRearFill");
+
+        Field<Button>(dialog, "buttonRun").PerformClick();
+        Assert.False(rearFill.Enabled);
+        running.SetResult(new AutoDelayRunResult(
+            [], true, new AutoDelayRunRequest(0.25, false, false, 1.0, 15.0), "Proposal.", new StringBuilder()));
+        StaTest.Pump();
+
+        Assert.True(rearFill.Enabled);
+    });
+
+    [Fact]
     public void UndoLastApply_IsOfferedWhileThereIsOne_ButNotWhileARunHoldsTheDialogOpen() => StaTest.Run(() =>
     {
         using var nothing = new VirtualCrossoverAutoDelayDialog();

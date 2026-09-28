@@ -206,6 +206,14 @@ internal sealed class VirtualCrossoverSharedScale(
             inputs.Add((object?)state.SpatialAverageFor(session.SpatialAverageMode) ?? string.Empty);
         }
 
+        // Sides that form one hybrid set share an offset read off the shown side's captures and responses too.
+        foreach (VirtualCrossoverChannel channel in session.Channels)
+        {
+            VirtualCrossoverChannelState shown = channel.SideState(!rightSide);
+            inputs.Add((object?)shown.TransferImpulseResponse ?? string.Empty);
+            inputs.Add((object?)shown.SpatialAverageFor(session.SpatialAverageMode) ?? string.Empty);
+        }
+
         return inputs;
     }
 

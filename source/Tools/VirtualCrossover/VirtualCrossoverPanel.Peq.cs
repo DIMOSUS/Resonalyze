@@ -42,7 +42,7 @@ public partial class VirtualCrossoverPanel
                 ? "Edit in EQ Wizard (chain — block is bypassed)"
                 : "Edit in EQ Wizard",
             null,
-            (_, _) => RequestPeqHandoff(channel, withChain: true))
+            async (_, _) => await RequestPeqHandoffAsync(channel, withChain: true))
         {
             Enabled = hasMeasurement,
             ToolTipText = "Tune this channel's PEQ in the EQ Wizard against its\r\n" +
@@ -59,7 +59,7 @@ public partial class VirtualCrossoverPanel
         var editRawItem = new ToolStripMenuItem(
             "Edit raw in EQ Wizard",
             null,
-            (_, _) => RequestPeqHandoff(channel, withChain: false))
+            async (_, _) => await RequestPeqHandoffAsync(channel, withChain: false))
         {
             Enabled = hasMeasurement,
             ToolTipText = "The same handoff against the raw measurement — the\r\n" +
@@ -81,9 +81,23 @@ public partial class VirtualCrossoverPanel
     }
 
     // The gate mirrors the magnitude view: shared template, active pin, last redraw's anchor.
-    private void RequestPeqHandoff(VirtualCrossoverChannel channel, bool withChain)
+    private async Task RequestPeqHandoffAsync(VirtualCrossoverChannel channel, bool withChain)
     {
         if (EditPeqInWizardRequested is not { } requested)
+        {
+            return;
+        }
+
+        bool hybridRequested = HybridRequested;
+        if (await eqHandoff.SpatialAverageAsync(channel, channel.ActiveRight, hybridRequested) is not { } average)
+        {
+            ShowError(
+                "The spatial average could not be read.",
+                "The plot changed while the handoff was being prepared. Try Edit in EQ Wizard again.");
+            return;
+        }
+
+        if (IsDisposed || !session.Channels.Contains(channel))
         {
             return;
         }
@@ -91,8 +105,8 @@ public partial class VirtualCrossoverPanel
         VirtualDspEqHandoffRequest? request = eqHandoff.Request(
             channel,
             withChain,
-            HybridRequested,
-            eqHandoff.SpatialAverage(channel, channel.ActiveRight, HybridRequested));
+            hybridRequested,
+            average);
         if (request != null)
         {
             requested(request);

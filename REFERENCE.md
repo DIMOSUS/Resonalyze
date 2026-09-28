@@ -373,7 +373,9 @@ sweep-deconvolution response instead, drawing HD2–HD4 at the **excitation**
 frequency (a second-harmonic hump from a 1 kHz drive appears at 1 kHz, not at
 2 kHz) so each ends at Nyquist/n. Because those curves sit on the
 sweep-deconvolution scale while the primary curve is loopback-normalized, their
-vertical distance is not yet a calibrated distortion percentage.
+vertical distance is not yet a calibrated distortion percentage. They are
+smoothed to the primary curve's resolution: at 1/6 octave a harmonic's detail is
+as fine as the fundamental's it is read against.
 
 A ticked HD curve can still be missing from the plot, and the plot says why at
 its top centre rather than leaving the checkbox unexplained. Each order's
@@ -1888,7 +1890,9 @@ average carries no phase and the impulse response does. Two measurements of one
 channel, each answering the question it can: tonal balance from the average,
 timing from the impulse response. The whole set's offset travels with it, so the
 curve hangs exactly where the plot had it and the Target Level still means the
-same thing; where the capture has nothing to report — under a protective
+same thing (asked while the plot is still redrawing, the handoff reads the set
+itself, and if an edit overtakes that read it says so rather than sending the
+single-point curve); where the capture has nothing to report — under a protective
 high-pass — the curve breaks and Auto Tune places no band there. There is no gate
 on this curve: an average is a steady-state measurement with no window, so the
 gated preview below is bypassed. The bank still goes INTO the chain rather than
@@ -4102,7 +4106,7 @@ tune is actually built in:
   Frequency Response — compare it against real measurements and target curves, or
   feed it onward to the EQ Wizard. It is the **Sum** the plot draws for the shown
   side and group view: the same channels enter it (a centre never does), through
-  the same window.
+  the same window, and with **Hybrid** on it is the hybrid Sum.
 - **Tools... → Audition track…** renders a music file (wav/mp3/flac/m4a and friends) through
   the tune into a stereo WAV: each program channel is convolved with the summed
   processed response of its side, with the microphone calibration optionally

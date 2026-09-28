@@ -127,10 +127,12 @@ namespace Resonalyze
             LastAudioSessionDiagnostics = null;
             AudioBackend = audio.Backend;
             AsioDriverName = audio.AsioDriverName;
-            int normalizedWaveInputChannelOffset = audio.Backend.IsWasapi()
+            // ASIO reads its own route; the Wave one is kept whole for WASAPI.
+            bool keepsWaveRoute = audio.Backend.IsWasapi() || audio.Backend == AudioBackend.Asio;
+            int normalizedWaveInputChannelOffset = keepsWaveRoute
                 ? Math.Max(0, audio.WaveInputChannelOffset)
                 : Math.Clamp(audio.WaveInputChannelOffset, 0, 1);
-            int? normalizedWaveLoopbackInputChannelOffset = audio.Backend.IsWasapi()
+            int? normalizedWaveLoopbackInputChannelOffset = keepsWaveRoute
                 ? NormalizeOptionalWasapiChannel(audio.WaveLoopbackInputChannelOffset)
                 : NormalizeOptionalWaveChannel(audio.WaveLoopbackInputChannelOffset);
             if (audio.Backend != AudioBackend.Asio &&

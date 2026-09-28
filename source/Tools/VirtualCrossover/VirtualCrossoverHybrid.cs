@@ -303,11 +303,13 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
 
     /// <summary>This redraw's hybrid magnitudes, shared by drawing and summation; null when a moving-mic channel yields no
     /// curve (array channels fall back to their point response).</summary>
+    /// <param name="unsmoothedReferences"><paramref name="references"/> (drawn width) unsmoothed, which a fallback sums with.</param>
     public HybridMagnitudes? Build(
         IReadOnlyList<ProcessedChannel> processed,
         IReadOnlyList<AnalysisCurve> references,
         bool rightSide,
-        int smoothingCode)
+        int smoothingCode,
+        IReadOnlyList<AnalysisCurve>? unsmoothedReferences = null)
     {
         if (processed.Count == 0 || references.Count < processed.Count)
         {
@@ -334,8 +336,10 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
                     return null;
                 }
 
-                raw = ShiftedBy(references[i].Points, -setOffset);
                 pointMeasured[i] = true;
+                unsmoothed.Add(ShiftedBy((unsmoothedReferences?[i] ?? references[i]).Points, -setOffset));
+                hybrids.Add(ShiftedBy(references[i].Points, -setOffset));
+                continue;
             }
 
             unsmoothed.Add(raw);
@@ -524,15 +528,18 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
             : SpatialAverageOffsets.ChannelDatumDb(rawCapture, rawIr.Points);
     }
 
-    /// <summary>The shown side's hybrid Sum. Anchor and gate are recomputed as pure functions of the processed set and snapshot,
-    /// so they match the measured Sum.</summary>
+    /// <summary>The shown side's hybrid Sum over the summing channels (a shown centre is compared, not added). Anchor and gate
+    /// are recomputed from the drawn set and snapshot, so they match the measured Sum.</summary>
     public List<SignalPoint>? ActiveSum(
         IReadOnlyList<ProcessedChannel> processed,
+        IReadOnlyList<ProcessedChannel> summed,
         IReadOnlyList<AnalysisCurve> magnitudes,
         HybridMagnitudes hybrid,
         MagnitudeGateSnapshot? snapshot = null)
     {
-        if (processed.Count == 0)
+        List<int> positions = [.. Enumerable.Range(0, processed.Count)
+            .Where(index => summed.Contains(processed[index]))];
+        if (positions.Count < 2)
         {
             return null;
         }
@@ -540,16 +547,16 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
         snapshot ??= session.MagnitudeGate;
         int anchorIndex = ProcessedChannels.SharedStartAnchorIndex(processed);
         return Sum(
-            hybrid,
-            processed,
+            hybrid.Subset(positions),
+            [.. positions.Select(index => processed[index])],
             anchorIndex,
             snapshot,
             snapshot.ResolveGateOffsetMs(
                 oppositeSide: false, anchorIndex, processed[0].SampleRate),
-            magnitudes.Select(curve => (IReadOnlyList<SignalPoint>)curve.Points).ToList());
+            [.. positions.Select(index => (IReadOnlyList<SignalPoint>)magnitudes[index].Points)]);
     }
 
-    /// <summary>Opposite side's hybrid sum from its own captures and loss, but with the ACTIVE side's offset.</summary>
+    /// <summary>Opposite side's hybrid sum from its own captures and responses, but with the ACTIVE side's offset.</summary>
     /// <remarks>See docs/tech/virtual-dsp-panel.md#opposite-side-hybrid-sum.</remarks>
     public AnalysisCurve? OppositeSum(
         VirtualCrossoverSideSum side, double offsetDb, MagnitudeGateSnapshot? snapshot = null)
@@ -563,7 +570,6 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
         // One anchor and offset for channels AND sum, as on the active side.
         snapshot ??= session.MagnitudeGate;
         double gateOffsetMs = snapshot.OppositeOffsetMs(side);
-        GatedMagnitude sum = snapshot.OppositeSum(side, session.Calibration.For);
         var channelMagnitudes = new List<GatedMagnitude>(side.Channels.Count);
         foreach (ProcessedChannel item in side.Channels)
         {
@@ -580,18 +586,13 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
             side.Channels,
             channelMagnitudes.Select(curve => curve.Display).ToList(),
             oppositeRight,
-            snapshot.SmoothingInverseOctaves);
+            snapshot.SmoothingInverseOctaves,
+            channelMagnitudes.Select(curve => curve.Unsmoothed).ToList());
         if (hybrid == null)
         {
             return null;
         }
 
-        List<IReadOnlyList<SignalPoint>> operands = channelMagnitudes
-            .Select(curve => (IReadOnlyList<SignalPoint>)curve.Unsmoothed.Points)
-            .ToList();
-        // Raw, smoothed only at the end (see Sum).
-        List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(
-            sum.Unsmoothed.Points, operands);
         // The sides share one offset once they form a set; passed so the two cannot drift.
         List<SignalPoint>? points = Sum(
             hybrid with { OffsetDb = offsetDb },

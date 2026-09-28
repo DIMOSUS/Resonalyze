@@ -144,5 +144,7 @@ internal sealed record VirtualCrossoverSourceReference(
         settings.DisplayName = DisplayName;
         settings.SourceFilePath = SourceFilePath;
         settings.HistoryEntryId = HistoryEntryId;
+        // Names the previous pick's file in an imported session; left standing it would steer a re-resolve back to it.
+        settings.SourceRelativePath = null;
     }
 }

@@ -90,7 +90,10 @@ build ignores them. Patterns used repeatedly:
   measurements carry arrays reads them without the user finding a menu. `SpatialAverageMode` is also stored
   as soon as the panel has a capture to guess from, so a later measurement cannot flip it.
 - **Empty stored as absent**: `AiNotes` (installation notes sent with every Copy for AI package) so a session
-  that never had notes serializes byte for byte as before.
+  that never had notes serializes byte for byte as before. The correlation view's curve groups follow it:
+  `CorrelationHidePhat`, `CorrelationHidePhase` and `CorrelationHideScore` name what is hidden and are written only
+  when set, so an older build, or a file without them, shows every curve. Read and write them through
+  `CorrelationCurves`.
 - **Sum loss window**: `LossWindow` is null in files before the selector. `SumLossWindowMode` then answers
   `Full` when the old `ShowLossCurve` flag is on and `Direct` otherwise. The asymmetry is deliberate: the
   flag's default was off, so "false" cannot be told from untouched and gets the new default; "true" could only

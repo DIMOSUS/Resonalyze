@@ -3139,6 +3139,21 @@ inverted rival, the wavefronts within a period or two of the front decide it,
 because that is the part of the record the drivers made and the room had not yet
 answered.
 
+A fifth curve, **phase FDW-n**, is the **Junction phase** read-out swept along the
+same lag axis: the pair band's Σw·cos Δφ through the Gate dialog's frequency-dependent
+window at its 4/6/8 cycles, on the r scale. Its peak is where the read-out's *fix*
+would put the pair (with the sign reversed, since the fix delays the lower channel
+and the axis delays the upper), its sign is the polarity the band's phase prefers,
+and a top no higher than its half-period neighbour's says the band's phase cannot tell
+a lobe from its inverted twin — the tie the summation score and the direct twin are
+asked to settle. Switch the cycles in **Gate...** to see how much of the shape the
+cabin's reflections contribute; the read-out's own numbers keep their fixed 8 cycles.
+
+Three check boxes in the plot's top-left corner — **PHAT**, **phase**, **score** — show
+and hide the curves by group: both combs with their envelope guides, the phase curve,
+and both polarities of the score together with its axis. The choice is saved with the
+session.
+
 **Headroom.** On its magnitude mode the chain plot fills red wherever a chain
 rises above 0 dB: a full-scale signal at those frequencies leaves the processor
 above full scale and clips. The read-out column opens with a **Headroom (dB)**

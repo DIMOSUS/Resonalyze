@@ -172,6 +172,166 @@ public sealed class VirtualCrossoverCorrelationViewTests
     }
 
     [Fact]
+    public void BuildPhaseSweepView_PeaksWhereTheReadOutPutsItsFix()
+    {
+        // The upper channel 15 samples (0.3125 ms) late, inside the read-out's ±1.25-period sweep at 1.5 kHz: the read-out
+        // asks +0.3125 ms on the lower channel; the curve's lags correct the upper one, so it peaks at −0.3125 ms, through
+        // the same gated spectra the read-out analyses.
+        var lowerIr = new Complex[IrLength];
+        lowerIr[FrontSample] = 1.0;
+        var upperIr = new Complex[IrLength];
+        upperIr[FrontSample + 15] = 1.0;
+        var range = new ValidSampleRange(FrontSample - 96, IrLength);
+        ProcessedChannel lower = Channel("C", lowerIr, range);
+        ProcessedChannel upper = Channel("D", upperIr, range);
+        var pair = new AdjacentPair(lower, upper, 1_500, 750, 3_000);
+        var inputs = new JunctionViews.PhaseSweepInputs(null, 5, 20, 20, 4, null);
+
+        JunctionPhaseSweepView? view = JunctionViews.BuildPhaseSweepView(pair, [lower, upper], inputs);
+
+        List<Complex[]> spectra = JunctionPhaseSpectra.Build([lower, upper], SampleRate, null, 5, 20, 20, 4);
+        JunctionPhaseResult? readOut = JunctionPhaseAlignment.AnalyzeWindowedSpectra(
+            spectra[0], spectra[1], SampleRate, 1_500, 750, 3_000);
+        Assert.NotNull(view);
+        Assert.NotNull(readOut);
+        string diagnosis =
+            $"read-out: current {readOut!.CurrentScore:0.000}, best {readOut.BestScore:0.000} @ " +
+            $"{readOut.BestExtraDelayMs:+0.000} ms{(readOut.BestInvert ? " inv" : "")}, R {readOut.PhaseConsistency:0.00}, " +
+            $"fit rms {readOut.FitRmsDeg:0}°; band |C| max {BandMax(spectra[0]):E2}, |D| max {BandMax(spectra[1]):E2}";
+        Assert.Equal("C-D", view!.PairTitle);
+        Assert.Equal(4, view.FdwCycles);
+        double windowMs = JunctionViews.WindowMs(pair);
+        Assert.Equal(-windowMs, view.Score[0].X, 6);
+        Assert.Equal(windowMs, view.Score[^1].X, 6);
+        SignalPoint peak = view.Score.MaxBy(point => point.Y);
+        Assert.True(
+            peak.X is >= -0.37 and <= -0.26 && peak.Y is >= 0.95 and <= 1.001,
+            $"the curve peaks at {peak.X:0.000} ms with {peak.Y:0.000}; {diagnosis}");
+        double stepMs = JunctionViews.PhaseStepMs(pair, windowMs);
+        Assert.InRange(view.Score[1].X - view.Score[0].X, 0.9 * stepMs, 1.1 * stepMs);
+        Assert.True(
+            Math.Abs(-readOut.BestExtraDelayMs - peak.X) <= stepMs,
+            $"the curve peaks at {peak.X:0.000} ms; {diagnosis}");
+
+        static double BandMax(Complex[] spectrum)
+        {
+            double binHz = (double)SampleRate / spectrum.Length;
+            return Enumerable.Range((int)(750 / binHz), (int)(2_250 / binHz))
+                .Max(bin => spectrum[bin].Magnitude);
+        }
+    }
+
+    [Fact]
+    public void DrawCorrelation_DrawsThePhaseSweepOnTheCoefficientAxisAndInTheLegend()
+    {
+        var ir = new Complex[IrLength];
+        ir[FrontSample] = 1.0;
+        var range = new ValidSampleRange(FrontSample - 96, IrLength);
+        ProcessedChannel lower = Channel("C", ir, range);
+        ProcessedChannel upper = Channel("D", (Complex[])ir.Clone(), range);
+        JunctionCorrelationView view = JunctionViews.BuildCorrelationView(
+            new AdjacentPair(lower, upper, 1_500, 750, 3_000),
+            [lower, upper]);
+        var phase = new JunctionPhaseSweepView("C-D", "D", 4,
+            [new SignalPoint(-1, 0.2), new SignalPoint(0, 0.9), new SignalPoint(1, 0.2)]);
+
+        using var plotView = new OxyPlot.WindowsForms.PlotView();
+        var plot = new VirtualCrossoverDspChainPlot(plotView, DspPlotMode.Correlation);
+        plot.DrawCorrelation(view, phase);
+        var model = (PlotModel)plotView.Model;
+
+        OxyPlot.Series.LineSeries sweep = Assert.Single(
+            model.Series.OfType<OxyPlot.Series.LineSeries>(), series => series.Title == "phase FDW-4");
+        OxyPlot.Series.LineSeries phat = model.Series
+            .OfType<OxyPlot.Series.LineSeries>().Single(series => series.Title == "PHAT");
+        Assert.Equal(phat.YAxisKey, sweep.YAxisKey);
+        Assert.Equal([0.2, 0.9, 0.2], sweep.Points.Select(point => point.Y));
+        Assert.Equal(
+            ["PHAT", "PHAT direct", "phase FDW-4", "score", "score inv"],
+            model.Series
+                .Where(series => series.RenderInLegend)
+                .Select(series => series.Title)
+                .ToList());
+
+        // A junction the read-out cannot read keeps the four curves.
+        plot.DrawCorrelation(view, null);
+        Assert.DoesNotContain(
+            ((PlotModel)plotView.Model).Series, series => series.Title == "phase FDW-4");
+    }
+
+    [Fact]
+    public void CorrelationCurves_HideTheirGroupsAndTheScoreAxis()
+    {
+        (VirtualCrossoverDspChainPlot plot, OxyPlot.WindowsForms.PlotView plotView) = DrawnJunction();
+        using OxyPlot.WindowsForms.PlotView owned = plotView;
+        var model = (PlotModel)plotView.Model;
+        OxyPlot.Axes.Axis scoreAxis = model.Axes.Single(axis => axis.Title == "junction score (dB)");
+
+        plot.CorrelationCurves = JunctionCurves.Phase;
+
+        Assert.Equal(["phase FDW-4"], model.Series.Select(series => series.Title));
+        Assert.False(scoreAxis.IsAxisVisible);
+
+        plot.CorrelationCurves = JunctionCurves.Phat | JunctionCurves.Score;
+
+        Assert.Equal(
+            ["PHAT", "PHAT direct", "score", "score inv"],
+            model.Series.Where(series => series.RenderInLegend).Select(series => series.Title));
+        Assert.Equal(4, model.Series.Count(series => !series.RenderInLegend));
+        Assert.True(scoreAxis.IsAxisVisible);
+    }
+
+    [Fact]
+    public void APressOnACheckBox_RedrawsTheJunctionAndReportsTheGroups()
+    {
+        (VirtualCrossoverDspChainPlot plot, OxyPlot.WindowsForms.PlotView plotView) = DrawnJunction();
+        using OxyPlot.WindowsForms.PlotView owned = plotView;
+        var model = (PlotModel)plotView.Model;
+        using (var stream = new MemoryStream())
+        {
+            new OxyPlot.WindowsForms.PngExporter { Width = 900, Height = 400 }.Export(model, stream);
+        }
+
+        PlotCurveTogglesAnnotation toggles = Assert.Single(model.Annotations.OfType<PlotCurveTogglesAnnotation>());
+        var reported = new List<JunctionCurves>();
+        plot.CorrelationCurvesChanged += reported.Add;
+        ScreenPoint score = toggles.RowBounds(2)!.Value.Center;
+
+        plotView.ActualController.HandleMouseDown(
+            plotView,
+            new OxyMouseDownEventArgs { ChangedButton = OxyMouseButton.Left, ClickCount = 1, Position = score });
+        plotView.ActualController.HandleMouseUp(plotView, new OxyMouseEventArgs { Position = score });
+
+        Assert.Equal([JunctionCurves.Phat | JunctionCurves.Phase], reported);
+        Assert.Equal(JunctionCurves.Phat | JunctionCurves.Phase, plot.CorrelationCurves);
+        Assert.Equal(
+            ["PHAT", "PHAT direct", "phase FDW-4"],
+            model.Series.Where(series => series.RenderInLegend).Select(series => series.Title));
+
+        // No junction, nothing to toggle.
+        plot.DrawCorrelation(null);
+        Assert.Null(toggles.RowBounds(0));
+    }
+
+    private static (VirtualCrossoverDspChainPlot Plot, OxyPlot.WindowsForms.PlotView View) DrawnJunction()
+    {
+        var ir = new Complex[IrLength];
+        ir[FrontSample] = 1.0;
+        var range = new ValidSampleRange(FrontSample - 96, IrLength);
+        ProcessedChannel lower = Channel("C", ir, range);
+        ProcessedChannel upper = Channel("D", (Complex[])ir.Clone(), range);
+        JunctionCorrelationView view = JunctionViews.BuildCorrelationView(
+            new AdjacentPair(lower, upper, 1_500, 750, 3_000),
+            [lower, upper]);
+        var phase = new JunctionPhaseSweepView("C-D", "D", 4,
+            [new SignalPoint(-1, 0.2), new SignalPoint(0, 0.9), new SignalPoint(1, 0.2)]);
+        var plotView = new OxyPlot.WindowsForms.PlotView();
+        var plot = new VirtualCrossoverDspChainPlot(plotView, DspPlotMode.Correlation);
+        plot.DrawCorrelation(view, phase);
+        return (plot, plotView);
+    }
+
+    [Fact]
     public void DrawCoherence_DrawsOneKindOfOptimumMarkerAndClaimsNoPolarity()
     {
         // No polarity: the 2/3-octave probe is 4.3x wider than lobe spacing, so the carrier sign is noise (0-6% contrast measured).

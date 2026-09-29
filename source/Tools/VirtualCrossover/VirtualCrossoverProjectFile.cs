@@ -14,6 +14,17 @@ public enum DspPlotMode
     Coherence
 }
 
+/// <summary>The correlation view's curve groups, each behind its own check box on the plot.</summary>
+[Flags]
+public enum JunctionCurves
+{
+    None = 0,
+    Phat = 1,
+    Phase = 2,
+    Score = 4,
+    All = Phat | Phase | Score
+}
+
 /// <summary>The Tune junction dialog's last question; corner windows are kept per junction label.</summary>
 public sealed class VirtualCrossoverJunctionTuneSettings
 {
@@ -875,6 +886,31 @@ public sealed class VirtualCrossoverProjectFile
 
     // Index into the band-ordered junction list (0 = lowest).
     public int CorrelationPairIndex { get; set; }
+
+    // Stored as what is hidden, and only then: a session hiding no curve group serializes as before.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool CorrelationHidePhat { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool CorrelationHidePhase { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool CorrelationHideScore { get; set; }
+
+    [JsonIgnore]
+    public JunctionCurves CorrelationCurves
+    {
+        get =>
+            (CorrelationHidePhat ? JunctionCurves.None : JunctionCurves.Phat) |
+            (CorrelationHidePhase ? JunctionCurves.None : JunctionCurves.Phase) |
+            (CorrelationHideScore ? JunctionCurves.None : JunctionCurves.Score);
+        set
+        {
+            CorrelationHidePhat = !value.HasFlag(JunctionCurves.Phat);
+            CorrelationHidePhase = !value.HasFlag(JunctionCurves.Phase);
+            CorrelationHideScore = !value.HasFlag(JunctionCurves.Score);
+        }
+    }
 
     /// <summary>Write through <see cref="SetDspPlotMode"/> so the multi-field representation cannot half-apply.</summary>
     [JsonIgnore]

@@ -184,6 +184,7 @@ public partial class VirtualCrossoverPanel
                 session.Project.EffectiveDspPlotMode == DspPlotMode.Coherence;
             comboBoxCorrelationPair.Enabled = JunctionPlotModeSelected() &&
                 comboBoxCorrelationPair.Items.Count > 0;
+            dspChainPlot.CorrelationCurves = session.Project.CorrelationCurves;
 
             // Before filling blocks: it re-pins their height once instead of per block.
             RefreshProcessorRowAvailability();

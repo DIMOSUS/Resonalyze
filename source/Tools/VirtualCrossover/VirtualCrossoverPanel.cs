@@ -94,6 +94,7 @@ public partial class VirtualCrossoverPanel : UserControl
         acousticPlot = new VirtualCrossoverAcousticPlot(
             mainPlotView, AcousticViewBuilder.NoSourcesHint, CurrentAcousticView());
         dspChainPlot = new VirtualCrossoverDspChainPlot(dspPlotView, CurrentDspPlotMode());
+        dspChainPlot.CorrelationCurvesChanged += OnCorrelationCurvesChanged;
         mainPlotView.Paint += (_, _) => AppProfiler.FrameMark("vdsp-main");
         dspPlotView.Paint += (_, _) => AppProfiler.FrameMark("vdsp-dsp");
         InitializeGroupViewComboBox();

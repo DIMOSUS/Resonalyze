@@ -3,8 +3,8 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>Junction read-out spectra: each channel through the panel's own gate at an 8-cycle FDW, re-referenced to one time origin.
-/// See docs/tech/junction-phase-and-group-placement.md#junction-read-out-spectra.</summary>
+/// <summary>Junction read-out spectra: each channel through the panel's own gate at an 8-cycle FDW (the correlation view's phase
+/// curve picks the dialog's cycles), re-referenced to one time origin. See docs/tech/junction-phase-and-group-placement.md#junction-read-out-spectra.</summary>
 internal static class JunctionPhaseSpectra
 {
     /// <summary>Fixed 8 cycles, not the dialog's 4/6/8 selector (4 cycles moved φ a median 36° against the steady-state reference, 8 cycles 5°).</summary>
@@ -16,7 +16,8 @@ internal static class JunctionPhaseSpectra
         double? pinnedOffsetMs,
         double leftMs,
         double plateauMs,
-        double rightMs)
+        double rightMs,
+        int fdwCycles = FdwCycles)
     {
         ArgumentNullException.ThrowIfNull(channels);
         IReadOnlyList<PlacementChannel> placement = PlacementChannel.From(channels);
@@ -27,7 +28,7 @@ internal static class JunctionPhaseSpectra
             leftMs, plateauMs, rightMs);
         var template = new PhaseAnalysisSettings(
             PhaseWindowMode.FrequencyDependent,
-            FdwCycles,
+            fdwCycles,
             // No detrend: a shared τ cancels from the cross-phase, a per-channel one would BE the answer.
             PhaseDetrendMode.Off,
             ManualDetrendMilliseconds: 0.0,

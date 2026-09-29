@@ -108,11 +108,8 @@ public static class AutoAlignmentEngine
     // Just under 1 half period: reaches the flip partner, not the full-period same-polarity lobe.
     private const double LowJunctionReachFraction = 0.97;
 
-    /// <summary>Reach past the measured partner distance so the partner's optimum is interior, not an edge pin.</summary>
+    /// <summary>Margin on the measured partner distance where it lifts the fixed cap; the span itself never passes half a period.</summary>
     private const double SeedPartnerReachFactor = 1.2;
-
-    /// <summary>Between the half-period partner (must contain) and the full-period rival (must not).</summary>
-    private const double SeedPartnerMaxReachPeriods = 0.75;
 
     /// <summary>Auto delay ceiling when the device's MaxDelayMs is unknown: a transferability gate (car DSPs cap in tens of ms), not an operating region.</summary>
     public const double DefaultMaxDelayMs = 50;
@@ -1689,14 +1686,12 @@ public static class AutoAlignmentEngine
             double WindowLowMs, double WindowHighMs)
             SearchJunction(double? windowOverrideMs = null, double? centerOverrideMs = null)
         {
-            // Untrusted seed: cap grows toward a half period. Trusted seed: reach the MEASURED partner distance so the loss search can settle polarity.
+            // Untrusted seed: cap grows toward a half period. Trusted seed: the MEASURED partner distance lifts the cap, so the window holds the partner.
             // See docs/tech/auto-alignment.md#fine-search-window.
             double partnerReachMs =
                 !wideSeed &&
                 seedPartnerDistanceMs?.TryGetValue(pair, out double partnerMs) == true
-                    ? Math.Min(
-                        SeedPartnerReachFactor * partnerMs,
-                        SeedPartnerMaxReachPeriods * 2.0 * halfPeriodMs)
+                    ? SeedPartnerReachFactor * partnerMs
                     : 0;
             double maxRangeMs = wideSeed
                 ? Math.Max(MaxFineAlignmentRangeMs, LowJunctionReachFraction * halfPeriodMs)

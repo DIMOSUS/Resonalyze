@@ -70,7 +70,8 @@ zooms, why a box is too small) use a plain WinForms `ToolTip` on the control, sh
 ## Drag handles
 
 An annotation that implements `IPlotDragHandles` (`source/Plotting/PlotDragHandles.cs`) offers handles the
-pointer can grab; the EQ Wizard's band handles (`EqBandHandlesAnnotation`) are the one today. The controller
+pointer can grab; the EQ Wizard's band handles (`EqBandHandlesAnnotation`) and the curve check boxes
+(`PlotCurveTogglesAnnotation`, see [Curve toggles](#curve-toggles)) are the two today. The controller
 asks every such annotation in the model, so the gestures stay in the one map and the annotation stays free of
 WinForms:
 
@@ -91,6 +92,23 @@ The annotation reports only what the pointer did (press, where a drag went, whee
 turns that into edits: the EQ Wizard writes the band through `EqWizardBank.Edit`, which rounds it to the
 strip's precision, and lands the drag as one undo step on release. WinForms raises the view's `Click` after any
 press, so the wizard marks a press that took a handle and does not read that click as a click on empty graph.
+
+## Curve toggles
+
+`PlotCurveTogglesAnnotation` draws a column of check boxes in the plot's top-left corner, one per curve group, on
+the legend's backdrop. It is a drag handle that never drags: the press toggles the box and raises `Toggled` with its
+index, the wheel is declined so it zooms as anywhere else, and hover only highlights. Being an annotation it is drawn
+by whichever renderer the view has and needs no WinForms control over the plot.
+
+The layout is static, like the zoom buttons': rows of a fixed size start `PlotZoomButtons.LeftPairClearance` from
+the plot's left edge, so the vertical zoom pair stays clear, and hit-testing needs no text measure. A plot area under
+120 px either way draws no boxes, and `Shown = false` hides them where there is nothing to toggle. `SetChecked`
+restores a stored choice without raising the event.
+
+The owner decides what a box means. The Virtual DSP correlation view keeps three groups
+(`JunctionCurves`: PHAT with both combs and their envelope guides, phase, score with both polarities and its axis),
+redraws the last junction from the views it already holds, and reports the groups to the panel, which stores them in
+the session.
 
 ## Redraw before paint
 

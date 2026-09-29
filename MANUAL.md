@@ -526,7 +526,8 @@ The panel is dense, so here are its six regions:
    junction…**, **Auto delay...**), the AI assistant, **Tools...** (the audition render
    and overlay capture), session save/load and the tuning-sheet export.
 5. **The junction view** — the chain's own filters, or (as here) the correlation and
-   score curves the delay search reads at one junction, or its coherence.
+   score curves the delay search reads at one junction, with the junction-phase curve
+   beside them (the check boxes on the plot hide each group), or its coherence.
 6. **The read-out** — per-junction sum loss, junction phase, per-channel arrivals and
    the L/R level difference. Most of this guide is about making its numbers small.
 

@@ -1487,6 +1487,32 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void CorrelationCurves_RoundTripAsWhatIsHidden_AndAreAbsentWhenNothingIs()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new VirtualCrossoverProjectFile();
+            Assert.Equal(JunctionCurves.All, original.CorrelationCurves);
+            original.Save(root);
+            string saved = Directory.GetFiles(root, "virtual-crossover.json", SearchOption.AllDirectories).Single();
+            Assert.DoesNotContain("correlationHide", File.ReadAllText(saved), StringComparison.OrdinalIgnoreCase);
+
+            original.CorrelationCurves = JunctionCurves.Phat | JunctionCurves.Phase;
+            original.Save(root);
+            VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(JunctionCurves.Phat | JunctionCurves.Phase, loaded.CorrelationCurves);
+            Assert.True(loaded.CorrelationHideScore);
+            Assert.False(loaded.CorrelationHidePhat);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void CoherencePlotMode_RoundTripsAsALegacyValuePlusFlag()
     {
         // Switching junction modes must move exactly one flag: with both set the file opens on the correlation view.

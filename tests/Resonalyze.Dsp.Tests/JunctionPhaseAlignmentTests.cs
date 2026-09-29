@@ -61,6 +61,61 @@ public sealed class JunctionPhaseAlignmentTests
     }
 
     [Fact]
+    public void SweepCurve_PeaksAtTheNegatedFixWithTheReadOutsScore()
+    {
+        // The upper channel 1 ms late: the read-out asks +1 ms on the lower channel, so the curve, whose lags correct the
+        // upper channel, peaks at −1 ms with the read-out's best score and reads the current score at lag 0.
+        Complex[] lower = JunctionPhaseAlignment.BuildAnalysisSpectrum(
+            Processed(new DspChannelChain(Crossover: LowPass)), SampleRate);
+        Complex[] upper = JunctionPhaseAlignment.BuildAnalysisSpectrum(
+            Processed(new DspChannelChain(Crossover: HighPass, DelayMs: 1.0)), SampleRate);
+
+        JunctionPhaseResult? readOut = JunctionPhaseAlignment.AnalyzeSpectra(
+            lower, upper, SampleRate, CrossoverHz, BandLowHz, BandHighHz);
+        List<SignalPoint>? curve = JunctionPhaseAlignment.SweepCurve(
+            lower, upper, SampleRate, CrossoverHz, BandLowHz, BandHighHz,
+            rangeMs: 7.5, stepMs: 0.01);
+
+        Assert.NotNull(readOut);
+        Assert.NotNull(curve);
+        Assert.Equal(1_501, curve!.Count);
+        Assert.Equal(-7.5, curve[0].X, 9);
+        Assert.Equal(7.5, curve[^1].X, 9);
+        Assert.InRange(readOut!.BestExtraDelayMs, 0.95, 1.05);
+        SignalPoint peak = curve.MaxBy(point => point.Y);
+        Assert.InRange(peak.X, -readOut.BestExtraDelayMs - 0.011, -readOut.BestExtraDelayMs + 0.011);
+        Assert.InRange(peak.Y, readOut.BestScore - 0.01, readOut.BestScore + 1e-9);
+        SignalPoint current = curve.MinBy(point => Math.Abs(point.X));
+        Assert.Equal(readOut.CurrentScore, current.Y, 6);
+    }
+
+    [Fact]
+    public void SweepCurve_InvertedLowerChannelNegatesTheCurve()
+    {
+        // Inverting one channel adds π to every cross-phase: the same lags, the score's sign flipped throughout.
+        Complex[] upper = JunctionPhaseAlignment.BuildAnalysisSpectrum(
+            Processed(new DspChannelChain(Crossover: HighPass, DelayMs: 0.7)), SampleRate);
+        List<SignalPoint>? plain = JunctionPhaseAlignment.SweepCurve(
+            JunctionPhaseAlignment.BuildAnalysisSpectrum(
+                Processed(new DspChannelChain(Crossover: LowPass)), SampleRate),
+            upper, SampleRate, CrossoverHz, BandLowHz, BandHighHz, rangeMs: 6.0, stepMs: 0.05);
+        List<SignalPoint>? flipped = JunctionPhaseAlignment.SweepCurve(
+            JunctionPhaseAlignment.BuildAnalysisSpectrum(
+                Processed(new DspChannelChain(Crossover: LowPass, InvertPolarity: true)), SampleRate),
+            upper, SampleRate, CrossoverHz, BandLowHz, BandHighHz, rangeMs: 6.0, stepMs: 0.05);
+
+        Assert.NotNull(plain);
+        Assert.NotNull(flipped);
+        Assert.Equal(plain!.Count, flipped!.Count);
+        Assert.True(plain.Max(point => point.Y) > 0.9, "the aligned lobe should score near 1");
+        for (int i = 0; i < plain.Count; i++)
+        {
+            Assert.Equal(plain[i].X, flipped[i].X, 9);
+            Assert.Equal(-plain[i].Y, flipped[i].Y, 6);
+        }
+    }
+
+    [Fact]
     public void Analyze_PhaseAtCrossoverTracksTheTrueHandoverPhaseUnderABentBand()
     {
         // A notch bends the band's phase and a line fit's intercept extrapolates it into fc (+158° vs ~-15° in the field);

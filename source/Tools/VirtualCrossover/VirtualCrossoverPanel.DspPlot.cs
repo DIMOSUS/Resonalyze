@@ -210,11 +210,11 @@ public partial class VirtualCrossoverPanel
             }
             else
             {
-                // The gate read with the pair: a Gate dialog edit during the build requests the next frame.
-                JunctionViews.PhaseSweepInputs phaseInputs =
-                    JunctionViews.PhaseSweepInputs.From(session.Gate, session.ProcessorSampleRateHz);
+                // The read-out's own inputs, read with the pair: the channels it sums and the gate it windows through.
+                List<ProcessedChannel> summed = VirtualCrossoverFrame.Of(scope, SelectedGroupView).Summed;
+                JunctionViews.PhaseSweepGate phaseGate = JunctionViews.PhaseSweepGate.From(session.Gate);
                 correlation = await Task.Run(() => junctionViews.Correlation(pair, scope));
-                phaseSweep = await Task.Run(() => JunctionViews.BuildPhaseSweepView(pair, scope, phaseInputs));
+                phaseSweep = await Task.Run(() => JunctionViews.BuildPhaseSweepView(pair, summed, phaseGate));
             }
         }
         catch (Exception exception)

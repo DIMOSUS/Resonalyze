@@ -880,16 +880,18 @@ term, since a bulk delay wraps the phase into a sawtooth and swamps the filter g
 `BuildCoherenceView` hands the same cropped processed pair to `VirtualCrossoverAnalysis.ArrivalCoherenceLadder`.
 
 `BuildPhaseSweepView` draws the junction phase read-out on the correlation view's lag axis. It does not read the
-crop: the pair's spectra come from `JunctionPhaseSpectra.Build` over the whole scope, so the windows sit where the
-read-out's do and the curve's peak is the read-out's fix negated (the fix delays the lower channel, the axis the
-upper). It takes the Gate dialog's FDW cycles rather than the read-out's fixed 8, because the curve is for the eye and
-4/6/8 is what the eye compares; `PhaseSweepInputs` carries the gate, the cycles and the processor rate. Its step is
+crop. Its spectra are the read-out's own: `JunctionPhaseSpectra.Build` over the channels the view SUMS (the frame's
+`Summed`, the set that places the read-out's windows), through the panel's gate (`PhaseSweepGate`) at the read-out's
+fixed 8 cycles, analysed at the lower channel's processor rate. The Gate dialog's 4/6/8 selector is not read: at other
+cycles the curve would be another quantity than the numbers beside it (4 cycles move φ at the corner by a median 22°
+against 8 on the archive, up to 68°). So the curve's value at lag 0 is the read-out's score and its extremum the
+read-out's fix negated, the fix delaying the lower channel and the axis the upper. Its step is
 its own, a forty-eighth of the crossover period floored at window/600: the score's step draws a dozen points a period
 at a tweeter junction, which is corners on a curve this cheap to sample. It is not
 cached: the spectra come from `DataHelper`'s per-record cache and the sweep is a few hundred cosines per gated bin.
-The panel builds it after the cached correlation view, with the gate read once beside the pair, and draws no phase
-curve where the read-out reads nothing (a silent side, a band too narrow for a fit, a corner past the realizable
-range).
+The panel builds it after the cached correlation view, with the summing set and the gate read once beside the pair,
+and draws no phase curve where the read-out reads nothing (a pair of mixed rates, a silent side, a band too narrow for
+a fit, a corner past the realizable range).
 
 Three check boxes on the plot (`PlotCurveTogglesAnnotation`, see plot-interaction.md#curve-toggles) show and hide the
 view's curve groups: PHAT, phase and score. A toggle recomputes nothing: `VirtualCrossoverDspChainPlot` redraws the last

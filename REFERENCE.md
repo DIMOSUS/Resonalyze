@@ -3139,15 +3139,17 @@ inverted rival, the wavefronts within a period or two of the front decide it,
 because that is the part of the record the drivers made and the room had not yet
 answered.
 
-A fifth curve, **phase FDW-n**, is the **Junction phase** read-out swept along the
-same lag axis: the pair band's Σw·cos Δφ through the Gate dialog's frequency-dependent
-window at its 4/6/8 cycles, on the r scale. Its peak is where the read-out's *fix*
-would put the pair (with the sign reversed, since the fix delays the lower channel
-and the axis delays the upper), its sign is the polarity the band's phase prefers,
-and a top no higher than its half-period neighbour's says the band's phase cannot tell
-a lobe from its inverted twin — the tie the summation score and the direct twin are
-asked to settle. Switch the cycles in **Gate...** to see how much of the shape the
-cabin's reflections contribute; the read-out's own numbers keep their fixed 8 cycles.
+A fifth curve, **phase FDW-8**, is the **Junction phase** read-out swept along the
+same lag axis: the pair band's Σw·cos Δφ through the read-out's own window — the gate
+set in **Gate...**, always at 8 cycles whatever the dialog's selector reads — on the
+r scale. It is drawn for the polarity as it stands, so its value at the *current*
+marker is the read-out's score, its tallest peak is the best alignment without a flip
+and its deepest trough the best one with the lower channel inverted. The read-out's
+*fix* is the trough where it recommends the flip and the peak otherwise; on the axis
+it appears with its sign reversed, since the fix delays the lower channel and the axis
+delays the upper. A peak and a trough of nearly one depth say the band's phase cannot
+tell a lobe from its inverted twin — the tie the summation score and the direct twin
+are asked to settle.
 
 Three check boxes in the plot's top-left corner — **PHAT**, **phase**, **score** — show
 and hide the curves by group: both combs with their envelope guides, the phase curve,

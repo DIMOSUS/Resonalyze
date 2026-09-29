@@ -44,7 +44,6 @@ internal sealed record JunctionCoherenceView(
 internal sealed record JunctionPhaseSweepView(
     string PairTitle,
     string UpperName,
-    int FdwCycles,
     List<SignalPoint> Score) : IJunctionView;
 
 /// <summary>The names a junction view is titled with.</summary>
@@ -290,7 +289,7 @@ internal sealed class VirtualCrossoverDspChainPlot
         if (phase != null && shown.HasFlag(JunctionCurves.Phase))
         {
             AddCorrelationSeries(
-                model, $"phase FDW-{phase.FdwCycles}", phase.Score,
+                model, $"phase FDW-{JunctionPhaseSpectra.FdwCycles}", phase.Score,
                 UiPalette.CurveEnvelope.ToOxy(), CoefficientAxisKey,
                 LineStyle.Solid, 1.4);
         }

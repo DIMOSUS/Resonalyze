@@ -695,9 +695,9 @@ lower channel) and the current phase score.
   filter group delay) at the processor rate. The correlation view shows five curves: PHAT
   (whitened full-record comb, the honest read at bass junctions), PHAT direct (driver
   wavefronts, the polarity witness), the junction phase read-out swept over the same lags
-  (`JunctionPhaseAlignment.SweepCurve` on the read-out's own gated spectra at the Gate dialog's
-  FDW cycles, on the r scale: its sign is the polarity the band's phase prefers, its peak the
-  read-out's fix negated; see junction-phase-and-group-placement.md#sweep) and the dip-penalised
+  (`JunctionPhaseAlignment.SweepCurve` on the read-out's own gated spectra, on the r scale: the
+  score of the polarity as it stands, so a peak is an optimum without a flip and a trough one
+  with it; see junction-phase-and-group-placement.md#sweep) and the dip-penalised
   loss score for both polarities. Check boxes in the plot's top-left corner hide them by group
   (PHAT with its envelope guides, phase, score with its axis). The raw amplitude-weighted correlation was removed: it hands the lag to whatever the cabin plays
   loudest. Analytic-envelope guides mark each comb's packet centre. Coherence axes are keyed on

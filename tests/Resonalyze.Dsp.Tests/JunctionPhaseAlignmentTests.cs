@@ -90,6 +90,35 @@ public sealed class JunctionPhaseAlignmentTests
     }
 
     [Fact]
+    public void SweepCurve_WhereInversionWins_TheFixIsTheDeepestTrough()
+    {
+        // The curve is the present polarity's score. An inverted lower channel with the upper one 1 ms late: the read-out
+        // asks a flip and +1 ms, which the curve shows as its trough at −1 ms; its peaks are the other polarity's lobes.
+        Complex[] lower = JunctionPhaseAlignment.BuildAnalysisSpectrum(
+            Processed(new DspChannelChain(Crossover: LowPass, InvertPolarity: true)), SampleRate);
+        Complex[] upper = JunctionPhaseAlignment.BuildAnalysisSpectrum(
+            Processed(new DspChannelChain(Crossover: HighPass, DelayMs: 1.0)), SampleRate);
+
+        JunctionPhaseResult? readOut = JunctionPhaseAlignment.AnalyzeSpectra(
+            lower, upper, SampleRate, CrossoverHz, BandLowHz, BandHighHz);
+        List<SignalPoint>? curve = JunctionPhaseAlignment.SweepCurve(
+            lower, upper, SampleRate, CrossoverHz, BandLowHz, BandHighHz,
+            rangeMs: 6.25, stepMs: 0.01);
+
+        Assert.NotNull(readOut);
+        Assert.NotNull(curve);
+        Assert.True(readOut!.BestInvert);
+        Assert.InRange(readOut.BestExtraDelayMs, 0.95, 1.05);
+        SignalPoint trough = curve!.MinBy(point => point.Y);
+        Assert.InRange(trough.X, -readOut.BestExtraDelayMs - 0.011, -readOut.BestExtraDelayMs + 0.011);
+        Assert.InRange(-trough.Y, readOut.BestScore - 0.01, readOut.BestScore + 1e-9);
+        SignalPoint peak = curve.MaxBy(point => point.Y);
+        Assert.InRange(Math.Abs(peak.X - trough.X), 0.35 * 1000.0 / CrossoverHz, 0.65 * 1000.0 / CrossoverHz);
+        // The read-out quotes the other polarity off its coarser grid, unrefined.
+        Assert.InRange(peak.Y, readOut.OppositePolarityScore - 0.01, readOut.OppositePolarityScore + 0.01);
+    }
+
+    [Fact]
     public void SweepCurve_InvertedLowerChannelNegatesTheCurve()
     {
         // Inverting one channel adds π to every cross-phase: the same lags, the score's sign flipped throughout.

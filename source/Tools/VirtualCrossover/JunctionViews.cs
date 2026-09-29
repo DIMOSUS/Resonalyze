@@ -101,44 +101,46 @@ internal static class JunctionViews
     internal static double PhaseStepMs(AdjacentPair pair, double windowMs) =>
         Math.Max(1000.0 / pair.CrossoverHz / 48.0, windowMs / 600.0);
 
-    /// <summary>The gate the phase sweep windows through: the panel's placement, the Gate dialog's FDW cycles, the processor rate.</summary>
-    internal readonly record struct PhaseSweepInputs(
+    /// <summary>The panel's gate as the junction read-out takes it; the cycles are the read-out's, whatever the dialog reads.</summary>
+    internal readonly record struct PhaseSweepGate(
         double? PinnedOffsetMs,
         double LeftMs,
         double PlateauMs,
-        double RightMs,
-        int FdwCycles,
-        int? ProcessorSampleRate)
+        double RightMs)
     {
-        public static PhaseSweepInputs From(VirtualCrossoverPhaseGate gate, int? processorSampleRate) =>
-            new(gate.PinnedOffsetMs, gate.LeftMs, gate.PlateauMs, gate.RightMs, gate.FdwCycles, processorSampleRate);
+        public static PhaseSweepGate From(VirtualCrossoverPhaseGate gate) =>
+            new(gate.PinnedOffsetMs, gate.LeftMs, gate.PlateauMs, gate.RightMs);
     }
 
-    /// <summary>The junction phase read-out's score against a lag on the upper channel, through the read-out's own gated
-    /// spectra (the whole scope places the windows) at the dialog's FDW cycles; null where the read-out reads nothing.</summary>
+    /// <summary>The junction phase read-out's score against a lag on the upper channel, from the read-out's own spectra:
+    /// built as <see cref="VirtualCrossoverMetrics.BuildPhaseEntries"/> builds them, over the channels it sums. Null where it reads nothing.</summary>
     public static JunctionPhaseSweepView? BuildPhaseSweepView(
-        AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope, PhaseSweepInputs inputs)
+        AdjacentPair pair, IReadOnlyList<ProcessedChannel> summed, PhaseSweepGate gate)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.BuildPhaseSweepView");
-        List<ProcessedChannel> ordered = ProcessedChannels.OrderByBand(
-            scope.Contains(pair.Lower) ? scope : [pair.Lower, pair.Upper]);
-        int sampleRate = pair.Lower.SampleRate;
+        if (pair.Lower.SampleRate != pair.Upper.SampleRate)
+        {
+            return null;
+        }
+
+        IReadOnlyList<ProcessedChannel> set = summed.Contains(pair.Lower) && summed.Contains(pair.Upper)
+            ? summed
+            : [pair.Lower, pair.Upper];
+        List<ProcessedChannel> ordered = ProcessedChannels.OrderByBand(set);
         List<Complex[]> spectra = JunctionPhaseSpectra.Build(
-            ordered, sampleRate, inputs.PinnedOffsetMs,
-            inputs.LeftMs, inputs.PlateauMs, inputs.RightMs, inputs.FdwCycles);
+            ordered, set[0].SampleRate, gate.PinnedOffsetMs, gate.LeftMs, gate.PlateauMs, gate.RightMs);
         int lower = ordered.FindIndex(item => ReferenceEquals(item, pair.Lower));
         int upper = ordered.FindIndex(item => ReferenceEquals(item, pair.Upper));
         double windowMs = WindowMs(pair);
         List<SignalPoint>? score = JunctionPhaseAlignment.SweepCurve(
-            spectra[lower], spectra[upper], sampleRate,
+            spectra[lower], spectra[upper], pair.Lower.SampleRate,
             pair.CrossoverHz, pair.BandLowHz, pair.BandHighHz,
-            windowMs, PhaseStepMs(pair, windowMs), inputs.ProcessorSampleRate);
+            windowMs, PhaseStepMs(pair, windowMs), pair.Lower.Channel.ProcessorSampleRate);
         return score == null
             ? null
             : new JunctionPhaseSweepView(
                 $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}",
                 pair.Upper.Channel.Name,
-                inputs.FdwCycles,
                 score);
     }
 

@@ -172,6 +172,131 @@ public sealed class VirtualCrossoverCorrelationViewTests
     }
 
     [Fact]
+    public void BuildPhaseSweepView_ReadsNoPairOfMixedRates_AsTheReadOutDoes()
+    {
+        var ir = new Complex[IrLength];
+        ir[FrontSample] = 1.0;
+        var range = new ValidSampleRange(FrontSample - 96, IrLength);
+        ProcessedChannel lower = Channel("C", ir, range);
+        ProcessedChannel upper = Channel("D", (Complex[])ir.Clone(), range) with { SampleRate = 96_000 };
+
+        Assert.Null(JunctionViews.BuildPhaseSweepView(
+            new AdjacentPair(lower, upper, 1_500, 750, 3_000),
+            [lower, upper],
+            new JunctionViews.PhaseSweepGate(null, 5, 20, 20)));
+    }
+
+    [Fact]
+    public void DrawCorrelation_DrawsThePhaseSweepOnTheCoefficientAxisAndInTheLegend()
+    {
+        var ir = new Complex[IrLength];
+        ir[FrontSample] = 1.0;
+        var range = new ValidSampleRange(FrontSample - 96, IrLength);
+        ProcessedChannel lower = Channel("C", ir, range);
+        ProcessedChannel upper = Channel("D", (Complex[])ir.Clone(), range);
+        JunctionCorrelationView view = JunctionViews.BuildCorrelationView(
+            new AdjacentPair(lower, upper, 1_500, 750, 3_000),
+            [lower, upper]);
+        var phase = new JunctionPhaseSweepView("C-D", "D",
+            [new SignalPoint(-1, 0.2), new SignalPoint(0, 0.9), new SignalPoint(1, 0.2)]);
+
+        using var plotView = new OxyPlot.WindowsForms.PlotView();
+        var plot = new VirtualCrossoverDspChainPlot(plotView, DspPlotMode.Correlation);
+        plot.DrawCorrelation(view, phase);
+        var model = (PlotModel)plotView.Model;
+
+        OxyPlot.Series.LineSeries sweep = Assert.Single(
+            model.Series.OfType<OxyPlot.Series.LineSeries>(), series => series.Title == "phase FDW-8");
+        OxyPlot.Series.LineSeries phat = model.Series
+            .OfType<OxyPlot.Series.LineSeries>().Single(series => series.Title == "PHAT");
+        Assert.Equal(phat.YAxisKey, sweep.YAxisKey);
+        Assert.Equal([0.2, 0.9, 0.2], sweep.Points.Select(point => point.Y));
+        Assert.Equal(
+            ["PHAT", "PHAT direct", "phase FDW-8", "score", "score inv"],
+            model.Series
+                .Where(series => series.RenderInLegend)
+                .Select(series => series.Title)
+                .ToList());
+
+        // A junction the read-out cannot read keeps the four curves.
+        plot.DrawCorrelation(view, null);
+        Assert.DoesNotContain(
+            ((PlotModel)plotView.Model).Series, series => series.Title == "phase FDW-8");
+    }
+
+    [Fact]
+    public void CorrelationCurves_HideTheirGroupsAndTheScoreAxis()
+    {
+        (VirtualCrossoverDspChainPlot plot, OxyPlot.WindowsForms.PlotView plotView) = DrawnJunction();
+        using OxyPlot.WindowsForms.PlotView owned = plotView;
+        var model = (PlotModel)plotView.Model;
+        OxyPlot.Axes.Axis scoreAxis = model.Axes.Single(axis => axis.Title == "junction score (dB)");
+
+        plot.CorrelationCurves = JunctionCurves.Phase;
+
+        Assert.Equal(["phase FDW-8"], model.Series.Select(series => series.Title));
+        Assert.False(scoreAxis.IsAxisVisible);
+
+        plot.CorrelationCurves = JunctionCurves.Phat | JunctionCurves.Score;
+
+        Assert.Equal(
+            ["PHAT", "PHAT direct", "score", "score inv"],
+            model.Series.Where(series => series.RenderInLegend).Select(series => series.Title));
+        Assert.Equal(4, model.Series.Count(series => !series.RenderInLegend));
+        Assert.True(scoreAxis.IsAxisVisible);
+    }
+
+    [Fact]
+    public void APressOnACheckBox_RedrawsTheJunctionAndReportsTheGroups()
+    {
+        (VirtualCrossoverDspChainPlot plot, OxyPlot.WindowsForms.PlotView plotView) = DrawnJunction();
+        using OxyPlot.WindowsForms.PlotView owned = plotView;
+        var model = (PlotModel)plotView.Model;
+        using (var stream = new MemoryStream())
+        {
+            new OxyPlot.WindowsForms.PngExporter { Width = 900, Height = 400 }.Export(model, stream);
+        }
+
+        PlotCurveTogglesAnnotation toggles = Assert.Single(model.Annotations.OfType<PlotCurveTogglesAnnotation>());
+        var reported = new List<JunctionCurves>();
+        plot.CorrelationCurvesChanged += reported.Add;
+        ScreenPoint score = toggles.RowBounds(2)!.Value.Center;
+
+        plotView.ActualController.HandleMouseDown(
+            plotView,
+            new OxyMouseDownEventArgs { ChangedButton = OxyMouseButton.Left, ClickCount = 1, Position = score });
+        plotView.ActualController.HandleMouseUp(plotView, new OxyMouseEventArgs { Position = score });
+
+        Assert.Equal([JunctionCurves.Phat | JunctionCurves.Phase], reported);
+        Assert.Equal(JunctionCurves.Phat | JunctionCurves.Phase, plot.CorrelationCurves);
+        Assert.Equal(
+            ["PHAT", "PHAT direct", "phase FDW-8"],
+            model.Series.Where(series => series.RenderInLegend).Select(series => series.Title));
+
+        // No junction, nothing to toggle.
+        plot.DrawCorrelation(null);
+        Assert.Null(toggles.RowBounds(0));
+    }
+
+    private static (VirtualCrossoverDspChainPlot Plot, OxyPlot.WindowsForms.PlotView View) DrawnJunction()
+    {
+        var ir = new Complex[IrLength];
+        ir[FrontSample] = 1.0;
+        var range = new ValidSampleRange(FrontSample - 96, IrLength);
+        ProcessedChannel lower = Channel("C", ir, range);
+        ProcessedChannel upper = Channel("D", (Complex[])ir.Clone(), range);
+        JunctionCorrelationView view = JunctionViews.BuildCorrelationView(
+            new AdjacentPair(lower, upper, 1_500, 750, 3_000),
+            [lower, upper]);
+        var phase = new JunctionPhaseSweepView("C-D", "D",
+            [new SignalPoint(-1, 0.2), new SignalPoint(0, 0.9), new SignalPoint(1, 0.2)]);
+        var plotView = new OxyPlot.WindowsForms.PlotView();
+        var plot = new VirtualCrossoverDspChainPlot(plotView, DspPlotMode.Correlation);
+        plot.DrawCorrelation(view, phase);
+        return (plot, plotView);
+    }
+
+    [Fact]
     public void DrawCoherence_DrawsOneKindOfOptimumMarkerAndClaimsNoPolarity()
     {
         // No polarity: the 2/3-octave probe is 4.3x wider than lobe spacing, so the carrier sign is noise (0-6% contrast measured).

@@ -702,13 +702,32 @@ the coarse base(s) ± the period-scaled range.
   cap. The reach grows to `LowJunctionReachFraction` (0.97) of a half period: it reaches the flip
   partner without spanning the full-period lobe.
 - **Trusted seed.** It fixes where the adjacent lobe pair sits, not which lobe is right, so the
-  window must contain the polarity partner. The reach is the measured partner distance ×
-  `SeedPartnerReachFactor` (1.2), so the partner's optimum is interior rather than an edge pin,
-  capped at `SeedPartnerMaxReachPeriods` (0.75 periods). Real extrema are not where a monochromatic
-  comb says (3.18 ms vs a nominal 3.33 at the v5 cabin's 150 Hz junction). Without this, the fixed
-  2.5 ms cap excluded the partner at 10 of 13 archived junctions under 400 Hz (7.57 ms out at 60 Hz,
-  3.18 at 150). A hundredth of PHAT coefficient would have decided polarity, and reaching the partner
-  through the wide sweep costs the 1.6 dB promotion margin a near-tie cannot pay.
+  window must contain the polarity partner. The measured partner distance ×
+  `SeedPartnerReachFactor` (1.2) lifts the fixed cap and does nothing else: the span stays half a
+  period. Without the lift the 2.5 ms cap excluded the partner at 10 of 13 archived junctions under
+  400 Hz (7.57 ms out at 60 Hz, 3.18 at 150). A hundredth of PHAT coefficient would have decided
+  polarity, and reaching the partner through the wide sweep costs the 1.6 dB promotion margin a
+  near-tie cannot pay. A seed whose partner was not measured (its neighbour pinned to the
+  correlation's edge) keeps the fixed cap.
+- **Where the partner sits.** Real extrema are not where a monochromatic comb says. The seed's
+  band is an octave each side of the corner under a Hann window in log frequency, which puts the
+  whitened comb's neighbouring extremum at 0.913 of the nominal half period whatever the corner.
+  Filters, modes and reflections move it to 0.90-0.93 on synthetic pairs of every family and slope
+  and to 0.87-0.99 across the archive (3.18 ms vs a nominal 3.33 at the v5 cabin's 150 Hz
+  junction), never past 1, so half a period always holds the PHAT partner. The partner's LOSS
+  optimum is another quantity and sits farther out: 1.02-1.07 half periods on the archive, up to
+  1.28 under a resonance of the upper channel. The fine search therefore returns it cut at the
+  window's edge on 8 of 36 archived junctions (9 of 60 through the stereo cascade), which costs at
+  most 0.01 dB of average loss, 0.3 dB of dip and 0.26 ms.
+- **Who reads the partner.** `AlignmentSelection.Select` reads the fine candidates under the
+  prior. The witnesses (`#direct-coherence-witness`, `#direct-lobe-check`,
+  `#low-junction-polarity`) pool the fine, wide and retried optima by the prior-free score, and the
+  diagnostic sweep below holds the partner's optimum as an interior point, so an edge cut never
+  hides it from them. Widening the fine window to the reach instead was measured over 14 sessions
+  and both cascades and declined: 21 windows widen, one pick moves 0.21 ms at a 180 Hz junction
+  with a slightly worse sum (dip -1.04 -> -1.37 dB), and the battery does not move. Handing
+  `Select` the interior optimum changes no decision either: farther from the arrival, the prior
+  costs the partner more than its loss gains (score -1.38 -> -1.55 at that junction).
 - **Diagnostic sweep.** `DiagnosticFineRangeMs` (3 ms) is always logged, as `[diag]`, including the
   searched window. At low junctions it grows to `DiagnosticFineReachHalfPeriods` (1.25) half periods
   so it reaches past the flip partner.

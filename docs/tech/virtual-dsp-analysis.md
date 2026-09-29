@@ -692,10 +692,14 @@ lower channel) and the current phase score.
   to ±180° (nothing beyond; locking also removes it from the limits dialog). Impulse traces are
   normalised to their own envelope peak, step traces to the largest among them.
 - DSP-chain plot: drawn without the bulk delay (it would wrap phase into a sawtooth and swamp
-  filter group delay) at the processor rate. The correlation view shows four curves: PHAT
+  filter group delay) at the processor rate. The correlation view shows five curves: PHAT
   (whitened full-record comb, the honest read at bass junctions), PHAT direct (driver
-  wavefronts, the polarity witness) and the dip-penalised loss score for both polarities. The
-  raw amplitude-weighted correlation was removed: it hands the lag to whatever the cabin plays
+  wavefronts, the polarity witness), the junction phase read-out swept over the same lags
+  (`JunctionPhaseAlignment.SweepCurve` on the read-out's own gated spectra, on the r scale: the
+  score of the polarity as it stands, so a peak is an optimum without a flip and a trough one
+  with it; see junction-phase-and-group-placement.md#sweep) and the dip-penalised
+  loss score for both polarities. Check boxes in the plot's top-left corner hide them by group
+  (PHAT with its envelope guides, phase, score with its axis). The raw amplitude-weighted correlation was removed: it hands the lag to whatever the cabin plays
   loudest. Analytic-envelope guides mark each comb's packet centre. Coherence axes are keyed on
   pair, lag limit bucketed to 0.5 ms and the band (the frequency axis is fitted from it; editing a
   crossover keeps the title and often the lag bucket). The ±T/2 corridor marks where an optimum

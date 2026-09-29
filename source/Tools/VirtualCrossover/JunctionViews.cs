@@ -21,14 +21,9 @@ internal static class JunctionViews
             ValidSampleRange lowerRange, ValidSampleRange upperRange, int sampleRate) = crop;
         // No anchor: each channel windowed at its own band-limited front, as Auto delay measures junctions.
 
-        // 1.5 crossover periods each side (floor 3 ms) keeps neighbouring comb lobes in view at 80 Hz.
-        double windowMs = Math.Max(3.0, 1.5 * 1000.0 / pair.CrossoverHz);
+        double windowMs = WindowMs(pair);
         double passOctaves = Math.Log2(pair.BandHighHz / pair.BandLowHz);
-
-        // The comb repeats per period: a tenth of a period avoids aliasing at high junctions; window/300 bounds the sweep.
-        double stepMs = Math.Max(
-            Math.Min(windowMs / 60.0, 100.0 / pair.CrossoverHz),
-            Math.Max(0.005, windowMs / 300.0));
+        double stepMs = StepMs(pair, windowMs);
 
         List<SignalPoint> whitened = null!;
         List<SignalPoint> whitenedDirect = null!;
@@ -90,6 +85,63 @@ internal static class JunctionViews
             scoreNormal,
             scoreInverted,
             lowerArrivalMs - upperArrivalMs);
+    }
+
+    // 1.5 crossover periods each side (floor 3 ms) keeps neighbouring comb lobes in view at 80 Hz.
+    internal static double WindowMs(AdjacentPair pair) =>
+        Math.Max(3.0, 1.5 * 1000.0 / pair.CrossoverHz);
+
+    // The comb repeats per period: a tenth of a period avoids aliasing at high junctions; window/300 bounds the sweep.
+    internal static double StepMs(AdjacentPair pair, double windowMs) =>
+        Math.Max(
+            Math.Min(windowMs / 60.0, 100.0 / pair.CrossoverHz),
+            Math.Max(0.005, windowMs / 300.0));
+
+    // Finer than the score's: the sweep costs cosines, not a windowed sum, and a dozen points a period draws corners.
+    internal static double PhaseStepMs(AdjacentPair pair, double windowMs) =>
+        Math.Max(1000.0 / pair.CrossoverHz / 48.0, windowMs / 600.0);
+
+    /// <summary>The panel's gate as the junction read-out takes it; the cycles are the read-out's, whatever the dialog reads.</summary>
+    internal readonly record struct PhaseSweepGate(
+        double? PinnedOffsetMs,
+        double LeftMs,
+        double PlateauMs,
+        double RightMs)
+    {
+        public static PhaseSweepGate From(VirtualCrossoverPhaseGate gate) =>
+            new(gate.PinnedOffsetMs, gate.LeftMs, gate.PlateauMs, gate.RightMs);
+    }
+
+    /// <summary>The junction phase read-out's score against a lag on the upper channel, from the read-out's own spectra:
+    /// built as <see cref="VirtualCrossoverMetrics.BuildPhaseEntries"/> builds them, over the channels it sums. Null where it reads nothing.</summary>
+    public static JunctionPhaseSweepView? BuildPhaseSweepView(
+        AdjacentPair pair, IReadOnlyList<ProcessedChannel> summed, PhaseSweepGate gate)
+    {
+        using var _ = AppProfiler.Zone("VirtualDSP.BuildPhaseSweepView");
+        if (pair.Lower.SampleRate != pair.Upper.SampleRate)
+        {
+            return null;
+        }
+
+        IReadOnlyList<ProcessedChannel> set = summed.Contains(pair.Lower) && summed.Contains(pair.Upper)
+            ? summed
+            : [pair.Lower, pair.Upper];
+        List<ProcessedChannel> ordered = ProcessedChannels.OrderByBand(set);
+        List<Complex[]> spectra = JunctionPhaseSpectra.Build(
+            ordered, set[0].SampleRate, gate.PinnedOffsetMs, gate.LeftMs, gate.PlateauMs, gate.RightMs);
+        int lower = ordered.FindIndex(item => ReferenceEquals(item, pair.Lower));
+        int upper = ordered.FindIndex(item => ReferenceEquals(item, pair.Upper));
+        double windowMs = WindowMs(pair);
+        List<SignalPoint>? score = JunctionPhaseAlignment.SweepCurve(
+            spectra[lower], spectra[upper], pair.Lower.SampleRate,
+            pair.CrossoverHz, pair.BandLowHz, pair.BandHighHz,
+            windowMs, PhaseStepMs(pair, windowMs), pair.Lower.Channel.ProcessorSampleRate);
+        return score == null
+            ? null
+            : new JunctionPhaseSweepView(
+                $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}",
+                pair.Upper.Channel.Name,
+                score);
     }
 
     private static List<SignalPoint> Penalized(

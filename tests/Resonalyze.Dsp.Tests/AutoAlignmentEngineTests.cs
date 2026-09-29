@@ -827,6 +827,8 @@ public sealed class AutoAlignmentEngineTests
         Assert.True(
             high - low < 2.0 * 1000.0 / 85.0,
             $"the window must stay inside one period:\r\n{channelLine}");
+        // The partner's distance lifts the cap and no more: the span stays half a period.
+        Assert.Equal(500.0 / 85.0, (high - low) / 2.0, 2);
     }
 
     [Fact]

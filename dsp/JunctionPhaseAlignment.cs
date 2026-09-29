@@ -173,6 +173,118 @@ public static class JunctionPhaseAlignment
         double bandHighHz,
         int? processorSampleRate = null)
     {
+        GatedBins? bins = GatherBins(
+            lowerSpectrum, upperSpectrum, sampleRate, crossoverHz, bandLowHz, bandHighHz, processorSampleRate);
+        if (bins == null)
+        {
+            return null;
+        }
+
+        (List<double> frequencies, List<double> phases, List<double> weights) = bins;
+        (double slope, double intercept, double rmsRad) =
+            FitWeightedLine(frequencies, phases, weights);
+        double fitDelayMs = -slope / Math.Tau * 1000.0;
+
+        (double phaseAtCrossover, double phaseConsistency) = PhaseAtCrossover(
+            frequencies, phases, weights, crossoverHz, slope, intercept);
+
+        // Inverting the lower channel negates every cross-phase, so the inverted score is -sweep: its trough is the best inverted alignment.
+        // A genuine inversion reaches ~+1 there where no delay can; that, not φ≈180°, decides a flip.
+        double periodMs = 1000.0 / crossoverHz;
+        double stepMs = periodMs / SweepStepsPerPeriod;
+        double rangeMs = SweepPeriodsEachSide * periodMs;
+        int steps = (int)Math.Round(rangeMs / stepMs);
+        var scores = new double[2 * steps + 1];
+        int maxIndex = 0;
+        int minIndex = 0;
+        for (int s = 0; s < scores.Length; s++)
+        {
+            scores[s] = Score(frequencies, phases, weights, (s - steps) * stepMs);
+            if (scores[s] > scores[maxIndex]) maxIndex = s;
+            if (scores[s] < scores[minIndex]) minIndex = s;
+        }
+
+        double normalBest = scores[maxIndex];
+        double invertedBest = -scores[minIndex];
+        bool bestInvert = invertedBest > normalBest + PolarityFlipAdvantage;
+        double oppositeScore = bestInvert ? normalBest : invertedBest;
+
+        int polaritySign = bestInvert ? -1 : 1;
+        double[] signedScores = bestInvert ? Negated(scores) : scores;
+        int bestIndex = bestInvert ? minIndex : maxIndex;
+        (double bestExtraMs, double bestScore) = RefineOptimum(
+            signedScores, bestIndex, steps, stepMs,
+            dt => polaritySign * Score(frequencies, phases, weights, dt));
+
+        // Same-polarity question only: a flip plus half period always ties at low frequencies.
+        (double? rivalExtraMs, double? rivalScore) = FindRivalLobe(
+            signedScores, bestIndex, steps, stepMs,
+            RivalMinimumSeparationPeriods * periodMs);
+
+        return new JunctionPhaseResult(
+            CurrentScore: Score(frequencies, phases, weights, 0.0),
+            PhaseAtCrossoverDeg: phaseAtCrossover * 180.0 / Math.PI,
+            PhaseConsistency: phaseConsistency,
+            BestExtraDelayMs: bestExtraMs,
+            BestInvert: bestInvert,
+            BestScore: bestScore,
+            OppositePolarityScore: oppositeScore,
+            RivalExtraDelayMs: rivalExtraMs,
+            RivalScore: rivalScore,
+            LobeMargin: rivalScore.HasValue ? bestScore - rivalScore.Value : null,
+            FitDelayMs: fitDelayMs,
+            FitRmsDeg: rmsRad * 180.0 / Math.PI);
+    }
+
+    /// <summary>The band score against a lag added to the UPPER channel (the negated extra delay on the lower one) over
+    /// ±<paramref name="rangeMs"/>: the read-out's sweep as a curve. Null where <see cref="AnalyzeWindowedSpectra"/> reads nothing.</summary>
+    public static List<SignalPoint>? SweepCurve(
+        Complex[] lowerSpectrum,
+        Complex[] upperSpectrum,
+        int sampleRate,
+        double crossoverHz,
+        double bandLowHz,
+        double bandHighHz,
+        double rangeMs,
+        double stepMs,
+        int? processorSampleRate = null)
+    {
+        if (!(rangeMs > 0) || !(stepMs > 0))
+        {
+            throw new ArgumentOutOfRangeException(nameof(stepMs), "The range and step must be positive.");
+        }
+
+        GatedBins? bins = GatherBins(
+            lowerSpectrum, upperSpectrum, sampleRate, crossoverHz, bandLowHz, bandHighHz, processorSampleRate);
+        if (bins == null)
+        {
+            return null;
+        }
+
+        // The step is fitted to the range, so the curve ends on it exactly.
+        int steps = Math.Max(1, (int)Math.Round(rangeMs / stepMs));
+        var curve = new List<SignalPoint>(2 * steps + 1);
+        for (int s = -steps; s <= steps; s++)
+        {
+            double lagMs = rangeMs * s / steps;
+            curve.Add(new SignalPoint(
+                lagMs, Score(bins.Frequencies, bins.Phases, bins.Weights, -lagMs)));
+        }
+
+        return curve;
+    }
+
+    private sealed record GatedBins(List<double> Frequencies, List<double> Phases, List<double> Weights);
+
+    private static GatedBins? GatherBins(
+        Complex[] lowerSpectrum,
+        Complex[] upperSpectrum,
+        int sampleRate,
+        double crossoverHz,
+        double bandLowHz,
+        double bandHighHz,
+        int? processorSampleRate)
+    {
         ArgumentNullException.ThrowIfNull(lowerSpectrum);
         ArgumentNullException.ThrowIfNull(upperSpectrum);
         if (sampleRate <= 0)
@@ -244,64 +356,10 @@ public static class JunctionPhaseAlignment
             phases.Add(phase);
             weights.Add(weight);
         }
-        if (frequencies.Count < MinimumFitBins)
-        {
-            return null;
-        }
 
-        (double slope, double intercept, double rmsRad) =
-            FitWeightedLine(frequencies, phases, weights);
-        double fitDelayMs = -slope / Math.Tau * 1000.0;
-
-        (double phaseAtCrossover, double phaseConsistency) = PhaseAtCrossover(
-            frequencies, phases, weights, crossoverHz, slope, intercept);
-
-        // Inverting the lower channel negates every cross-phase, so the inverted score is -sweep: its trough is the best inverted alignment.
-        // A genuine inversion reaches ~+1 there where no delay can; that, not φ≈180°, decides a flip.
-        double periodMs = 1000.0 / crossoverHz;
-        double stepMs = periodMs / SweepStepsPerPeriod;
-        double rangeMs = SweepPeriodsEachSide * periodMs;
-        int steps = (int)Math.Round(rangeMs / stepMs);
-        var scores = new double[2 * steps + 1];
-        int maxIndex = 0;
-        int minIndex = 0;
-        for (int s = 0; s < scores.Length; s++)
-        {
-            scores[s] = Score(frequencies, phases, weights, (s - steps) * stepMs);
-            if (scores[s] > scores[maxIndex]) maxIndex = s;
-            if (scores[s] < scores[minIndex]) minIndex = s;
-        }
-
-        double normalBest = scores[maxIndex];
-        double invertedBest = -scores[minIndex];
-        bool bestInvert = invertedBest > normalBest + PolarityFlipAdvantage;
-        double oppositeScore = bestInvert ? normalBest : invertedBest;
-
-        int polaritySign = bestInvert ? -1 : 1;
-        double[] signedScores = bestInvert ? Negated(scores) : scores;
-        int bestIndex = bestInvert ? minIndex : maxIndex;
-        (double bestExtraMs, double bestScore) = RefineOptimum(
-            signedScores, bestIndex, steps, stepMs,
-            dt => polaritySign * Score(frequencies, phases, weights, dt));
-
-        // Same-polarity question only: a flip plus half period always ties at low frequencies.
-        (double? rivalExtraMs, double? rivalScore) = FindRivalLobe(
-            signedScores, bestIndex, steps, stepMs,
-            RivalMinimumSeparationPeriods * periodMs);
-
-        return new JunctionPhaseResult(
-            CurrentScore: Score(frequencies, phases, weights, 0.0),
-            PhaseAtCrossoverDeg: phaseAtCrossover * 180.0 / Math.PI,
-            PhaseConsistency: phaseConsistency,
-            BestExtraDelayMs: bestExtraMs,
-            BestInvert: bestInvert,
-            BestScore: bestScore,
-            OppositePolarityScore: oppositeScore,
-            RivalExtraDelayMs: rivalExtraMs,
-            RivalScore: rivalScore,
-            LobeMargin: rivalScore.HasValue ? bestScore - rivalScore.Value : null,
-            FitDelayMs: fitDelayMs,
-            FitRmsDeg: rmsRad * 180.0 / Math.PI);
+        return frequencies.Count < MinimumFitBins
+            ? null
+            : new GatedBins(frequencies, phases, weights);
     }
 
     // Falls back to the intercept with R = 0 when a spectral gap empties the window.

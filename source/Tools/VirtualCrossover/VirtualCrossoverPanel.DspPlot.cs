@@ -61,6 +61,12 @@ public partial class VirtualCrossoverPanel
         RedrawDspPlot();
     }
 
+    private void OnCorrelationCurvesChanged(JunctionCurves curves)
+    {
+        session.Project.CorrelationCurves = curves;
+        ScheduleSave();
+    }
+
     private void RedrawDspPlot()
     {
         if (IsJunctionMode(CurrentDspPlotMode()))
@@ -191,6 +197,7 @@ public partial class VirtualCrossoverPanel
         AdjacentPair pair = pairs[Math.Clamp(
             session.Project.CorrelationPairIndex, 0, pairs.Count - 1)];
         JunctionCorrelationView? correlation = null;
+        JunctionPhaseSweepView? phaseSweep = null;
         JunctionCoherenceView? coherence = null;
         try
         {
@@ -203,7 +210,11 @@ public partial class VirtualCrossoverPanel
             }
             else
             {
+                // The read-out's own inputs, read with the pair: the channels it sums and the gate it windows through.
+                List<ProcessedChannel> summed = VirtualCrossoverFrame.Of(scope, SelectedGroupView).Summed;
+                JunctionViews.PhaseSweepGate phaseGate = JunctionViews.PhaseSweepGate.From(session.Gate);
                 correlation = await Task.Run(() => junctionViews.Correlation(pair, scope));
+                phaseSweep = await Task.Run(() => JunctionViews.BuildPhaseSweepView(pair, summed, phaseGate));
             }
         }
         catch (Exception exception)
@@ -228,7 +239,7 @@ public partial class VirtualCrossoverPanel
         }
         else if (correlation != null)
         {
-            dspChainPlot.DrawCorrelation(correlation);
+            dspChainPlot.DrawCorrelation(correlation, phaseSweep);
         }
     }
 }

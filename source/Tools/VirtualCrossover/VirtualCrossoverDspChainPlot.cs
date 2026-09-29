@@ -40,6 +40,12 @@ internal sealed record JunctionCoherenceView(
     double BandHighHz,
     List<VirtualCrossoverAnalysis.ArrivalCoherencePoint> Ladder) : IJunctionView;
 
+/// <summary>The junction phase read-out swept over the correlation view's lags (<see cref="JunctionPhaseAlignment.SweepCurve"/>), −1..1.</summary>
+internal sealed record JunctionPhaseSweepView(
+    string PairTitle,
+    string UpperName,
+    List<SignalPoint> Score) : IJunctionView;
+
 /// <summary>The names a junction view is titled with.</summary>
 internal interface IJunctionView
 {
@@ -67,6 +73,14 @@ internal sealed class VirtualCrossoverDspChainPlot
     private readonly PlotModel chainModel;
     private readonly PlotModel correlationModel;
     private readonly PlotModel coherenceModel;
+
+    // Box order on the plot, top to bottom: the legend's.
+    private static readonly JunctionCurves[] CurveGroups =
+        [JunctionCurves.Phat, JunctionCurves.Phase, JunctionCurves.Score];
+
+    private readonly PlotCurveTogglesAnnotation correlationToggles = new(["PHAT", "phase", "score"]);
+    private JunctionCorrelationView? lastCorrelation;
+    private JunctionPhaseSweepView? lastPhase;
 
     // Mode switches reset the range; in-mode redraws keep the user's zoom.
     private DspPlotMode? valueAxisMode;
@@ -105,6 +119,12 @@ internal sealed class VirtualCrossoverDspChainPlot
         ConfigureValueAxis((LinearAxis)model.Axes[^1], initialMode);
         chainModel = model;
         correlationModel = CreateCorrelationModel();
+        correlationModel.Annotations.Add(correlationToggles);
+        correlationToggles.Toggled += _ =>
+        {
+            DrawCorrelation(lastCorrelation, lastPhase);
+            CorrelationCurvesChanged?.Invoke(CorrelationCurves);
+        };
         coherenceModel = CreateCoherenceModel();
         view.Model = initialMode switch
         {
@@ -165,11 +185,45 @@ internal sealed class VirtualCrossoverDspChainPlot
         return model;
     }
 
-    /// <summary>Draws one junction's correlation and score curves; null leaves the empty model with its watermark.</summary>
-    public void DrawCorrelation(JunctionCorrelationView? data)
+    /// <summary>Raised when a check box on the correlation plot shows or hides a curve group.</summary>
+    public event Action<JunctionCurves>? CorrelationCurvesChanged;
+
+    /// <summary>The curve groups the correlation view draws; setting it redraws the last junction without raising the event.</summary>
+    public JunctionCurves CorrelationCurves
+    {
+        get
+        {
+            JunctionCurves shown = JunctionCurves.None;
+            for (int i = 0; i < CurveGroups.Length; i++)
+            {
+                shown |= correlationToggles.IsChecked(i) ? CurveGroups[i] : JunctionCurves.None;
+            }
+
+            return shown;
+        }
+
+        set
+        {
+            for (int i = 0; i < CurveGroups.Length; i++)
+            {
+                correlationToggles.SetChecked(i, value.HasFlag(CurveGroups[i]));
+            }
+
+            if (ReferenceEquals(view.Model, correlationModel))
+            {
+                DrawCorrelation(lastCorrelation, lastPhase);
+            }
+        }
+    }
+
+    /// <summary>Draws one junction's correlation and score curves, plus the phase sweep where it reads; null leaves the empty model with its watermark.</summary>
+    public void DrawCorrelation(JunctionCorrelationView? data, JunctionPhaseSweepView? phase = null)
     {
         view.Model = correlationModel;
         PlotModel model = correlationModel;
+        lastCorrelation = data;
+        lastPhase = phase;
+        correlationToggles.Shown = data != null;
         RemoveSeries(model);
         for (int index = model.Annotations.Count - 1; index >= 0; index--)
         {
@@ -209,32 +263,50 @@ internal sealed class VirtualCrossoverDspChainPlot
             }
         }
 
-        // Envelope guides: the packet centre a lobe-skip is read against; the carrier answers which lobe.
-        AddEnvelopeGuides(
-            model, "PHAT envelope", data.Whitened,
-            UiPalette.CurveChainA.ToOxy());
-        AddEnvelopeGuides(
-            model, "PHAT direct envelope", data.WhitenedDirect,
-            UiPalette.CurveChainB.ToOxy());
+        JunctionCurves shown = CorrelationCurves;
+        if (shown.HasFlag(JunctionCurves.Phat))
+        {
+            // Envelope guides: the packet centre a lobe-skip is read against; the carrier answers which lobe.
+            AddEnvelopeGuides(
+                model, "PHAT envelope", data.Whitened,
+                UiPalette.CurveChainA.ToOxy());
+            AddEnvelopeGuides(
+                model, "PHAT direct envelope", data.WhitenedDirect,
+                UiPalette.CurveChainB.ToOxy());
 
-        // PHAT: full-record comb; PHAT direct: driver wavefronts (polarity witness); scores: the searched surface.
-        // No raw amplitude-weighted correlation: it follows whatever the cabin plays loudest.
-        AddCorrelationSeries(
-            model, "PHAT", data.Whitened,
-            UiPalette.CurveChainA.ToOxy(), CoefficientAxisKey,
-            LineStyle.Solid, 1.8);
-        AddCorrelationSeries(
-            model, "PHAT direct", data.WhitenedDirect,
-            UiPalette.CurveChainB.ToOxy(), CoefficientAxisKey,
-            LineStyle.Solid, 1.4);
-        AddCorrelationSeries(
-            model, "score", data.ScoreNormal,
-            UiPalette.CurveChainC.ToOxy(), ScoreAxisKey,
-            LineStyle.Solid, 1.8);
-        AddCorrelationSeries(
-            model, "score inv", data.ScoreInverted,
-            UiPalette.CurveChainD.ToOxy(), ScoreAxisKey,
-            LineStyle.Dash, 1.8);
+            // PHAT: full-record comb; PHAT direct: driver wavefronts (polarity witness); scores: the searched surface.
+            // No raw amplitude-weighted correlation: it follows whatever the cabin plays loudest.
+            AddCorrelationSeries(
+                model, "PHAT", data.Whitened,
+                UiPalette.CurveChainA.ToOxy(), CoefficientAxisKey,
+                LineStyle.Solid, 1.8);
+            AddCorrelationSeries(
+                model, "PHAT direct", data.WhitenedDirect,
+                UiPalette.CurveChainB.ToOxy(), CoefficientAxisKey,
+                LineStyle.Solid, 1.4);
+        }
+
+        if (phase != null && shown.HasFlag(JunctionCurves.Phase))
+        {
+            AddCorrelationSeries(
+                model, $"phase FDW-{JunctionPhaseSpectra.FdwCycles}", phase.Score,
+                UiPalette.CurveEnvelope.ToOxy(), CoefficientAxisKey,
+                LineStyle.Solid, 1.4);
+        }
+
+        bool showScore = shown.HasFlag(JunctionCurves.Score);
+        model.Axes.Single(axis => axis.Key == ScoreAxisKey).IsAxisVisible = showScore;
+        if (showScore)
+        {
+            AddCorrelationSeries(
+                model, "score", data.ScoreNormal,
+                UiPalette.CurveChainC.ToOxy(), ScoreAxisKey,
+                LineStyle.Solid, 1.8);
+            AddCorrelationSeries(
+                model, "score inv", data.ScoreInverted,
+                UiPalette.CurveChainD.ToOxy(), ScoreAxisKey,
+                LineStyle.Dash, 1.8);
+        }
 
         // Lag 0 is the applied alignment.
         model.Annotations.Add(new LineAnnotation

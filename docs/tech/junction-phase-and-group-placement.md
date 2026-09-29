@@ -79,6 +79,12 @@ A crossover at or above the bilinear transform's realizable limit (`BilinearTran
 sample rate) is silently clamped to a different frequency by the filter, so the spectra roll off elsewhere
 than `crossoverHz` says; the sweep would use the wrong period. The read-out is suppressed there.
 
+`SweepCurve` exposes the same score as a curve against a lag added to the UPPER channel — the negated extra delay on
+the lower one, the correlation view's axis — over a caller's range and step. It shares the gated bins with the
+read-out (`GatherBins`), so its value at lag 0 is the current score and it is null exactly where the read-out is. It
+is the score of the polarity as it stands, which one sweep gives for both: the read-out's fix, negated, is the curve's
+tallest peak where the polarity is kept and its deepest trough where a flip is recommended.
+
 ### Analysis windows
 
 The Virtual DSP read-out calls `AnalyzeWindowedSpectra`: the panel's phase gate (offset and Tukey durations) at
@@ -271,7 +277,7 @@ worse than shared, so they fail both tests with room to spare.
 
 `JunctionPhaseSpectra.Build` produces the spectra the junction read-out uses: the user's gate offset (or the
 arrival it follows unpinned) and Tukey durations, but always a frequency-dependent window of `FdwCycles` = 8,
-re-referenced to one absolute origin. Spectra use peak index 0 (gate offsets are absolute times from record start,
+re-referenced to one absolute origin. The correlation view's phase curve is drawn from the same spectra. Spectra use peak index 0 (gate offsets are absolute times from record start,
 the same origin `GatedPhaseCurves` uses), and each is rotated to the record origin through a one-spectrum
 `DataHelper.SumGatedSpectra`, because per-curve placement is a different time reference per channel and the
 cross-phase would carry the placement difference as delay. No detrend is applied: a shared τ cancels from the

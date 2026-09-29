@@ -323,6 +323,48 @@ public sealed class VirtualCrossoverMetricsTests
     }
 
     [Fact]
+    public void ThePhaseSweepView_IsTheReadOutsOwnCurve_WhateverTheGateDialogReads()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
+        List<ProcessedChannel> summed =
+        [
+            ProcessedThroughChain("B", CrossoverKind.HighPass, 200, delayMs: 2.0),
+            ProcessedThroughChain("A", CrossoverKind.LowPass, 200)
+        ];
+        AdjacentPair pair = Assert.Single(
+            ProcessedChannels.GetAdjacentPairs(ProcessedChannels.OrderByBand(summed)));
+        JunctionPhaseResult readOut = Assert.Single(metrics.BuildPhaseEntries(summed, JunctionSpectra)).Result;
+
+        // The read-out's gate, with the dialog on each of its cycle counts: the read-out reads 8 whatever it says.
+        List<List<SignalPoint>> curves = new[] { 4, 6, 8 }
+            .Select(dialogCycles => new VirtualCrossoverPhaseGate(
+                PhaseWindowMode.FrequencyDependent, dialogCycles, PhaseDetrendMode.Off,
+                LeftMs: 0.5, PlateauMs: 4.0, RightMs: 1.5,
+                StoredOffsetMs: null, StoredDetrendMs: null, Preview: null))
+            .Select(gate => JunctionViews.BuildPhaseSweepView(
+                pair, summed, JunctionViews.PhaseSweepGate.From(gate)))
+            .Select(view => Assert.IsType<JunctionPhaseSweepView>(view).Score)
+            .ToList();
+
+        List<SignalPoint> curve = curves[0];
+        Assert.All(curves, other => Assert.Equal(curve, other));
+        double windowMs = JunctionViews.WindowMs(pair);
+        double stepMs = JunctionViews.PhaseStepMs(pair, windowMs);
+        Assert.Equal(-windowMs, curve[0].X, 9);
+        Assert.Equal(windowMs, curve[^1].X, 9);
+        Assert.InRange(curve[1].X - curve[0].X, 0.9 * stepMs, 1.1 * stepMs);
+
+        SignalPoint current = curve.MinBy(point => Math.Abs(point.X));
+        Assert.Equal(0.0, current.X, 9);
+        Assert.Equal(readOut.CurrentScore, current.Y, 9);
+        Assert.False(readOut.BestInvert);
+        SignalPoint peak = curve.MaxBy(point => point.Y);
+        Assert.InRange(peak.X, -readOut.BestExtraDelayMs - stepMs, -readOut.BestExtraDelayMs + stepMs);
+        Assert.InRange(peak.Y, readOut.BestScore - 0.01, readOut.BestScore + 1e-9);
+    }
+
+    [Fact]
     public async Task ComputeSideSumAsync_SumsTheParticipatingSides()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();

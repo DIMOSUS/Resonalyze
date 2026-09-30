@@ -9,20 +9,29 @@ param(
 $results = Join-Path ([System.IO.Path]::GetTempPath()) ("resonalyze-slow-tests-" + [guid]::NewGuid().ToString("N"))
 dotnet test $Target -c Release --filter "Category!=Hardware&Category!=Slow" --logger trx --results-directory $results
 $testExit = $LASTEXITCODE
-if (-not (Test-Path $results)) {
+if (-not (Test-Path -LiteralPath $results)) {
     # Nothing ran, most often a failed build: its own errors are the message.
     exit ([Math]::Max($testExit, 1))
 }
 
 $methods = @{}
-foreach ($file in Get-ChildItem $results -Filter *.trx) {
-    [xml]$trx = Get-Content $file.FullName -Raw
+# Literal paths throughout: dotnet test names a second result of the same second "...[1].trx",
+# and -Path reads the brackets as a wildcard.
+foreach ($file in Get-ChildItem -LiteralPath $results -Filter *.trx) {
+    try {
+        [xml]$trx = Get-Content -LiteralPath $file.FullName -Raw -ErrorAction Stop
+    }
+    catch {
+        # The results stay on disk for a look at the file.
+        Write-Host "Cannot read the test results in $($file.FullName): $($_.Exception.GetBaseException().Message)"
+        exit 1
+    }
     foreach ($result in $trx.TestRun.Results.UnitTestResult) {
         $name = $result.testName.Split('(')[0]
         $methods[$name] = $methods[$name] + [TimeSpan]::Parse($result.duration).TotalSeconds
     }
 }
-Remove-Item $results -Recurse -Force
+Remove-Item -LiteralPath $results -Recurse -Force
 
 $slow = $methods.GetEnumerator() | Where-Object { $_.Value -ge $Threshold } | Sort-Object Value -Descending
 foreach ($method in $slow) {

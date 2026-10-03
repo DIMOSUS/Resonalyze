@@ -894,7 +894,7 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
-    public void TheSessionFile_IsOfferedAgainAfterARestart_ButNeverWrittenIntoAnExport()
+    public void TheSessionFile_IsOfferedAgainAfterARestart_AndOnlyTheAppsOwnFilesNameIt()
     {
         string root = CreateTemporaryDirectory();
         try
@@ -910,13 +910,21 @@ public sealed class VirtualCrossoverProjectFileTests
             VirtualCrossoverProjectFile reopened = VirtualCrossoverProjectFile.LoadOrDefault(root);
             Assert.Equal((folder, "bmw.json"), reopened.SaveDialogStart());
             (string? backup, _) = reopened.SaveResetBackup(root);
-            Assert.Equal(path, VirtualCrossoverProjectFile.LoadFrom(backup!).SessionFilePath);
+            Assert.Equal(path, VirtualCrossoverProjectFile.LoadFrom(backup!, root).SessionFilePath);
             Assert.Null(reopened.ForReset().SessionFilePath);
 
-            string copy = Path.Combine(root, "copy.json");
+            string elsewhere = Path.Combine(root, "shared");
+            string sharedBackup = Path.Combine(elsewhere, "autosave.json");
+            Directory.CreateDirectory(elsewhere);
+            File.Copy(backup!, sharedBackup);
+            Assert.Equal(
+                sharedBackup,
+                VirtualCrossoverProjectFile.LoadFrom(sharedBackup, root).SessionFilePath);
+
+            string copy = Path.Combine(elsewhere, "copy.json");
             reopened.SaveTo(copy);
             Assert.DoesNotContain("sessionFilePath", File.ReadAllText(copy));
-            Assert.Equal(copy, VirtualCrossoverProjectFile.LoadFrom(copy).SessionFilePath);
+            Assert.Equal(copy, VirtualCrossoverProjectFile.LoadFrom(copy, root).SessionFilePath);
 
             Directory.Delete(folder, recursive: true);
             Assert.Equal(

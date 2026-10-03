@@ -1129,7 +1129,7 @@ public sealed class VirtualCrossoverProjectFile
     }
 
     /// <summary>Imports a session; unlike <see cref="LoadOrDefault"/> it throws on a broken or incompatible file.</summary>
-    public static VirtualCrossoverProjectFile LoadFrom(string path)
+    public static VirtualCrossoverProjectFile LoadFrom(string path, string? rootDirectory = null)
     {
         using FileStream stream = new(
             path,
@@ -1146,10 +1146,20 @@ public sealed class VirtualCrossoverProjectFile
         file.clearedPhaseRotations = file.ClearUnavailablePhaseRotations();
         file.clearedFirFilters = file.ClearUnavailableFirFilters();
         file.ProjectDirectory = SafeDirectoryOf(path);
-        // Only the app's own files store one: a reset backup keeps the name of the session it holds.
-        file.SessionFilePath ??= SafeFullPathOf(path);
+        // A reset backup keeps its session's name; a file from elsewhere could point the next save anywhere.
+        file.SessionFilePath = IsToolFile(path, rootDirectory)
+            ? file.SessionFilePath
+            : SafeFullPathOf(path);
         return file;
     }
+
+    private static bool IsToolFile(string path, string? rootDirectory) =>
+        SafeDirectoryOf(path) is { } directory &&
+        SafeFullPathOf(rootDirectory ?? ApplicationDataPaths.Current.ToolsDirectory) is { } toolsDirectory &&
+        string.Equals(
+            Path.TrimEndingDirectorySeparator(directory),
+            Path.TrimEndingDirectorySeparator(toolsDirectory),
+            StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Folder of the imported session file, searched for moved measurements; null for the autosave.</summary>
     [JsonIgnore]

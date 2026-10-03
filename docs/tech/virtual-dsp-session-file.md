@@ -393,10 +393,11 @@ its extension, which the dialog adds for the format chosen (PDF or text). It bel
 autosave carries it across restarts and Reset forgets it with the tune; a failed write keeps the previous name.
 
 Only the application's own files write it, the autosave and the reset backup. An export never names itself: the
-path is wrong wherever the file is copied to, and its location already answers. `LoadFrom` therefore takes a
-stored value first, and only an app file can hold one: loading the reset backup brings the session back under its
-own name instead of offering to save the tune into the file the next Reset overwrites. Any other file is
-remembered by the path it was loaded from.
+path is wrong wherever the file is copied to, and its location already answers. `LoadFrom` keeps a stored value
+only for a file in the tool's own data folder: loading the reset backup brings the session back under its own name
+instead of offering to save the tune into the file the next Reset overwrites. Any other file is remembered by the
+path it was loaded from, whatever it stores, so a shared autosave or a hand-edited file cannot aim the next save at
+a folder and name of its choosing.
 
 ## Side lock
 

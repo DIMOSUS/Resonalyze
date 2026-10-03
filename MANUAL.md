@@ -518,9 +518,10 @@ The panel is dense, so here are its six regions:
 2. **The acoustic plot** — each channel's processed response, the phase-aware **Sum**,
    and **Sum loss** against the right-hand axis (its selector: **Full** for the sum
    the cabin hears, **FDW-8** for the direct sound alone, **Disable** for no curve).
-3. **What the plot shows** — which curves are drawn, the target and its level, the
-   microphone calibration, the Hybrid toggle, the **View** (Magnitude, Phase, Impulse,
-   Group delay, Step), smoothing, **Gate...** — the window of every view but Magnitude,
+3. **What the plot shows** — which curves are drawn, the **L+R** sum of both sides
+   (**Vector** or **Energy**, in Front + Sub), the target and its level, the
+   microphone calibration, the Hybrid toggle, the view (Magnitude, Phase, Impulse,
+   Group delay, Step), smoothing, **Gate** — the window of every view but Magnitude,
    which takes only its offset — and **Show**.
 4. **The actions** — the DSP processor, the optimizers (**Auto crossover...**, **Tune
    junction…**, **Auto delay...**), the AI assistant, **Tools...** (the audition render
@@ -985,15 +986,15 @@ or none. A channel measured with a single microphone in an array project reads p
 **Array** and is drawn from its point measurement, and the panel says how many channels
 that is; below the cabin's first mode a point and an average are the same, so a
 subwoofer loses little. Keep **Mic cal** on **Own (as measured)** — with an array each
-position is a different capsule with its own file — and tick **Hybrid**, as below.
+position is a different capsule with its own file — and press **Hybrid**, as below.
 
 **Took MMM captures?** On each card press **MMM**, choose **Attach capture...** and select
 that driver's capture — both sides for a stereo pair, once for a mono channel. The
 button reads **MMM** for none, **MMM ✓** when one is attached, **MMM ⚠** when the session
 refers to one it cannot read. When every playing channel has a capture and the captures
 form one set, the **Hybrid** toggle under the graph becomes available — and turns
-**red** until you tick it, because until then the plot is still drawing one microphone
-position while the averages sit unused. Tick it.
+**red** until you press it, because until then the plot is still drawing one microphone
+position while the averages sit unused. Press it.
 
 ![Each channel's MMM button, and the Hybrid toggle they enable](assets/images/manual/hybrid-enable.png)
 
@@ -1035,12 +1036,12 @@ setting, another session — and hovering the message lists each channel's figur
 ### Set the target once, in Virtual DSP
 
 The EQ target is one curve shared by Virtual DSP and the EQ Wizard, edited from either
-through the same menu — **Target...** in Virtual DSP, **Target Curve…** in the wizard —
+through the same menu — the **Target** button in Virtual DSP, **Target Curve…** in the wizard —
 so every channel tuned afterwards aims at the same thing.
 
-Tick **Target** under the main graph, open **Target... → Parametric shape…** and pick a
+Tick **Target** under the main graph, open the **Target** button → **Parametric shape…** and pick a
 Car preset; they differ mainly in bass lift, so this is where the system's tonal balance
-begins. A house curve of your own goes in through **Target... → Import from file…** — a
+begins. A house curve of your own goes in through **Target** → **Import from file…** — a
 text file of `frequency level` pairs, kept at the levels it states. A file that already
 rolls off at a crossover counts that slope twice while the wizard's **Crossover in
 target** is ticked; **Tuning results** flags it in amber.

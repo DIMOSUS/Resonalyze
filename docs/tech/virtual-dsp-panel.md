@@ -550,6 +550,21 @@ which `CanDrawOppositeSum` checks (per-side checks cannot: two relative capture 
 but say nothing about their relative level). One anchor and offset serve that side's channels and its sum,
 and the sum is smoothed only at the end of the reconstruction.
 
+## L+R sum
+
+`VirtualCrossoverStereoSum` adds the shown side's summing channels to the opposite side's, read by the same
+`ComputeSideSumAsync` as the dashed opposite Sum (asked for one channel instead of two when only the L+R needs
+it). A mono block is one response in both sides' lists, so the opposite list drops it: one driver plays once.
+Vector is `MagnitudeGateSnapshot.MeasuredSum` over the union. Energy passes power-sum groups to the same call —
+front L, front R and every Sub-zone block — so the junctions inside a side keep their phase while the sides, and
+the subs against them, add by power. Power-summing the two side Sums (|ΣL + S|² + |ΣR + S|²) was the alternative:
+it keeps each side's sub–front interference but counts a mono sub in both terms, which the owner rejected. One
+anchor (the earlier side's start) and one gate offset (the earlier of the two sides' own placements, pins
+included) keep both arrivals inside the window. Under the hybrid, `VirtualCrossoverHybrid.StereoSum` rebuilds the
+opposite channels' hybrid curves as the opposite-side hybrid sum does and runs the shown side's offset through
+`VirtualCrossoverHybrid.Sum`, whose Energy groups add their phasor sums by power on the shared log grid; it draws
+only when `CanDrawOppositeSum` holds, so both sides' levels come from one set.
+
 ## Hybrid handoff to the EQ Wizard
 
 `VirtualCrossoverEqHandoff.HybridCapture` is the decision whether a side's hybrid is being handed over. It is cheap and reads
@@ -709,7 +724,7 @@ per view (the impulse view writes none). The Target and Hybrid toggles are muted
 `UiStyle.SetTextEnabledLook`, because that helper memorizes the colour it muted and these toggles are
 recoloured (with the target, or as an unused-capture reminder). The DSP-mode radios span two containers, so
 exclusivity is wired by hand and the other container is cleared first so `OnDspPlotModeChanged` never sees
-two checked radios.
+two checked radios. The L+R selector is live only on the magnitude view of Front + Sub.
 
 ## Processor rate
 

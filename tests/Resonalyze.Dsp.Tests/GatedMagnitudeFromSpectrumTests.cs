@@ -97,4 +97,26 @@ public sealed class GatedMagnitudeFromSpectrumTests
             Assert.Equal(fromMeasurements.Points[i].Y, fromSpectra.Points[i].Y, 1e-9);
         }
     }
+
+    [Theory]
+    // 1 + 1 − 1 + i = 1 + i.
+    [InlineData(null, 3.0103)]
+    // |1 + 1|² + |−1|² + |i|² = 6.
+    [InlineData(new[] { 0, 0, 1, 2 }, 7.7815)]
+    public void MeasuredSum_AddsGroupsByPower_AndChannelsWithinAGroupAsVectors(int[]? groups, double expectedDb)
+    {
+        Complex[] Flat(Complex value) => [.. Enumerable.Repeat(value, 256)];
+        (double, double) everything = (0.0, double.PositiveInfinity);
+
+        (_, AnalysisCurve sum) = DataHelper.GetGatedMeasuredMagnitudeSumPair(
+            [Flat(1), Flat(1), Flat(-1), Flat(Complex.ImaginaryOne)],
+            SampleRate,
+            [everything, everything, everything, everything],
+            [null, null, null, null],
+            smoothingInverseOctaves: 0,
+            groups);
+
+        Assert.NotEmpty(sum.Points);
+        Assert.All(sum.Points, point => Assert.Equal(expectedDb, point.Y, 3));
+    }
 }

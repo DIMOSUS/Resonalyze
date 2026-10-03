@@ -605,6 +605,66 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
         return points == null ? null : new AnalysisCurve("Sum opposite", points);
     }
 
+    /// <summary>The L+R curve from both sides' captures: the opposite side's channels rebuilt as <see cref="OppositeSum"/>
+    /// rebuilds them, under the shown side's offset.</summary>
+    /// <param name="shown">The frame's drawn channels, which <paramref name="hybrid"/> and <paramref name="magnitudes"/> follow.</param>
+    public AnalysisCurve? StereoSum(
+        StereoSumMode mode,
+        IReadOnlyList<ProcessedChannel> shown,
+        IReadOnlyList<ProcessedChannel> summed,
+        IReadOnlyList<AnalysisCurve> magnitudes,
+        HybridMagnitudes hybrid,
+        VirtualCrossoverSideSum? opposite)
+    {
+        bool oppositeRight = !session.ActiveSideRight;
+        MagnitudeGateSnapshot snapshot = session.MagnitudeGate;
+        List<int> positions = [.. Enumerable.Range(0, shown.Count).Where(index => summed.Contains(shown[index]))];
+        if (!CanDrawOppositeSum(oppositeRight) ||
+            hybrid.UnsmoothedChannels.Count < shown.Count ||
+            magnitudes.Count < shown.Count ||
+            VirtualCrossoverStereoSum.Parts(
+                mode, [.. positions.Select(index => shown[index])], opposite, snapshot) is not { } parts)
+        {
+            return null;
+        }
+
+        double oppositeOffsetMs = snapshot.OppositeOffsetMs(opposite!);
+        List<GatedMagnitude> oppositeMagnitudes = [.. opposite!.Channels.Select(item => snapshot.Channel(
+            item.ImpulseResponse,
+            opposite.AnchorIndex,
+            item.SampleRate,
+            oppositeOffsetMs,
+            item.MeasuredBand,
+            session.Calibration.For(item)))];
+        if (Build(
+                opposite.Channels,
+                [.. oppositeMagnitudes.Select(curve => curve.Display)],
+                oppositeRight,
+                snapshot.SmoothingInverseOctaves,
+                [.. oppositeMagnitudes.Select(curve => curve.Unsmoothed)]) is not { } oppositeHybrid)
+        {
+            return null;
+        }
+
+        List<SignalPoint>? points = Sum(
+            [
+                .. positions.Select(index => hybrid.UnsmoothedChannels[index]),
+                .. parts.OppositePositions.Select(index => oppositeHybrid.UnsmoothedChannels[index])
+            ],
+            hybrid.OffsetDb,
+            parts.Channels,
+            parts.AnchorIndex,
+            snapshot,
+            parts.GateOffsetMs,
+            [
+                .. positions.Select(index => (IReadOnlyList<SignalPoint>)magnitudes[index].Points),
+                .. parts.OppositePositions.Select(index =>
+                    (IReadOnlyList<SignalPoint>)oppositeMagnitudes[index].Display.Points)
+            ],
+            parts.Groups);
+        return points == null ? null : new AnalysisCurve("L+R", points);
+    }
+
     /// <summary>Hybrid channels summed as phasors: each gated spectrum rescaled per bin to its spatial-average level.</summary>
     /// <remarks>An estimate: the phase is from one mic position. See docs/tech/spatial-average.md#hybrid-sum.</remarks>
     public static List<SignalPoint>? Sum(
@@ -613,9 +673,29 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
         int anchorIndex,
         MagnitudeGateSnapshot snapshot,
         double gateOffsetMs,
-        IReadOnlyList<IReadOnlyList<SignalPoint>> channelReferences)
+        IReadOnlyList<IReadOnlyList<SignalPoint>> channelReferences) =>
+        Sum(
+            hybrid.UnsmoothedChannels,
+            hybrid.OffsetDb,
+            processed,
+            anchorIndex,
+            snapshot,
+            gateOffsetMs,
+            channelReferences,
+            powerSumGroups: null);
+
+    /// <param name="powerSumGroups">Each channel's group: the groups' phasor sums add by power. Null: one phasor sum.</param>
+    internal static List<SignalPoint>? Sum(
+        IReadOnlyList<IReadOnlyList<SignalPoint>> unsmoothedChannels,
+        double offsetDb,
+        IReadOnlyList<ProcessedChannel> processed,
+        int anchorIndex,
+        MagnitudeGateSnapshot snapshot,
+        double gateOffsetMs,
+        IReadOnlyList<IReadOnlyList<SignalPoint>> channelReferences,
+        IReadOnlyList<int>? powerSumGroups)
     {
-        if (processed.Count == 0 || hybrid.UnsmoothedChannels.Count < processed.Count)
+        if (processed.Count == 0 || unsmoothedChannels.Count < processed.Count)
         {
             return null;
         }
@@ -628,19 +708,23 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
             channels.Add((
                 new ImpulseMeasurementView(
                     processed[c].ImpulseResponse, anchorIndex, processed[c].SampleRate),
-                hybrid.UnsmoothedChannels[c]));
+                unsmoothedChannels[c]));
         }
 
         // Unsmoothed, masked, then smoothed: masked points must not feed neighbours' means (SmoothBandLevels skips NaN).
-        List<SignalPoint> sum = DataHelper.GetGatedSubstitutedMagnitudeSum(
-            channels, gate, smoothingInverseOctaves: 0);
+        List<SignalPoint> sum = powerSumGroups == null
+            ? DataHelper.GetGatedSubstitutedMagnitudeSum(channels, gate, smoothingInverseOctaves: 0)
+            : PowerSum([
+                .. powerSumGroups.Distinct().Select(group => DataHelper.GetGatedSubstitutedMagnitudeSum(
+                    [.. channels.Where((_, c) => powerSumGroups[c] == group)], gate, smoothingInverseOctaves: 0))
+            ]);
         if (sum.Count == 0)
         {
             return null;
         }
 
         List<SignalPoint> masked = MaskMissingContributors(
-            sum, hybrid.UnsmoothedChannels, channelReferences, hybrid.OffsetDb);
+            sum, unsmoothedChannels, channelReferences, offsetDb);
         int smoothingCode = snapshot.SmoothingInverseOctaves;
         return smoothingCode == 0 || masked.Count < 2
             ? masked
@@ -648,6 +732,30 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
                 masked,
                 SpectrumSmoothing.SmoothingOctaves(smoothingCode),
                 SpectrumSmoothing.IsPsychoacoustic(smoothingCode));
+    }
+
+    // Curves on one grid; a group with no level at a point (NaN) adds nothing there.
+    private static List<SignalPoint> PowerSum(IReadOnlyList<List<SignalPoint>> groups)
+    {
+        int count = groups.Min(group => group.Count);
+        var points = new List<SignalPoint>(count);
+        for (int i = 0; i < count; i++)
+        {
+            double power = 0.0;
+            bool any = false;
+            foreach (List<SignalPoint> group in groups)
+            {
+                if (double.IsFinite(group[i].Y))
+                {
+                    power += Math.Pow(10.0, group[i].Y / 10.0);
+                    any = true;
+                }
+            }
+
+            points.Add(new SignalPoint(groups[0][i].X, any ? 10.0 * Math.Log10(power) : double.NaN));
+        }
+
+        return points;
     }
 
     /// <summary>Adds the set offset and breaks the sum where a still-playing channel has no capture.</summary>

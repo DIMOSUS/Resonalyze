@@ -60,7 +60,7 @@ public sealed class VirtualCrossoverPanelLayoutTests
     {
         using var panel = new VirtualCrossoverPanel();
         (PlotView main, PlotView dsp) = Plots(panel);
-        Control curves = Field<Control>(panel, "labelCurves");
+        Control curves = Field<Control>(panel, "curvesPanel");
         Control view = Field<Control>(panel, "panel1");
         Control autoDelay = Field<Control>(panel, "buttonAutoDelay");
         Control tuneJunction = Field<Control>(panel, "buttonTuneJunction");
@@ -128,7 +128,7 @@ public sealed class VirtualCrossoverPanelLayoutTests
     {
         using var panel = new VirtualCrossoverPanel();
         (PlotView main, PlotView dsp) = Plots(panel);
-        Control curves = Field<Control>(panel, "labelCurves");
+        Control curves = Field<Control>(panel, "curvesPanel");
         Rectangle mainDesign = main.Bounds;
         Rectangle dspDesign = dsp.Bounds;
         Rectangle curvesDesign = curves.Bounds;

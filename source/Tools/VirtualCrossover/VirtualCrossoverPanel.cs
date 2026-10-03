@@ -100,6 +100,7 @@ public partial class VirtualCrossoverPanel : UserControl
         InitializeGroupViewComboBox();
         InitializeSmoothingComboBox();
         InitializeSumLossComboBox();
+        InitializeStereoSumComboBox();
         WirePanelEvents();
         InitializeToolTips();
 
@@ -284,6 +285,7 @@ public partial class VirtualCrossoverPanel : UserControl
         };
         comboBoxSmoothing.SelectedIndexChanged += (_, _) => OnViewChanged();
         comboBoxSumLoss.SelectedIndexChanged += (_, _) => OnViewChanged();
+        comboBoxStereoSum.SelectedIndexChanged += (_, _) => OnViewChanged();
         comboBoxGroupView.SelectedIndexChanged += (_, _) =>
         {
             // Groups is magnitude-only (no group phase/impulse): move the view radio visibly instead of falling back.

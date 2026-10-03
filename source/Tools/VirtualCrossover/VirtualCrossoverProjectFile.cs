@@ -806,6 +806,8 @@ public sealed class VirtualCrossoverProjectFile
     public VirtualCrossoverGroupView GroupView { get; set; } =
         VirtualCrossoverGroupView.FrontAndSub;
 
+    public StereoSumMode StereoSum { get; set; } = StereoSumMode.Off;
+
     /// <summary>Rear fill delay behind the front stage (ms); part of the tune, not a dialog default.</summary>
     public double RearFillOffsetMs { get; set; } =
         VirtualCrossoverLimits.DefaultRearFillOffsetMs;

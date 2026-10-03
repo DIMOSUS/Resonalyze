@@ -47,10 +47,8 @@ namespace Resonalyze
             buttonCopyLeftToRight = new ReleaseClickButton();
             buttonCopyRightToLeft = new ReleaseClickButton();
             checkBoxSideLock = new ReleaseClickCheckBox();
-            labelView = new Label();
             labelGroupView = new Label();
             comboBoxGroupView = new ThemedComboBox();
-            labelCurves = new Label();
             checkBoxShowTarget = new ReleaseClickCheckBox();
             numericTargetLevel = new ThemedNumericUpDown();
             buttonTargetSettings = new ReleaseClickButton();
@@ -59,6 +57,8 @@ namespace Resonalyze
             checkBoxHybrid = new ReleaseClickCheckBox();
             labelSumLoss = new Label();
             comboBoxSumLoss = new ThemedComboBox();
+            labelStereoSum = new Label();
+            comboBoxStereoSum = new ThemedComboBox();
             radioViewMagnitude = new ReleaseClickRadioButton();
             radioViewPhase = new ReleaseClickRadioButton();
             radioViewImpulse = new ReleaseClickRadioButton();
@@ -89,6 +89,7 @@ namespace Resonalyze
             panel2 = new RoundedPanel();
             curvesPanel = new RoundedPanel();
             sumLossPanel = new RoundedPanel();
+            stereoSumPanel = new RoundedPanel();
             targetPanel = new RoundedPanel();
             sideSelectorPanel.SuspendLayout();
             (numericTargetLevel).BeginInit();
@@ -97,6 +98,7 @@ namespace Resonalyze
             panel2.SuspendLayout();
             curvesPanel.SuspendLayout();
             sumLossPanel.SuspendLayout();
+            stereoSumPanel.SuspendLayout();
             targetPanel.SuspendLayout();
             SuspendLayout();
             // 
@@ -270,24 +272,13 @@ namespace Resonalyze
             checkBoxSideLock.TextAlign = ContentAlignment.MiddleCenter;
             checkBoxSideLock.UseCompatibleTextRendering = true;
             checkBoxSideLock.UseVisualStyleBackColor = false;
-            //
-            // labelView
-            // 
-            labelView.AutoSize = true;
-            labelView.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelView.ForeColor = UiPalette.TextDefault;
-            labelView.Location = new Point(358, 447);
-            labelView.Name = "labelView";
-            labelView.Size = new Size(36, 15);
-            labelView.TabIndex = 6;
-            labelView.Text = "View:";
             // 
             // labelGroupView
             // 
             labelGroupView.AutoSize = true;
             labelGroupView.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelGroupView.ForeColor = UiPalette.TextDefault;
-            labelGroupView.Location = new Point(1007, 447);
+            labelGroupView.Location = new Point(959, 447);
             labelGroupView.Name = "labelGroupView";
             labelGroupView.Size = new Size(40, 15);
             labelGroupView.TabIndex = 26;
@@ -297,22 +288,11 @@ namespace Resonalyze
             // 
             comboBoxGroupView.BackColor = UiPalette.ControlSurface;
             comboBoxGroupView.ForeColor = UiPalette.TextPrimary;
-            comboBoxGroupView.Location = new Point(1050, 445);
+            comboBoxGroupView.Location = new Point(1002, 445);
             comboBoxGroupView.MinimumSize = new Size(36, 19);
             comboBoxGroupView.Name = "comboBoxGroupView";
             comboBoxGroupView.Size = new Size(130, 19);
             comboBoxGroupView.TabIndex = 27;
-            // 
-            // labelCurves
-            // 
-            labelCurves.AutoSize = true;
-            labelCurves.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelCurves.ForeColor = UiPalette.TextDefault;
-            labelCurves.Location = new Point(358, 413);
-            labelCurves.Name = "labelCurves";
-            labelCurves.Size = new Size(45, 15);
-            labelCurves.TabIndex = 26;
-            labelCurves.Text = "Curves:";
             // 
             // checkBoxShowTarget
             // 
@@ -350,9 +330,9 @@ namespace Resonalyze
             buttonTargetSettings.ForeColor = UiPalette.TextPrimary;
             buttonTargetSettings.Location = new Point(157, 2);
             buttonTargetSettings.Name = "buttonTargetSettings";
-            buttonTargetSettings.Size = new Size(80, 22);
+            buttonTargetSettings.Size = new Size(60, 22);
             buttonTargetSettings.TabIndex = 29;
-            buttonTargetSettings.Text = "Target...";
+            buttonTargetSettings.Text = "Target";
             buttonTargetSettings.UseVisualStyleBackColor = true;
             // 
             // labelCalibration
@@ -360,7 +340,7 @@ namespace Resonalyze
             labelCalibration.AutoSize = true;
             labelCalibration.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelCalibration.ForeColor = UiPalette.TextDefault;
-            labelCalibration.Location = new Point(886, 413);
+            labelCalibration.Location = new Point(941, 413);
             labelCalibration.Name = "labelCalibration";
             labelCalibration.Size = new Size(48, 15);
             labelCalibration.TabIndex = 30;
@@ -368,29 +348,39 @@ namespace Resonalyze
             // 
             // checkBoxShowSum
             // 
-            checkBoxShowSum.AutoSize = true;
+            checkBoxShowSum.Appearance = Appearance.Button;
+            checkBoxShowSum.BackColor = UiPalette.ButtonBackground;
             checkBoxShowSum.Checked = true;
             checkBoxShowSum.CheckState = CheckState.Checked;
+            checkBoxShowSum.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
+            checkBoxShowSum.FlatStyle = FlatStyle.Flat;
             checkBoxShowSum.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxShowSum.ForeColor = UiPalette.TextDefault;
-            checkBoxShowSum.Location = new Point(6, 7);
+            checkBoxShowSum.Location = new Point(6, 5);
             checkBoxShowSum.Name = "checkBoxShowSum";
-            checkBoxShowSum.Size = new Size(51, 19);
+            checkBoxShowSum.Size = new Size(50, 22);
             checkBoxShowSum.TabIndex = 7;
             checkBoxShowSum.Text = "Sum";
-            checkBoxShowSum.UseVisualStyleBackColor = true;
+            checkBoxShowSum.TextAlign = ContentAlignment.MiddleCenter;
+            checkBoxShowSum.UseCompatibleTextRendering = true;
+            checkBoxShowSum.UseVisualStyleBackColor = false;
             // 
             // checkBoxHybrid
             // 
-            checkBoxHybrid.AutoSize = true;
+            checkBoxHybrid.Appearance = Appearance.Button;
+            checkBoxHybrid.BackColor = UiPalette.ButtonBackground;
+            checkBoxHybrid.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
+            checkBoxHybrid.FlatStyle = FlatStyle.Flat;
             checkBoxHybrid.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxHybrid.ForeColor = UiPalette.TextDefault;
-            checkBoxHybrid.Location = new Point(1062, 411);
+            checkBoxHybrid.Location = new Point(1101, 409);
             checkBoxHybrid.Name = "checkBoxHybrid";
-            checkBoxHybrid.Size = new Size(62, 19);
+            checkBoxHybrid.Size = new Size(62, 24);
             checkBoxHybrid.TabIndex = 30;
             checkBoxHybrid.Text = "Hybrid";
-            checkBoxHybrid.UseVisualStyleBackColor = true;
+            checkBoxHybrid.TextAlign = ContentAlignment.MiddleCenter;
+            checkBoxHybrid.UseCompatibleTextRendering = true;
+            checkBoxHybrid.UseVisualStyleBackColor = false;
             // 
             // labelSumLoss
             // 
@@ -412,6 +402,27 @@ namespace Resonalyze
             comboBoxSumLoss.Name = "comboBoxSumLoss";
             comboBoxSumLoss.Size = new Size(82, 19);
             comboBoxSumLoss.TabIndex = 8;
+            //
+            // labelStereoSum
+            //
+            labelStereoSum.AutoSize = true;
+            labelStereoSum.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            labelStereoSum.ForeColor = UiPalette.TextDefault;
+            labelStereoSum.Location = new Point(6, 6);
+            labelStereoSum.Name = "labelStereoSum";
+            labelStereoSum.Size = new Size(27, 15);
+            labelStereoSum.TabIndex = 0;
+            labelStereoSum.Text = "L+R";
+            //
+            // comboBoxStereoSum
+            //
+            comboBoxStereoSum.BackColor = UiPalette.ControlSurface;
+            comboBoxStereoSum.ForeColor = UiPalette.TextPrimary;
+            comboBoxStereoSum.Location = new Point(38, 4);
+            comboBoxStereoSum.MinimumSize = new Size(36, 19);
+            comboBoxStereoSum.Name = "comboBoxStereoSum";
+            comboBoxStereoSum.Size = new Size(76, 19);
+            comboBoxStereoSum.TabIndex = 1;
             // 
             // radioViewMagnitude
             // 
@@ -480,7 +491,7 @@ namespace Resonalyze
             labelSmoothing.AutoSize = true;
             labelSmoothing.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelSmoothing.ForeColor = UiPalette.TextDefault;
-            labelSmoothing.Location = new Point(810, 447);
+            labelSmoothing.Location = new Point(762, 447);
             labelSmoothing.Name = "labelSmoothing";
             labelSmoothing.Size = new Size(70, 15);
             labelSmoothing.TabIndex = 10;
@@ -490,7 +501,7 @@ namespace Resonalyze
             // 
             comboBoxSmoothing.BackColor = UiPalette.ControlSurface;
             comboBoxSmoothing.ForeColor = UiPalette.TextPrimary;
-            comboBoxSmoothing.Location = new Point(884, 445);
+            comboBoxSmoothing.Location = new Point(836, 445);
             comboBoxSmoothing.MinimumSize = new Size(36, 19);
             comboBoxSmoothing.Name = "comboBoxSmoothing";
             comboBoxSmoothing.Size = new Size(100, 19);
@@ -585,21 +596,21 @@ namespace Resonalyze
             // 
             buttonPhaseGate.FlatStyle = FlatStyle.Popup;
             buttonPhaseGate.ForeColor = UiPalette.TextPrimary;
-            buttonPhaseGate.Location = new Point(1132, 409);
+            buttonPhaseGate.Location = new Point(1169, 409);
             buttonPhaseGate.Name = "buttonPhaseGate";
-            buttonPhaseGate.Size = new Size(80, 24);
+            buttonPhaseGate.Size = new Size(52, 24);
             buttonPhaseGate.TabIndex = 16;
-            buttonPhaseGate.Text = "Gate...";
+            buttonPhaseGate.Text = "Gate";
             buttonPhaseGate.UseVisualStyleBackColor = true;
             // 
             // comboBoxCalibration
             // 
             comboBoxCalibration.BackColor = UiPalette.ControlSurface;
             comboBoxCalibration.ForeColor = UiPalette.TextPrimary;
-            comboBoxCalibration.Location = new Point(939, 411);
+            comboBoxCalibration.Location = new Point(993, 411);
             comboBoxCalibration.MinimumSize = new Size(36, 19);
             comboBoxCalibration.Name = "comboBoxCalibration";
-            comboBoxCalibration.Size = new Size(110, 19);
+            comboBoxCalibration.Size = new Size(100, 19);
             comboBoxCalibration.TabIndex = 20;
             // 
             // buttonSessionImport
@@ -735,7 +746,7 @@ namespace Resonalyze
             panel1.Controls.Add(radioViewStep);
             panel1.Controls.Add(radioViewPhase);
             panel1.CornerRadius = 4;
-            panel1.Location = new Point(406, 443);
+            panel1.Location = new Point(358, 443);
             panel1.Name = "panel1";
             panel1.Size = new Size(391, 23);
             panel1.TabIndex = 24;
@@ -757,11 +768,12 @@ namespace Resonalyze
             // 
             curvesPanel.Controls.Add(checkBoxShowSum);
             curvesPanel.Controls.Add(sumLossPanel);
+            curvesPanel.Controls.Add(stereoSumPanel);
             curvesPanel.Controls.Add(targetPanel);
             curvesPanel.CornerRadius = 4;
-            curvesPanel.Location = new Point(406, 406);
+            curvesPanel.Location = new Point(358, 406);
             curvesPanel.Name = "curvesPanel";
-            curvesPanel.Size = new Size(471, 32);
+            curvesPanel.Size = new Size(577, 32);
             curvesPanel.TabIndex = 7;
             // 
             // sumLossPanel
@@ -774,7 +786,18 @@ namespace Resonalyze
             sumLossPanel.Name = "sumLossPanel";
             sumLossPanel.Size = new Size(153, 26);
             sumLossPanel.TabIndex = 8;
-            // 
+            //
+            // stereoSumPanel
+            //
+            stereoSumPanel.BackColor = UiPalette.PanelSurface;
+            stereoSumPanel.Controls.Add(labelStereoSum);
+            stereoSumPanel.Controls.Add(comboBoxStereoSum);
+            stereoSumPanel.CornerRadius = 4;
+            stereoSumPanel.Location = new Point(222, 3);
+            stereoSumPanel.Name = "stereoSumPanel";
+            stereoSumPanel.Size = new Size(120, 26);
+            stereoSumPanel.TabIndex = 9;
+            //
             // targetPanel
             // 
             targetPanel.BackColor = UiPalette.PanelSurface;
@@ -782,9 +805,9 @@ namespace Resonalyze
             targetPanel.Controls.Add(numericTargetLevel);
             targetPanel.Controls.Add(buttonTargetSettings);
             targetPanel.CornerRadius = 4;
-            targetPanel.Location = new Point(222, 3);
+            targetPanel.Location = new Point(348, 3);
             targetPanel.Name = "targetPanel";
-            targetPanel.Size = new Size(243, 26);
+            targetPanel.Size = new Size(223, 26);
             targetPanel.TabIndex = 27;
             // 
             // VirtualCrossoverPanel
@@ -796,10 +819,8 @@ namespace Resonalyze
             BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(panel2);
             Controls.Add(panel1);
-            Controls.Add(labelView);
             Controls.Add(labelGroupView);
             Controls.Add(comboBoxGroupView);
-            Controls.Add(labelCurves);
             Controls.Add(curvesPanel);
             Controls.Add(labelCalibration);
             Controls.Add(checkBoxHybrid);
@@ -842,6 +863,8 @@ namespace Resonalyze
             curvesPanel.PerformLayout();
             sumLossPanel.ResumeLayout(false);
             sumLossPanel.PerformLayout();
+            stereoSumPanel.ResumeLayout(false);
+            stereoSumPanel.PerformLayout();
             targetPanel.ResumeLayout(false);
             targetPanel.PerformLayout();
             ResumeLayout(false);
@@ -861,10 +884,8 @@ namespace Resonalyze
         private ReleaseClickButton buttonCopyLeftToRight;
         private ReleaseClickButton buttonCopyRightToLeft;
         private ReleaseClickCheckBox checkBoxSideLock;
-        private Label labelView;
         private Label labelGroupView;
         private ThemedComboBox comboBoxGroupView;
-        private Label labelCurves;
         private ReleaseClickCheckBox checkBoxShowTarget;
         private ThemedNumericUpDown numericTargetLevel;
         private ReleaseClickButton buttonTargetSettings;
@@ -875,6 +896,9 @@ namespace Resonalyze
         private ThemedComboBox comboBoxSumLoss;
         private RoundedPanel curvesPanel;
         private RoundedPanel sumLossPanel;
+        private RoundedPanel stereoSumPanel;
+        private Label labelStereoSum;
+        private ThemedComboBox comboBoxStereoSum;
         private RoundedPanel targetPanel;
         private ReleaseClickRadioButton radioViewMagnitude;
         private ReleaseClickRadioButton radioViewPhase;

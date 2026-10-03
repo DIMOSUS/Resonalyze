@@ -81,6 +81,27 @@ public sealed class VirtualCrossoverPanelWiringTests
     }
 
     [Fact]
+    public void TheStereoSumSelector_DrawsBothSidesTogether_OnlyInFrontAndSub()
+    {
+        StaTest.Run(() =>
+        {
+            using var live = new LivePanel();
+
+            live.Set<ThemedComboBox>("comboBoxStereoSum", box => box.SelectedItem = StereoSumMode.Energy);
+            Assert.Equal(StereoSumMode.Energy, live.Session.Project.StereoSum);
+            Assert.Contains("L+R energy", live.MainTitles());
+
+            live.Set<ThemedComboBox>("comboBoxStereoSum", box => box.SelectedItem = StereoSumMode.Vector);
+            Assert.Contains("L+R vector", live.MainTitles());
+
+            live.Set<ThemedComboBox>(
+                "comboBoxGroupView", box => box.SelectedItem = VirtualCrossoverGroupView.GroupsCompared);
+            Assert.False(live.Control<ThemedComboBox>("comboBoxStereoSum").Enabled);
+            Assert.DoesNotContain(live.MainTitles(), title => title.StartsWith("L+R", StringComparison.Ordinal));
+        });
+    }
+
+    [Fact]
     public void TheTargetToggle_HangsTheTargetOnTheMagnitudeView()
     {
         StaTest.Run(() =>

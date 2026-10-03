@@ -4199,6 +4199,8 @@ tune is actually built in:
 - **Export...** writes the whole setup as a tuning sheet (printable PDF or plain
   text): for every side of every pair (a mono pair prints once) the gain, delay in
   ms and mm, polarity, crossover filters, and PEQ bands down to the all-pass.
+  Once the session has a file (see **Save session...** below), the sheet is
+  offered under the same name, beside it.
   An installation spanning several zones prints **by group**, in the order a
   tune is typed into a DSP — Sub, then Front, then Rear, then Center — each
   group led by its name and (on the PDF) a graph of its own DSP chains instead
@@ -4230,7 +4232,10 @@ tune is actually built in:
   **Save session... / Load session...** export and import the complete session
   JSON for sharing or archiving; a session file dragged onto the window opens
   here too, whichever mode was in front (see
-  [Dropping a file on the window](#dropping-a-file-on-the-window)). A session
+  [Dropping a file on the window](#dropping-a-file-on-the-window)). **Save
+  session...** offers the file the session was last loaded from or saved to,
+  in its folder, and remembers it across restarts; **Reset** forgets it, and the
+  copy Reset sets aside loads back under the session's own name. A session
   is held to the ranges of the block fields — gain −60 to +20 dB, delay 0 to
   100 ms, corners 10 Hz to 24 kHz — and one outside them is refused rather than
   shown clamped over a value the chain would still run. A value finer than its

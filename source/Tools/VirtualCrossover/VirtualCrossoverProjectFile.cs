@@ -1073,11 +1073,21 @@ public sealed class VirtualCrossoverProjectFile
     {
         Validate();
         SavedAtUtc = DateTimeOffset.UtcNow;
-        WriteWithExportRelativePaths(
-            SafeDirectoryOf(path),
-            () => AtomicFile.Write(
-                path,
-                stream => JsonSerializer.Serialize(stream, this, SerializerOptions)));
+        string? sessionFile = SessionFilePath;
+        SessionFilePath = null;
+        try
+        {
+            WriteWithExportRelativePaths(
+                SafeDirectoryOf(path),
+                () => AtomicFile.Write(
+                    path,
+                    stream => JsonSerializer.Serialize(stream, this, SerializerOptions)));
+            sessionFile = SafeFullPathOf(path);
+        }
+        finally
+        {
+            SessionFilePath = sessionFile;
+        }
     }
 
     // Relative paths belong to the write: swapped in around serialization and restored, because the live values are
@@ -1136,6 +1146,8 @@ public sealed class VirtualCrossoverProjectFile
         file.clearedPhaseRotations = file.ClearUnavailablePhaseRotations();
         file.clearedFirFilters = file.ClearUnavailableFirFilters();
         file.ProjectDirectory = SafeDirectoryOf(path);
+        // Only the app's own files store one: a reset backup keeps the name of the session it holds.
+        file.SessionFilePath ??= SafeFullPathOf(path);
         return file;
     }
 
@@ -1143,11 +1155,30 @@ public sealed class VirtualCrossoverProjectFile
     [JsonIgnore]
     public string? ProjectDirectory { get; private set; }
 
-    private static string? SafeDirectoryOf(string path)
+    /// <summary>The file Save session offers again. See docs/tech/virtual-dsp-session-file.md#session-file-name.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SessionFilePath { get; set; }
+
+    /// <summary>Where a save dialog for this session opens: its file's name, in its folder while that still exists.</summary>
+    internal (string? Folder, string? FileName) SaveDialogStart()
+    {
+        if (SessionFilePath is not { } path || Path.GetFileName(path) is not { Length: > 0 } name)
+        {
+            return (null, null);
+        }
+
+        string? folder = Path.IsPathFullyQualified(path) ? Path.GetDirectoryName(path) : null;
+        return (Directory.Exists(folder) ? folder : null, name);
+    }
+
+    private static string? SafeDirectoryOf(string path) =>
+        SafeFullPathOf(path) is { } fullPath ? Path.GetDirectoryName(fullPath) : null;
+
+    private static string? SafeFullPathOf(string path)
     {
         try
         {
-            return Path.GetDirectoryName(Path.GetFullPath(path));
+            return Path.GetFullPath(path);
         }
         catch (Exception exception) when (
             exception is ArgumentException or PathTooLongException or NotSupportedException)

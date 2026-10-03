@@ -894,6 +894,42 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void TheSessionFile_IsOfferedAgainAfterARestart_ButNeverWrittenIntoAnExport()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            string folder = Path.Combine(root, "cars");
+            string path = Path.Combine(folder, "bmw.json");
+            var project = new VirtualCrossoverProjectFile();
+            Assert.Equal((null, null), project.SaveDialogStart());
+
+            project.SaveTo(path);
+            Assert.ThrowsAny<Exception>(() => project.SaveTo(folder));
+            project.Save(root);
+            VirtualCrossoverProjectFile reopened = VirtualCrossoverProjectFile.LoadOrDefault(root);
+            Assert.Equal((folder, "bmw.json"), reopened.SaveDialogStart());
+            (string? backup, _) = reopened.SaveResetBackup(root);
+            Assert.Equal(path, VirtualCrossoverProjectFile.LoadFrom(backup!).SessionFilePath);
+            Assert.Null(reopened.ForReset().SessionFilePath);
+
+            string copy = Path.Combine(root, "copy.json");
+            reopened.SaveTo(copy);
+            Assert.DoesNotContain("sessionFilePath", File.ReadAllText(copy));
+            Assert.Equal(copy, VirtualCrossoverProjectFile.LoadFrom(copy).SessionFilePath);
+
+            Directory.Delete(folder, recursive: true);
+            Assert.Equal(
+                (null, "bmw.json"),
+                VirtualCrossoverProjectFile.LoadOrDefault(root).SaveDialogStart());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void LoadOrDefault_AProjectFromBeforeTheProcessorSelector_FollowsItsMeasurements()
     {
         string root = CreateTemporaryDirectory();

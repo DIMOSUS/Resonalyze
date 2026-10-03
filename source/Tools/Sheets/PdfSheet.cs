@@ -191,10 +191,8 @@ internal sealed class PdfSheet : IDisposable
 
         int count = Math.Min(FiltersPerTableBlock, bands.Count - start);
 
-        // Value rows are bound to the header so a block is not split from its column headings.
         Row header = table.AddRow();
         header.HeadingFormat = true;
-        header.KeepWith = shape == TableShape.Bell ? 3 : 4;
         WriteLabel(
             header.Cells[0],
             shape switch
@@ -241,6 +239,10 @@ internal sealed class PdfSheet : IDisposable
             value: band => band.Type == PeqBandType.AllPassFirstOrder
                 ? "—"
                 : SheetFormat.Number(band.Q, "0.0#"));
+
+        // Value rows are bound to the header so a block is not split from its column headings. Counted, not fixed:
+        // an all-pass block has no gain row, and a KeepWith past the last row throws in the renderer.
+        header.KeepWith = table.Rows.Count - 1 - header.Index;
     }
 
     private void AddFilterValueRow(

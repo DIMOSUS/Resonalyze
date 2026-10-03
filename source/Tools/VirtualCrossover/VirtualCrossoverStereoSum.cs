@@ -47,7 +47,7 @@ internal static class VirtualCrossoverStereoSum
     private const int SubGroup = 2;
 
     /// <param name="shown">The shown side's summing channels.</param>
-    /// <returns>Null when off, when the other side adds nothing of its own, or when the sides' rates differ.</returns>
+    /// <returns>Null when off, when the other side lacks its own blocks, or when the sides' rates differ.</returns>
     public static StereoSumParts? Parts(
         StereoSumMode mode,
         IReadOnlyList<ProcessedChannel> shown,
@@ -65,7 +65,8 @@ internal static class VirtualCrossoverStereoSum
         // A mono channel is one response in both sides' lists: it plays once.
         List<int> positions = [.. Enumerable.Range(0, opposite.Channels.Count)
             .Where(index => !opposite.Channels[index].Channel.Pair.Mono)];
-        if (positions.Count == 0)
+        // Nothing of the other side's own is half an L+R, unless every block is mono and so plays for both.
+        if (positions.Count == 0 && shown.Any(item => !item.Channel.Pair.Mono))
         {
             return null;
         }

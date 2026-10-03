@@ -17,19 +17,21 @@ public sealed class VirtualCrossoverStereoSumTests
     };
 
     private static ProcessedChannel Channel(
-        VirtualCrossoverChannel channel, double amplitude, int sampleRate = SampleRate)
+        VirtualCrossoverChannel channel, double amplitude, int sampleRate = SampleRate, int arrival = Arrival)
     {
         var impulse = new Complex[8_192];
-        impulse[Arrival] = amplitude;
+        impulse[arrival] = amplitude;
         return new ProcessedChannel(
-            channel, impulse, Arrival, sampleRate, OxyColors.White, MeasuredBand: MeasuredBand.Everything);
+            channel, impulse, arrival, sampleRate, OxyColors.White, MeasuredBand: MeasuredBand.Everything);
     }
+
+    private static double At(AnalysisCurve curve, double hz) =>
+        curve.Points.MinBy(point => Math.Abs(Math.Log(point.X / hz)))!.Y;
 
     private static VirtualCrossoverChannel Driver(string name, VirtualCrossoverZone zone, bool mono = false) =>
         new(name) { Pair = { Zone = zone, Mono = mono } };
 
-    private static double At1kHz(AnalysisCurve curve) =>
-        curve.Points.MinBy(point => Math.Abs(Math.Log(point.X / 1_000.0)))!.Y;
+    private static double At1kHz(AnalysisCurve curve) => At(curve, 1_000.0);
 
     // Front L and R at one arrival with a mono sub: the sub is one response in both sides' lists.
     private static (List<ProcessedChannel> Shown, VirtualCrossoverSideSum Opposite) Stage(
@@ -91,6 +93,46 @@ public sealed class VirtualCrossoverStereoSumTests
         {
             Assert.Equal(expectedDb, level, 2);
         }
+    }
+
+    [Theory]
+    // The shown side arrives 3 ms after the other (4.2 and 7.2 ms); the earlier of the two placements opens the window.
+    [InlineData(null, null)]
+    [InlineData(null, 1.0)]
+    [InlineData(2.0, 8.0)]
+    public void TheWindowOpensAtTheEarlierSide_SoBothArrivalsAreSummed(double? shownPinMs, double? oppositePinMs)
+    {
+        const int lag = 144;
+        ProcessedChannel frontLeft = Channel(
+            Driver("Front L", VirtualCrossoverZone.Front), 1.0, arrival: Arrival + lag);
+        ProcessedChannel frontRight = Channel(Driver("Front R", VirtualCrossoverZone.Front), 1.0);
+        var opposite = new VirtualCrossoverSideSum([], Arrival, SampleRate, [frontRight]);
+        MagnitudeGateSnapshot gate = Gate with { PinnedOffsetMs = shownPinMs, OppositePinnedOffsetMs = oppositePinMs };
+        double reference = OneDriverDb();
+        double peakHz = (double)SampleRate / lag;
+
+        AnalysisCurve vector = VirtualCrossoverStereoSum.Build(
+            StereoSumMode.Vector, [frontLeft], opposite, gate, _ => null)!;
+        AnalysisCurve energy = VirtualCrossoverStereoSum.Build(
+            StereoSumMode.Energy, [frontLeft], opposite, gate, _ => null)!;
+
+        // 3 ms apart: a comb, in phase at 1/τ and opposed at 1/(2τ); by power the sides add flat.
+        Assert.Equal(6.02, At(vector, peakHz) - reference, 1);
+        Assert.True(At(vector, peakHz / 2) - reference < -15, $"no null at {peakHz / 2:0} Hz");
+        Assert.Equal(3.01, At(energy, peakHz) - reference, 1);
+        Assert.Equal(3.01, At(energy, peakHz / 2) - reference, 1);
+    }
+
+    [Fact]
+    public void MonoBlocksAloneAreTheirOwnLPlusR_ButOneSideAloneIsNot()
+    {
+        ProcessedChannel sub = Channel(Driver("Sub", VirtualCrossoverZone.Sub, mono: true), 1.0);
+        ProcessedChannel frontLeft = Channel(Driver("Front L", VirtualCrossoverZone.Front), 1.0);
+        var onlySub = new VirtualCrossoverSideSum([], Arrival, SampleRate, [sub]);
+
+        AnalysisCurve? monoOnly = VirtualCrossoverStereoSum.Build(StereoSumMode.Vector, [sub], onlySub, Gate, _ => null);
+        Assert.Equal(0.0, At1kHz(monoOnly!) - OneDriverDb(), 2);
+        Assert.Null(VirtualCrossoverStereoSum.Build(StereoSumMode.Vector, [frontLeft, sub], onlySub, Gate, _ => null));
     }
 
     [Fact]

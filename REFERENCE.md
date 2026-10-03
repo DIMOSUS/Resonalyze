@@ -2721,7 +2721,8 @@ later side's arrival is inside it. Under **Hybrid** it is built the way the
 hybrid Sum is — each channel's spatial-average level with its response's phase,
 at the shown side's offset — and, like the dashed opposite Sum, only while both
 sides' captures form one set. Nothing is drawn when the two sides were measured
-at different sample rates.
+at different sample rates, or when the other side has no block of its own to add
+(a stage of mono blocks alone is drawn: each of them plays for both sides).
 
 The **Sum loss** selector beside the Sum toggle picks the window the loss — the
 curve and the read-out column together, so they always quote one number — is

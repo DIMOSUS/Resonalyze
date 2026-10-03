@@ -723,6 +723,37 @@ public sealed class VirtualCrossoverSheetPdfTests
     }
 
     [Fact]
+    public void Export_RendersAllPassAndShelfBlocks()
+    {
+        // An all-pass block has no gain row; a header bound to one row too many threw in the renderer.
+        var project = new VirtualCrossoverProjectFile();
+        project.Pairs[0].Mono = true;
+        project.Pairs[0].Left.SourceFilePath = "tw.json";
+        project.Pairs[0].Left.DisplayName = "Tweeter";
+        project.Pairs[0].Left.PeqBands.Add(new PeqBand(3000, 4.0, -2.0));
+        project.Pairs[0].Left.PeqBands.Add(
+            new PeqBand(8000, 0.7, 2.0, PeqBandType.HighShelf));
+        project.Pairs[0].Left.PeqBands.Add(
+            new PeqBand(1800, 0.7, 0, PeqBandType.AllPassSecondOrder));
+        project.Pairs[0].Left.PeqBands.Add(
+            new PeqBand(900, 0.7, 0, PeqBandType.AllPassFirstOrder));
+
+        string path = Path.Combine(Path.GetTempPath(), $"vdsp_{Guid.NewGuid():N}.pdf");
+        try
+        {
+            VirtualCrossoverSheetPdf.Export(path, project, metricLine: null, 96_000);
+            Assert.True(new FileInfo(path).Length > 0);
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+    }
+
+    [Fact]
     public void Export_HandlesProjectWithoutSources()
     {
         var project = new VirtualCrossoverProjectFile();

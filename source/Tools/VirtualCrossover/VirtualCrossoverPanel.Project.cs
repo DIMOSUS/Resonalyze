@@ -231,11 +231,13 @@ public partial class VirtualCrossoverPanel
 
     private void ExportSession()
     {
+        (string? folder, string? fileName) = session.Project.SaveDialogStart();
         using var dialog = new SaveFileDialog
         {
             AddExtension = true,
             DefaultExt = "json",
-            FileName = "virtual-dsp-session",
+            FileName = fileName ?? "virtual-dsp-session",
+            InitialDirectory = folder ?? string.Empty,
             Filter = "Virtual DSP session (*.json)|*.json|All files (*.*)|*.*",
             Title = "Save Virtual DSP session"
         };
@@ -251,7 +253,10 @@ public partial class VirtualCrossoverPanel
         catch (Exception exception)
         {
             ShowError("The session could not be saved.", exception.Message);
+            return;
         }
+
+        ScheduleSave();
     }
 
     // The import immediately becomes the new internal autosave.

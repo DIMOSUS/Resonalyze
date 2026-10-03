@@ -70,11 +70,16 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
+        (string? folder, string? sessionFile) = session.Project.SaveDialogStart();
         using var dialog = new SaveFileDialog
         {
             AddExtension = true,
             DefaultExt = "pdf",
-            FileName = "virtual-dsp",
+            // The stem alone: the dialog adds the extension of whichever format is chosen.
+            FileName = Path.GetFileNameWithoutExtension(sessionFile) is { Length: > 0 } stem
+                ? stem
+                : "virtual-dsp",
+            InitialDirectory = folder ?? string.Empty,
             Filter = "Tuning sheet (PDF) (*.pdf)|*.pdf|Tuning sheet (text) (*.txt)|*.txt",
             Title = "Export Virtual DSP tuning sheet"
         };

@@ -894,6 +894,52 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void TheSessionFile_IsOfferedAgainAfterARestart_AndOnlyTheAppsOwnFilesNameIt()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            string folder = Path.Combine(root, "cars");
+            string path = Path.Combine(folder, "bmw.json");
+            var project = new VirtualCrossoverProjectFile();
+            Assert.Equal((null, null), project.SaveDialogStart());
+
+            project.SaveTo(path);
+            Assert.ThrowsAny<Exception>(() => project.SaveTo(folder));
+            project.Save(root);
+            VirtualCrossoverProjectFile reopened = VirtualCrossoverProjectFile.LoadOrDefault(root);
+            Assert.Equal((folder, "bmw.json"), reopened.SaveDialogStart());
+            (string? backup, _) = reopened.SaveResetBackup(root);
+            Assert.Equal(path, VirtualCrossoverProjectFile.LoadFrom(backup!, root).SessionFilePath);
+            Assert.Null(reopened.ForReset().SessionFilePath);
+
+            Assert.Equal(
+                path,
+                VirtualCrossoverProjectFile.LoadFrom(VirtualCrossoverProjectFile.GetPath(root), root)
+                    .SessionFilePath);
+            string copiedBackup = Path.Combine(root, "renamed.json");
+            File.Copy(backup!, copiedBackup);
+            Assert.Equal(
+                copiedBackup,
+                VirtualCrossoverProjectFile.LoadFrom(copiedBackup, root).SessionFilePath);
+
+            string export = Path.Combine(root, "my-car.json");
+            reopened.SaveTo(export);
+            Assert.DoesNotContain("sessionFilePath", File.ReadAllText(export));
+            Assert.Equal(export, VirtualCrossoverProjectFile.LoadFrom(export, root).SessionFilePath);
+
+            Directory.Delete(folder, recursive: true);
+            Assert.Equal(
+                (null, "bmw.json"),
+                VirtualCrossoverProjectFile.LoadOrDefault(root).SaveDialogStart());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void LoadOrDefault_AProjectFromBeforeTheProcessorSelector_FollowsItsMeasurements()
     {
         string root = CreateTemporaryDirectory();

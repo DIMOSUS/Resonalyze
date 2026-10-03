@@ -385,6 +385,20 @@ throw, and a file holding such a gate would have been set aside as unusable at t
   the last reset, and dated files would be a second archive. It has its own `.json` name (what Load session
   offers), not `.backup`, so it can never clobber the only copy of an unreadable project.
 
+## Session file name
+
+`SessionFilePath` is the file Save session offers again: the one last loaded (`LoadFrom`) or written (`SaveTo`),
+opened in its folder while that folder exists. The tuning sheet export opens there too, on the same name without
+its extension, which the dialog adds for the format chosen (PDF or text). It belongs to the session, so the
+autosave carries it across restarts and Reset forgets it with the tune; a failed write keeps the previous name.
+
+Only the application's own files write it, the autosave and the reset backup. An export never names itself: the
+path is wrong wherever the file is copied to, and its location already answers. `LoadFrom` keeps a stored value
+only for those two files, matched by their exact paths: loading the reset backup brings the session back under its
+own name instead of offering to save the tune into the file the next Reset overwrites. Any other file, even one
+saved or copied into the same folder, is remembered by the path it was loaded from, whatever it stores, so a shared
+autosave or a hand-edited file cannot aim the next save at a folder and name of its choosing.
+
 ## Side lock
 
 `VirtualCrossoverSideLock` implements the **Lock** beside the Virtual DSP side radios: while on, a crossover,

@@ -525,7 +525,7 @@ internal static class Shots
             Rectangle crop = Rectangle.Union(
                 session.ShellBounds(Reflect.Field<Control>(panel, "mainPlotView")),
                 Rectangle.Union(
-                    session.ShellBounds(Reflect.Field<Control>(panel, "labelCurves")),
+                    session.ShellBounds(Reflect.Field<Control>(panel, "curvesPanel")),
                     session.ShellBounds(hybrid)));
             crop.Inflate(0, 4);
 

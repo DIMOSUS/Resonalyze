@@ -68,6 +68,12 @@ public partial class VirtualCrossoverPanel
             "sound, as the Junction phase block reads it. Full: the\r\n" +
             "steady-state sum the cabin hears. The two are not comparable.");
         toolTip.SetToolTip(
+            comboBoxStereoSum,
+            "Both sides as one L+R curve (Front + Sub, Magnitude). Vector:\r\n" +
+            "complex sum, a mono sub counted once. Energy: front L, front R\r\n" +
+            "and sub added by power, no comb between the sides. With\r\n" +
+            "Hybrid, both sides' captures must form one set.");
+        toolTip.SetToolTip(
             radioDspGroupDelay,
             "What the lower plot shows for each channel's DSP chain:\r\n" +
             "Magnitude, Phase, or filter Group delay (the crossover/PEQ\r\n" +

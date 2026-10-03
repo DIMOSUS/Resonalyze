@@ -2640,6 +2640,7 @@ redraws the same curves from the other side's measurement, on the same scale:
 the magnitude and Sum loss axes span both sides, so the curves are compared
 without setting the limits by hand),
 the complex **Sum**, the **opposite side's Sum** as a dashed translucent curve,
+the optional **L+R** curve of both sides together (see below),
 and the **Sum loss** curve, with a **View** row — **Magnitude**, **Phase**,
 **Impulse**, **Group delay** and **Step** — and a **Sum loss** read-out (avg / dip per
 junction plus a total). **Phase** draws each processed channel's phase and the
@@ -2675,7 +2676,7 @@ quoted. The smoothing selector, the hybrid, the target and the spatial average
 sit muted, as on the impulse view.
 **Group delay** draws each processed channel's group delay and the Sum's through
 that same gate and window (Fixed, or FDW with the project's cycles), placed as
-the phase curves are placed and previewed by the open **Gate…** dialog the same
+the phase curves are placed and previewed by the open **Gate** dialog the same
 way — so the phase and group-delay views are one window, and the group delay is
 the pair to the drawn phase. It reads absolute, in milliseconds from the
 record's start (the impulse view's clock, no detrend), and under FDW it is the
@@ -2704,6 +2705,24 @@ stop bands, where a FIR crossover's floors would otherwise draw noise across
 the rest of the range. A hand check that uses it: invert one channel of a junction and
 tune its delay for the deepest null, then flip the polarity back — the deepest
 null is the best summation.
+
+The **L+R** selector draws both sides as one curve, on the Magnitude view of
+**Front + Sub** only; anywhere else it sits muted. **Off** draws nothing.
+**Vector** is the complex sum of every summing channel of both sides — what a
+signal fed to both sides at once sums to at the microphone — with a **Mono**
+block counted once, since it is one driver playing for both; a stereo pair of
+subs enters with both. **Energy** adds front L, front R and the subs by power,
+each of the three a complex sum of its own channels: the junctions inside a side
+keep their phase, but the two sides do not comb against each other. Where the
+fronts play, the curve sits up to 6 dB (Vector) or 3 dB (Energy) above one
+side's Sum; where only a mono sub plays, it reads the sub alone. Both modes read
+through one window opened at the earlier of the two sides' placements, so the
+later side's arrival is inside it. Under **Hybrid** it is built the way the
+hybrid Sum is — each channel's spatial-average level with its response's phase,
+at the shown side's offset — and, like the dashed opposite Sum, only while both
+sides' captures form one set. Nothing is drawn when the two sides were measured
+at different sample rates, or when the other side has no block of its own to add
+(a stage of mono blocks alone is drawn: each of them plays for both sides).
 
 The **Sum loss** selector beside the Sum toggle picks the window the loss — the
 curve and the read-out column together, so they always quote one number — is
@@ -2815,7 +2834,7 @@ A transfer IR is measured at one microphone position, and the deep narrow dips i
 carries move with that microphone — equalizing them corrects a point in space
 rather than a loudspeaker. The **MMM** button on each channel block attaches that
 driver's [moving-microphone capture](#live-spectrum) (the one MMM mode saved), and
-the **Hybrid** checkbox under the plot swaps the magnitude view over to it. The
+the **Hybrid** toggle button under the plot swaps the magnitude view over to it. The
 button's own text says where each channel stands: `MMM` for none, `MMM ✓` for one
 attached, `MMM ⚠` for one the session still refers to but could not read.
 
@@ -3051,7 +3070,7 @@ The panel fills whatever window it is given: both plots take the extra width
 (they share a right edge), and the extra height is **split between them in the
 designer's proportion**, so a maximized window enlarges the pair rather than one
 of them. The rows between the plots ride down with the acoustic plot; below the
-designed size nothing shrinks and the panel scrolls instead. Its **Gate...** dialog exposes
+designed size nothing shrinks and the panel scrolls instead. Its **Gate** dialog exposes
 **Fixed / FDW**, 4 / 6 / 8 cycles, and **Off / Auto / Manual** detrend alongside
 the IR preview, Tukey controls, and gate offset. Where the gate SITS belongs to
 the side you are viewing, since the two sides' drivers sit at different
@@ -3091,7 +3110,7 @@ the response has begun and read the record minus its direct arrival.
 
 A **Target** checkbox draws the EQ target over the prediction: the SAME target
 the EQ Wizard equalizes towards, shaped from either place through the same
-**Target...** menu — a [parametric shape or a house curve imported from a
+**Target** button's menu — a [parametric shape or a house curve imported from a
 file](#the-target-curve) — so the tool that predicts the sum and the tool that
 corrects it aim at one curve rather than at two that drifted apart. These curves
 are transfer-function dB with no absolute reference, so the target has no level
@@ -3141,7 +3160,7 @@ answered.
 
 A fifth curve, **phase FDW-8**, is the **Junction phase** read-out swept along the
 same lag axis: the pair band's Σw·cos Δφ through the read-out's own window — the gate
-set in **Gate...**, always at 8 cycles whatever the dialog's selector reads — on the
+set in **Gate**, always at 8 cycles whatever the dialog's selector reads — on the
 r scale. It is drawn for the polarity as it stands, so its value at the *current*
 marker is the read-out's score, its tallest peak is the best alignment without a flip
 and its deepest trough the best one with the lower channel inverted. The read-out's
@@ -4094,7 +4113,7 @@ stored. It is off while a run is in progress (see
 Undo puts every channel back exactly as it was before it — the crossovers and
 their acoustic goals, gains, delays, polarity, phase rotations, PEQ and FIR —
 with the block order, the stereo scene, tilt and rear fill offset, the
-spatial-average mode, the **Hybrid** tick and the target level. Each command
+spatial-average mode, the **Hybrid** toggle and the target level. Each command
 keeps one step, gone once a session is loaded.
 
 - Where any of that has changed since, Undo asks first, because those changes
@@ -4408,7 +4427,7 @@ this: the clipboard is the only transport, and you are the one who pastes.
   a polarity or crossover change as the guide tells the assistant to advise.
 - **Undo AI import** puts back everything the last import could have moved, not
   only the channels its rows named: every channel's chain, the spatial average
-  mode and the **Hybrid** tick, and the block order Auto crossover may have
+  mode and the **Hybrid** toggle, and the block order Auto crossover may have
   changed. One step; it is gone once a session is loaded. The engines an import
   runs keep no undo of their own: the crossover wizard it opens offers no **Undo
   last Apply**, and what they write never becomes the last Apply the Auto

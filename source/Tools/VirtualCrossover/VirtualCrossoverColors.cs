@@ -9,6 +9,8 @@ internal static class VirtualCrossoverColors
 
     public static OxyColor Sum => UiPalette.CurveNeutral.ToOxy();
 
+    public static OxyColor StereoSum => UiPalette.CurveStereoSum.ToOxy();
+
     public static OxyColor Loss => VirtualCrossoverAcousticPlot.LossAxisColor;
 
     public static OxyColor Channel(int position) => UiPalette.ChannelCurves[position].ToOxy();

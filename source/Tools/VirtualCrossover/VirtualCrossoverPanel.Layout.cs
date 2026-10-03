@@ -20,12 +20,10 @@ public partial class VirtualCrossoverPanel
         int bottom = mainPlotView.Bottom;
         foreach (Control control in new Control[]
         {
-            labelCurves,
             curvesPanel,
             labelCalibration,
             comboBoxCalibration,
             checkBoxHybrid,
-            labelView,
             panel1,
             labelSmoothing,
             comboBoxSmoothing,

@@ -251,7 +251,8 @@ namespace Resonalyze.Dsp
                 IReadOnlyList<IImpulseMeasurement> channels,
                 PhaseAnalysisSettings settings,
                 IReadOnlyList<CalibrationFile?> calibrations,
-                double smoothingInverseOctaves)
+                double smoothingInverseOctaves,
+                IReadOnlyList<int>? groups = null)
         {
             ArgumentNullException.ThrowIfNull(channels);
             ArgumentNullException.ThrowIfNull(calibrations);
@@ -280,26 +281,34 @@ namespace Resonalyze.Dsp
             }
 
             return GetGatedMeasuredMagnitudeSumPair(
-                spectra, sampleRate, bands, calibrations, smoothingInverseOctaves);
+                spectra, sampleRate, bands, calibrations, smoothingInverseOctaves, groups);
         }
 
         /// <summary>The measured sum from spectra already gated in one time frame, with each channel's measured band.</summary>
+        /// <param name="groups">Each spectrum's group (0-based); the result is then the POWER sum of the groups' vector sums.
+        /// Null sums everything as one group.</param>
         public static (AnalysisCurve Display, AnalysisCurve Unsmoothed)
             GetGatedMeasuredMagnitudeSumPair(
                 IReadOnlyList<Complex[]> spectra,
                 int sampleRate,
                 IReadOnlyList<(double LowestHz, double HighestHz)> measuredBands,
                 IReadOnlyList<CalibrationFile?> calibrations,
-                double smoothingInverseOctaves)
+                double smoothingInverseOctaves,
+                IReadOnlyList<int>? groups = null)
         {
             ArgumentNullException.ThrowIfNull(spectra);
             ArgumentNullException.ThrowIfNull(measuredBands);
             ArgumentNullException.ThrowIfNull(calibrations);
-            if (spectra.Count != calibrations.Count || spectra.Count != measuredBands.Count)
+            if (spectra.Count != calibrations.Count || spectra.Count != measuredBands.Count ||
+                (groups != null && groups.Count != spectra.Count))
             {
                 throw new ArgumentException(
-                    "Every spectrum needs its own measured band and calibration entry.",
+                    "Every spectrum needs its own measured band, calibration and group entry.",
                     nameof(spectra));
+            }
+            if (groups != null && groups.Any(group => group < 0))
+            {
+                throw new ArgumentOutOfRangeException(nameof(groups));
             }
             if (spectra.Count == 0)
             {
@@ -312,11 +321,11 @@ namespace Resonalyze.Dsp
                 entry => CalibrationFile.SameCurve(entry, calibrations[0]));
             CalibrationFile? calibration = shared ? calibrations[0] : null;
 
-            Complex[]? total = null;
+            var totals = new Complex[]?[groups == null || groups.Count == 0 ? 1 : groups.Max() + 1];
             for (int channel = 0; channel < spectra.Count; channel++)
             {
                 Complex[] spectrum = spectra[channel];
-                total ??= new Complex[spectrum.Length];
+                Complex[] total = totals[groups?[channel] ?? 0] ??= new Complex[spectrum.Length];
                 (double lowest, double highest) = measuredBands[channel];
                 CalibrationFile? own = shared ? null : calibrations[channel];
                 int usable = Math.Min(total.Length, spectrum.Length);
@@ -336,18 +345,19 @@ namespace Resonalyze.Dsp
                 }
             }
 
-            if (total == null || sampleRate <= 0)
+            Complex[]? grid = totals.FirstOrDefault(total => total != null);
+            if (grid == null || sampleRate <= 0)
             {
                 AnalysisCurve empty = new(string.Empty, []);
                 return (empty, empty);
             }
 
-            var bins = new List<SignalPoint>(total.Length / 2);
-            for (int i = 1; i < total.Length / 2; i++)
+            var bins = new List<SignalPoint>(grid.Length / 2);
+            for (int i = 1; i < grid.Length / 2; i++)
             {
                 bins.Add(new SignalPoint(
-                    i * (sampleRate / (double)total.Length),
-                    AmplitudeToDecibels(total[i].Magnitude)));
+                    i * (sampleRate / (double)grid.Length),
+                    AmplitudeToDecibels(totals.Length == 1 ? grid[i].Magnitude : PowerSumAmplitude(totals, i))));
             }
 
             AnalysisCurve unsmoothed = ResampleGatedMagnitude(bins, calibration, 0);
@@ -356,6 +366,20 @@ namespace Resonalyze.Dsp
                     ? unsmoothed
                     : ResampleGatedMagnitude(bins, calibration, smoothingInverseOctaves),
                 unsmoothed);
+        }
+
+        private static double PowerSumAmplitude(Complex[]?[] totals, int bin)
+        {
+            double power = 0.0;
+            foreach (Complex[]? total in totals)
+            {
+                if (total != null && bin < total.Length)
+                {
+                    power += total[bin].Real * total[bin].Real + total[bin].Imaginary * total[bin].Imaginary;
+                }
+            }
+
+            return Math.Sqrt(power);
         }
 
         /// <summary>Sum with MAGNITUDE from <paramref name="channels"/> and PHASE from each gated spectrum; one shared window. See docs/tech/phase-and-group-delay.md#substituted-magnitude-sum.</summary>

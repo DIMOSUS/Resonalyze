@@ -331,7 +331,7 @@ public partial class VirtualCrossoverPanel
                 : live && !checkBoxHybrid.Checked
                 ? "Every channel that plays has a spatial average attached and the " +
                     "plot is not using one: these curves are the response at a " +
-                    "single microphone position, dips and all. Tick this to draw " +
+                    "single microphone position, dips and all. Press this to draw " +
                     "them from the averages instead." +
                     Environment.NewLine + Environment.NewLine +
                     "What that changes is below."

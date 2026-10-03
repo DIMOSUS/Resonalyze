@@ -130,6 +130,7 @@ internal sealed class UiThemePalette
     public required Color CurveZoneRear { get; init; }
     public required Color CurveZoneCentre { get; init; }
     public required Color CurveZoneSub { get; init; }
+    public required Color CurveStereoSum { get; init; }
     /// <summary>The colour a free overlay slot starts in, one per slot. A slot that has been captured carries its
     /// own colour in its file and is not touched by the theme.</summary>
     public required IReadOnlyList<Color> OverlaySlotDefaults { get; init; }
@@ -315,6 +316,7 @@ internal sealed class UiThemePalette
         CurveZoneRear = Color.FromArgb(255, 150, 64),
         CurveZoneCentre = Color.FromArgb(96, 210, 120),
         CurveZoneSub = Color.FromArgb(200, 130, 255),
+        CurveStereoSum = Color.FromArgb(255, 90, 200),
         ChannelCurves =
         [
             Color.FromArgb(86, 156, 255),
@@ -515,6 +517,7 @@ internal sealed class UiThemePalette
         CurveZoneRear = Color.FromArgb(176, 84, 0),
         CurveZoneCentre = Color.FromArgb(16, 120, 52),
         CurveZoneSub = Color.FromArgb(122, 44, 168),
+        CurveStereoSum = Color.FromArgb(184, 20, 130),
         ChannelCurves =
         [
             Color.FromArgb(20, 86, 190),

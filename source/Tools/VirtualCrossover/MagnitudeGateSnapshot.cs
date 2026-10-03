@@ -60,11 +60,13 @@ internal sealed record MagnitudeGateSnapshot(
     /// <summary>Gated magnitude of the channels' SUM, each contributing only where it measured.
     /// See docs/tech/virtual-dsp-panel.md#measured-sum.</summary>
     /// <remarks>Each channel's own correction goes INSIDE the sum (Σ HᵢCᵢ): one outside cannot undo two microphones.</remarks>
+    /// <param name="powerSumGroups">Each channel's group: the groups' vector sums add by power. Null: one vector sum.</param>
     public GatedMagnitude MeasuredSum(
         IReadOnlyList<ProcessedChannel> channels,
         int anchorIndex,
         double gateOffsetMs,
-        Func<ProcessedChannel, CalibrationFile?> calibrationFor)
+        Func<ProcessedChannel, CalibrationFile?> calibrationFor,
+        IReadOnlyList<int>? powerSumGroups = null)
     {
         var views = new List<IImpulseMeasurement>(channels.Count);
         var calibrations = new List<CalibrationFile?>(channels.Count);
@@ -84,7 +86,8 @@ internal sealed record MagnitudeGateSnapshot(
                 views,
                 Template with { GateOffsetMs = gateOffsetMs },
                 calibrations,
-                SmoothingInverseOctaves);
+                SmoothingInverseOctaves,
+                powerSumGroups);
         return new GatedMagnitude(display, unsmoothed).MeasuredBySomeChannel(channels);
     }
 

@@ -15,7 +15,8 @@ internal sealed record VirtualCrossoverViewState(
     SumLossWindow LossWindow,
     bool HybridRequested,
     EqTargetCurve? Target,
-    double TargetLevelDb);
+    double TargetLevelDb,
+    StereoSumMode StereoSum = StereoSumMode.Off);
 
 /// <summary>The magnitude read-outs one frame already computed, handed to the views that draw them.</summary>
 internal sealed record AcousticFrameCurves(
@@ -25,7 +26,8 @@ internal sealed record AcousticFrameCurves(
     bool LossDirect,
     AnalysisCurve? OppositeSum,
     VirtualCrossoverSideSum? OppositeSide,
-    HybridMagnitudes? Hybrid);
+    HybridMagnitudes? Hybrid,
+    AnalysisCurve? StereoSum = null);
 
 /// <summary>Builds the upper plot's five views and the Groups lines from a processed frame. UI-free: the panel hands it the
 /// view state and draws what comes back.</summary>
@@ -128,6 +130,16 @@ internal sealed class AcousticViewBuilder(VirtualCrossoverSession session, Virtu
                 curves.Add(new AcousticCurve(
                     item.Channel.Name, points, item.Color, 1.8, LineStyle.Solid));
             }
+        }
+
+        if (frame.StereoSum != null)
+        {
+            curves.Add(new AcousticCurve(
+                $"L+R {StereoSumModes.DisplayName(view.StereoSum).ToLowerInvariant()}",
+                frame.StereoSum.Points,
+                VirtualCrossoverColors.StereoSum,
+                2.4,
+                LineStyle.Solid));
         }
 
         if (magnitudes == null || frame.Sum == null)

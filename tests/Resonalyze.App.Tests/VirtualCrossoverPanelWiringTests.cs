@@ -81,6 +81,30 @@ public sealed class VirtualCrossoverPanelWiringTests
     }
 
     [Fact]
+    public void TheStereoSumSelector_DrawsBothSidesTogether_OnlyInFrontAndSub()
+    {
+        StaTest.Run(() =>
+        {
+            using var live = new LivePanel();
+
+            Assert.Empty(live.MainSeriesIn(VirtualCrossoverColors.StereoSum));
+
+            live.Set<ThemedComboBox>("comboBoxStereoSum", box => box.SelectedItem = StereoSumMode.Energy);
+            Assert.Equal(StereoSumMode.Energy, live.Session.Project.StereoSum);
+            DataPoint[] energy = [.. Assert.Single(live.MainSeriesIn(VirtualCrossoverColors.StereoSum)).Points];
+
+            live.Set<ThemedComboBox>("comboBoxStereoSum", box => box.SelectedItem = StereoSumMode.Vector);
+            DataPoint[] vector = [.. Assert.Single(live.MainSeriesIn(VirtualCrossoverColors.StereoSum)).Points];
+            Assert.NotEqual(energy, vector);
+
+            live.Set<ThemedComboBox>(
+                "comboBoxGroupView", box => box.SelectedItem = VirtualCrossoverGroupView.GroupsCompared);
+            Assert.False(live.Control<ThemedComboBox>("comboBoxStereoSum").Enabled);
+            Assert.Empty(live.MainSeriesIn(VirtualCrossoverColors.StereoSum));
+        });
+    }
+
+    [Fact]
     public void TheTargetToggle_HangsTheTargetOnTheMagnitudeView()
     {
         StaTest.Run(() =>
@@ -273,6 +297,9 @@ public sealed class VirtualCrossoverPanelWiringTests
         public List<string> MainTitles() => Titles("mainPlotView");
 
         public List<string> DspTitles() => Titles("dspPlotView");
+
+        public List<LineSeries> MainSeriesIn(OxyColor color) =>
+            [.. Model("mainPlotView").Series.OfType<LineSeries>().Where(series => series.Color == color)];
 
         public double LevelDb(string title, double frequencyHz)
         {

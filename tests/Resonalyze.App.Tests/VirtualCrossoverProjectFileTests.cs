@@ -1081,6 +1081,12 @@ public sealed class VirtualCrossoverProjectFileTests
         };
         Assert.Throws<InvalidDataException>(() => badDspPlotMode.Validate());
 
+        var badStereoSum = new VirtualCrossoverProjectFile
+        {
+            StereoSum = (StereoSumMode)42
+        };
+        Assert.Throws<InvalidDataException>(() => badStereoSum.Validate());
+
         var badSmoothing = new VirtualCrossoverProjectFile
         {
             SmoothingInverseOctaves = 7
@@ -1253,12 +1259,15 @@ public sealed class VirtualCrossoverProjectFileTests
             original.Pairs[0].Left.SourceFilePath = @"C:\m\woofer.json";
             original.Pairs[0].Right.DelayMs = 1.25;
             original.SumLossWindowMode = SumLossWindow.Direct;
+            original.StereoSum = StereoSumMode.Energy;
 
             original.SaveTo(path);
             VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadFrom(path);
 
             Assert.True(loaded.ShowLossCurve);
             Assert.Equal(SumLossWindow.Direct, loaded.SumLossWindowMode);
+            Assert.Equal(StereoSumMode.Energy, loaded.StereoSum);
+            Assert.Equal(StereoSumMode.Off, new VirtualCrossoverProjectFile().StereoSum);
             Assert.Equal("woofer", loaded.Pairs[0].Left.DisplayName);
             Assert.Equal(1.25, loaded.Pairs[0].Right.DelayMs);
         }

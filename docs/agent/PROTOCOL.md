@@ -806,7 +806,7 @@ showed (a crossover moved without the bank that went with it).
    before the first of these writes, so an import that stops part-way is still
    undone in one step.
 6. *Undo AI import* puts back everything the import could have moved: every
-   channel's chain, the spatial average mode and the Hybrid tick, and the block
+   channel's chain, the spatial average mode and the Hybrid toggle, and the block
    order the crossover wizard may have changed. The fingerprint check reads
    the undone session as what it is: a package copied *before* the import
    describes it again, and a reply answering that package is taken in full; a

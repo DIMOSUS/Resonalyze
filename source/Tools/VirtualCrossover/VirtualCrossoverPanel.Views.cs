@@ -28,6 +28,9 @@ public partial class VirtualCrossoverPanel
             VirtualCrossoverGroupViews.LossChainZone(SelectedGroupView) != null;
         comboBoxSumLoss.Enabled = lossQuoted;
         Ui.UiStyle.SetTextEnabledLook(labelSumLoss, lossQuoted);
+        bool stereoSum = StereoSumModes.Applies(SelectedGroupView) && radioViewMagnitude.Checked;
+        comboBoxStereoSum.Enabled = stereoSum;
+        Ui.UiStyle.SetTextEnabledLook(labelStereoSum, stereoSum);
         bool groupSums = VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView);
         if (groupSums)
         {
@@ -89,6 +92,7 @@ public partial class VirtualCrossoverPanel
         }
 
         session.Project.SumLossWindowMode = SelectedSumLossWindow;
+        session.Project.StereoSum = SelectedStereoSum;
         session.Project.ShowHybridCurves = checkBoxHybrid.Checked;
         session.Project.ShowTargetCurve = checkBoxShowTarget.Checked;
         // Newer view flags are written beside older ones so an older build opens the nearest view.
@@ -120,6 +124,28 @@ public partial class VirtualCrossoverPanel
         comboBoxSumLoss.SelectedItem is SumLossWindow window
             ? window
             : SumLossWindow.Direct;
+
+    private StereoSumMode SelectedStereoSum =>
+        comboBoxStereoSum.SelectedItem is StereoSumMode mode
+            ? mode
+            : StereoSumMode.Off;
+
+    private void InitializeStereoSumComboBox()
+    {
+        foreach (StereoSumMode mode in StereoSumModes.All)
+        {
+            comboBoxStereoSum.Items.Add(mode);
+        }
+
+        comboBoxStereoSum.Format += (_, args) =>
+        {
+            if (args.ListItem is StereoSumMode mode)
+            {
+                args.Value = StereoSumModes.DisplayName(mode);
+            }
+        };
+        comboBoxStereoSum.SelectedItem = StereoSumMode.Off;
+    }
 
     private void InitializeSumLossComboBox()
     {
@@ -240,10 +266,14 @@ public partial class VirtualCrossoverPanel
                 hybridGroupLevelDeltaDb: hybridReader.GroupLevelReader(view.HybridRequested));
         // The curve windows through the OPPOSITE side's gate placement; both sides must be drawn by the same method.
         VirtualCrossoverSideSum? oppositeSide = null;
-        if (view.ShowSum && view.View is AcousticView.Magnitude or AcousticView.Step)
+        bool drawsStereoSum = view.StereoSum != StereoSumMode.Off &&
+            view.View == AcousticView.Magnitude &&
+            StereoSumModes.Applies(groupView);
+        if ((view.ShowSum && view.View is AcousticView.Magnitude or AcousticView.Step) || drawsStereoSum)
         {
+            // One channel is enough for L+R; the dashed opposite Sum still needs two.
             oppositeSide = await metrics.ComputeSideSumAsync(
-                session.Channels, !view.RightSide, revision, minimumChannels: 2,
+                session.Channels, !view.RightSide, revision, minimumChannels: drawsStereoSum ? 1 : 2,
                 includePair: pair =>
                     VirtualCrossoverGroupViews.ParticipatesInTotalSum(
                         groupView, pair.Zone));
@@ -316,13 +346,27 @@ public partial class VirtualCrossoverPanel
 
         // No hybrid capture on the other side -> drop the curve: a mixed-method sum reads as a false L/R difference.
         AnalysisCurve? oppositeSum = null;
-        if (oppositeSide != null)
+        if (oppositeSide != null && view.ShowSum && oppositeSide.ChannelCount >= 2)
         {
             using (AppProfiler.Zone("VirtualDSP.BuildOppositeSum"))
             {
                 oppositeSum = hybrid == null
                     ? session.MagnitudeGate.OppositeSum(oppositeSide, session.Calibration.For).Display
                     : hybridReader.OppositeSum(oppositeSide, hybrid.OffsetDb);
+            }
+        }
+
+        // Built by the method the Sum is drawn with, as the dashed opposite Sum is.
+        AnalysisCurve? stereoSumCurve = null;
+        if (drawsStereoSum)
+        {
+            using (AppProfiler.Zone("VirtualDSP.BuildStereoSum"))
+            {
+                stereoSumCurve = hybrid == null
+                    ? VirtualCrossoverStereoSum.Build(
+                        view.StereoSum, frame.Summed, oppositeSide, session.MagnitudeGate, session.Calibration.For)
+                    : hybridReader.StereoSum(
+                        view.StereoSum, frame.Shown, frame.Summed, magnitudes!, hybrid, oppositeSide);
             }
         }
 
@@ -346,7 +390,7 @@ public partial class VirtualCrossoverPanel
                 view,
                 frame,
                 new AcousticFrameCurves(
-                    magnitudes, sumCurve, drawnLoss, lossDirect, oppositeSum, oppositeSide, hybrid),
+                    magnitudes, sumCurve, drawnLoss, lossDirect, oppositeSum, oppositeSide, hybrid, stereoSumCurve),
                 loadingProject);
         }
 
@@ -451,7 +495,8 @@ public partial class VirtualCrossoverPanel
         SelectedSumLossWindow,
         HybridRequested,
         checkBoxShowTarget.Checked ? targetCurve : null,
-        session.Project.TargetLevelDb);
+        session.Project.TargetLevelDb,
+        SelectedStereoSum);
 
     private void UpdateWarnings(
         List<ProcessedChannel> processed, List<ProcessedChannel> shown, HybridMagnitudes? hybrid, bool rightSide)

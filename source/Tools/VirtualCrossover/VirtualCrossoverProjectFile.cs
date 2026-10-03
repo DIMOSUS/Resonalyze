@@ -806,6 +806,8 @@ public sealed class VirtualCrossoverProjectFile
     public VirtualCrossoverGroupView GroupView { get; set; } =
         VirtualCrossoverGroupView.FrontAndSub;
 
+    public StereoSumMode StereoSum { get; set; } = StereoSumMode.Off;
+
     /// <summary>Rear fill delay behind the front stage (ms); part of the tune, not a dialog default.</summary>
     public double RearFillOffsetMs { get; set; } =
         VirtualCrossoverLimits.DefaultRearFillOffsetMs;
@@ -1485,6 +1487,11 @@ public sealed class VirtualCrossoverProjectFile
         {
             throw new InvalidDataException(
                 "The virtual crossover group view is invalid.");
+        }
+        if (!Enum.IsDefined(StereoSum))
+        {
+            throw new InvalidDataException(
+                "The virtual crossover L+R sum mode is invalid.");
         }
         if (!double.IsFinite(RearFillOffsetMs) || RearFillOffsetMs is < 0 or > 30)
         {

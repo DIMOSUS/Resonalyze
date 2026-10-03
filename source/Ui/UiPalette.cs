@@ -120,6 +120,7 @@ internal static class UiPalette
     public static Color CurveZoneRear => Current.CurveZoneRear;
     public static Color CurveZoneCentre => Current.CurveZoneCentre;
     public static Color CurveZoneSub => Current.CurveZoneSub;
+    public static Color CurveStereoSum => Current.CurveStereoSum;
     public static IReadOnlyList<Color> OverlaySlotDefaults => Current.OverlaySlotDefaults;
     public static IReadOnlyList<Color> ChannelCurves => Current.ChannelCurves;
     public static Color MarkerArrival => Current.MarkerArrival;

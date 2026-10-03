@@ -1488,6 +1488,11 @@ public sealed class VirtualCrossoverProjectFile
             throw new InvalidDataException(
                 "The virtual crossover group view is invalid.");
         }
+        if (!Enum.IsDefined(StereoSum))
+        {
+            throw new InvalidDataException(
+                "The virtual crossover L+R sum mode is invalid.");
+        }
         if (!double.IsFinite(RearFillOffsetMs) || RearFillOffsetMs is < 0 or > 30)
         {
             throw new InvalidDataException(

@@ -1081,6 +1081,12 @@ public sealed class VirtualCrossoverProjectFileTests
         };
         Assert.Throws<InvalidDataException>(() => badDspPlotMode.Validate());
 
+        var badStereoSum = new VirtualCrossoverProjectFile
+        {
+            StereoSum = (StereoSumMode)42
+        };
+        Assert.Throws<InvalidDataException>(() => badStereoSum.Validate());
+
         var badSmoothing = new VirtualCrossoverProjectFile
         {
             SmoothingInverseOctaves = 7

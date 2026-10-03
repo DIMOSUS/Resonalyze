@@ -394,10 +394,10 @@ autosave carries it across restarts and Reset forgets it with the tune; a failed
 
 Only the application's own files write it, the autosave and the reset backup. An export never names itself: the
 path is wrong wherever the file is copied to, and its location already answers. `LoadFrom` keeps a stored value
-only for a file in the tool's own data folder: loading the reset backup brings the session back under its own name
-instead of offering to save the tune into the file the next Reset overwrites. Any other file is remembered by the
-path it was loaded from, whatever it stores, so a shared autosave or a hand-edited file cannot aim the next save at
-a folder and name of its choosing.
+only for those two files, matched by their exact paths: loading the reset backup brings the session back under its
+own name instead of offering to save the tune into the file the next Reset overwrites. Any other file, even one
+saved or copied into the same folder, is remembered by the path it was loaded from, whatever it stores, so a shared
+autosave or a hand-edited file cannot aim the next save at a folder and name of its choosing.
 
 ## Side lock
 

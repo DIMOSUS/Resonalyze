@@ -913,18 +913,20 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(path, VirtualCrossoverProjectFile.LoadFrom(backup!, root).SessionFilePath);
             Assert.Null(reopened.ForReset().SessionFilePath);
 
-            string elsewhere = Path.Combine(root, "shared");
-            string sharedBackup = Path.Combine(elsewhere, "autosave.json");
-            Directory.CreateDirectory(elsewhere);
-            File.Copy(backup!, sharedBackup);
             Assert.Equal(
-                sharedBackup,
-                VirtualCrossoverProjectFile.LoadFrom(sharedBackup, root).SessionFilePath);
+                path,
+                VirtualCrossoverProjectFile.LoadFrom(VirtualCrossoverProjectFile.GetPath(root), root)
+                    .SessionFilePath);
+            string copiedBackup = Path.Combine(root, "renamed.json");
+            File.Copy(backup!, copiedBackup);
+            Assert.Equal(
+                copiedBackup,
+                VirtualCrossoverProjectFile.LoadFrom(copiedBackup, root).SessionFilePath);
 
-            string copy = Path.Combine(elsewhere, "copy.json");
-            reopened.SaveTo(copy);
-            Assert.DoesNotContain("sessionFilePath", File.ReadAllText(copy));
-            Assert.Equal(copy, VirtualCrossoverProjectFile.LoadFrom(copy, root).SessionFilePath);
+            string export = Path.Combine(root, "my-car.json");
+            reopened.SaveTo(export);
+            Assert.DoesNotContain("sessionFilePath", File.ReadAllText(export));
+            Assert.Equal(export, VirtualCrossoverProjectFile.LoadFrom(export, root).SessionFilePath);
 
             Directory.Delete(folder, recursive: true);
             Assert.Equal(

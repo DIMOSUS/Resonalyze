@@ -1154,12 +1154,9 @@ public sealed class VirtualCrossoverProjectFile
     }
 
     private static bool IsToolFile(string path, string? rootDirectory) =>
-        SafeDirectoryOf(path) is { } directory &&
-        SafeFullPathOf(rootDirectory ?? ApplicationDataPaths.Current.ToolsDirectory) is { } toolsDirectory &&
-        string.Equals(
-            Path.TrimEndingDirectorySeparator(directory),
-            Path.TrimEndingDirectorySeparator(toolsDirectory),
-            StringComparison.OrdinalIgnoreCase);
+        SafeFullPathOf(path) is { } fullPath &&
+        new[] { GetPath(rootDirectory), ResetBackupPath(rootDirectory) }.Any(toolFile =>
+            string.Equals(SafeFullPathOf(toolFile), fullPath, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Folder of the imported session file, searched for moved measurements; null for the autosave.</summary>
     [JsonIgnore]

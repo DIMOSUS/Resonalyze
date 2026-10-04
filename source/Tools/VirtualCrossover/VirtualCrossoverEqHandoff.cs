@@ -99,7 +99,7 @@ internal sealed class VirtualCrossoverEqHandoff(
             detrendMs,
             gate.PinnedOffsetMs is not null,
             // The source responses travel too, so the wizard re-resolves placements the same way when its window changes.
-            PlacementChannel.From(drawn[index]),
+            drawn[index].Placement,
             sampleRate,
             drawn[index].Color,
             drawn
@@ -108,7 +108,7 @@ internal sealed class VirtualCrossoverEqHandoff(
                 .Select(entry => new EqWizardPhaseNeighbour(
                     entry.item.Channel.Name,
                     entry.item.Color,
-                    PlacementChannel.From(entry.item),
+                    entry.item.Placement,
                     offsets[entry.position]))
                 .ToList());
     }

@@ -4045,6 +4045,24 @@ wants is not a measurement. Where the summation refuses, the delay stands and th
 junction is reported at low confidence, naming the lag the wavefronts wanted, so
 a suspicious handover can be checked by hand rather than quietly shipped.
 
+**Above 1 kHz the junction's phase read-out has the last word.** The summation
+there is read through a window some eleven milliseconds long, and in a cabin
+that much holds copies of both drivers off the glass and the dash: it can prefer
+a lobe a whole period from where the wavefronts meet, or the inverted one half
+a period away, and score it better. The phase block's 8-cycle window is about
+five milliseconds at the crossover and reads the drivers themselves. So for
+every lobe the search found, Auto delay reads the **same phase score the
+junction phase block shows**, stands the handover on the lobe where the band
+comes into phase, and sets the delay on that lobe's own peak — the lag at which
+the block's fix reads zero. Run it on a tune made by that block and it should
+leave the junction where it is. The score ranks lobes and not polarities, since
+a lobe and its inverted twin read almost alike: the relation the crossover
+expects (in phase unless its filters say otherwise) is kept, and a handover the
+summation settled inverted stays inverted only if the inverted lobe plainly
+scores higher. Where no lag brings the band into phase — a best score under
+0.75 — the phase says nothing and the summation's choice stands, at the
+confidence the summation gave it.
+
 Under **120 Hz** neither of those witnesses can be asked — two periods of cut
 span the room's own build-up — and the tie is at its worst: across the archived
 cabins half of all low junctions carry an opposite-polarity lobe within half a
@@ -4064,8 +4082,10 @@ One more question is asked once both sides are settled. The side you are tuning
 for decides each handover alone, and the far side then copies its polarity
 driver by driver — so a junction the near side could barely tell apart decides
 for the far side too, and the far side is the one that pays for it. So every
-junction is offered the **other branch**: the whole stack above it, on both
-sides, moved half a period and flipped. It is taken only when the far side
+junction under 1 kHz is offered the **other branch**: the whole stack above it,
+on both sides, moved half a period and flipped (higher up the summation that
+would judge the offer cannot tell the lobes apart, and the phase has already
+named one). It is taken only when the far side
 plainly gains, the near side does not pay for it, and no half of either
 junction loses more than the far side gains — and the answer is checked on a
 real re-render, not on an estimate. Where the two sides want different branches
@@ -4100,12 +4120,14 @@ entered the same way, as a cut on the near side. The gain balance itself is
 alone until you tick **Balance channel gains (cut-only)**. Pairs whose shared band
 reaches the localization region are pinned to the scene, because the image
 outranks the handover there; a final scene-preserving pass may then shift both
-sides of a pair by one shared delta to recover what the pin cost. Each far-side
+sides of a pair by one shared delta to recover what the pin cost, except a pair
+at a crossover above 1 kHz, which stays where the phase put it. Each far-side
 channel below the bridge may also leave its own scene position to buy back its
 junctions' summation, by an eighth of the period of its highest crossover: a
 few hundredths of a millisecond for a midrange under a 2 kHz split, half a
 millisecond for a midbass under a 200 Hz one, where the image does not
-localize. The bridge channel itself never moves: it stands at the scene offset
+localize. Under a crossover above 1 kHz that trim follows the junction's phase
+score instead of the summation, for the same reason the search does. The bridge channel itself never moves: it stands at the scene offset
 you set.
 
 **Rear fill** sets how far behind the front stage the rear arrives, and is off

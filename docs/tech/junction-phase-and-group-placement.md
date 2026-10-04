@@ -7,8 +7,8 @@ Time Alignment panel:
   `JunctionPhaseResult`) that scores how two adjacent processed channels sum in phase at their crossover;
 - **group placement** (`source/Tools/VirtualCrossover/VirtualCrossoverGroupPlacement.cs`,
   `VirtualCrossoverGroupPlacement`) that times a rear fill or a centre against the already settled front stage;
-- **phase gate placement** (`PhaseGatePlacement`, `JunctionPhaseSpectra`, `GatedPhaseCurves`) shared by the
-  Virtual DSP phase view and the EQ Wizard;
+- **phase gate placement** (`dsp/PhaseGatePlacement.cs`, `dsp/JunctionPhaseSpectra.cs`, `GatedPhaseCurves`)
+  shared by the Virtual DSP phase view, the EQ Wizard and Auto delay;
 - **zones, group views and alignment stages** (`VirtualCrossoverZone`, `VirtualCrossoverGroupView`,
   `VirtualCrossoverAlignmentStage`) and the Auto delay dialog/report (`VirtualCrossoverAutoDelayDialog`,
   `VirtualCrossoverAutoDelayReport`, `AlignmentReprocessor`);
@@ -236,7 +236,8 @@ numbers.
 by. The Virtual DSP panel resolves it per redraw from its project and gate dialog; the EQ Wizard resolves it from
 what its handoff froze (it has no live channels, hence `PlacementChannel` rather than `ProcessedChannel`). Both
 must get the same numbers from the same channels or a tune made in one view would not hold in the other, so the
-arithmetic lives here. Every method takes the set it resolves over, and that set matters: resolving over hidden
+arithmetic lives here. It lives in the DSP library because Auto delay places a high junction by the same
+read (`docs/tech/auto-alignment.md#phase-lobe`), over the junction's own two channels. Every method takes the set it resolves over, and that set matters: resolving over hidden
 curves would let a channel nobody can see move the windows of those on screen.
 
 - **Auto anchor** (`EarliestStartMs`): the earliest band-limited first-arrival front across the set, memoized per

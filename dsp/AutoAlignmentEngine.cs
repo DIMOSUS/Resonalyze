@@ -2238,6 +2238,46 @@ public static class AutoAlignmentEngine
                 }
             }
 
+            // Phase lobe (see docs/tech/auto-alignment.md#phase-lobe): at a high junction the summation follows the
+            // cabin, so the read-out's own phase score names the delay lobe and the delay inside it.
+            string? phaseLobeDetail = null;
+            if (directLobeSkip == null && pair.CrossoverHz >= DirectSeedMinCrossoverHz)
+            {
+                List<AlignmentCandidate> lobes = [.. fineOptima, .. wideOptima, .. retriedOptima];
+                List<SignalPoint>? curve = JunctionPhaseLobe.Curve(
+                    Placement(variableSnapshot), Placement(primaryNeighborSnapshot),
+                    pair.Lower.Channel == channel,
+                    channel.SampleRate, channel.ProcessorSampleRate,
+                    pair.CrossoverHz, bandLowHz, bandHighHz,
+                    lobes.Append(chosen).Max(item => Math.Abs(item.DelayMs)) + 2.0 * halfPeriodMs);
+                if (curve != null &&
+                    JunctionPhaseLobe.Read(
+                        curve, lobes, chosen, halfPeriodMs, neighborInverted ^ expectsInversion) is { } phase)
+                {
+                    string Named(AlignmentCandidate item) => FormattableString.Invariant(
+                        $"{item.DelayMs:0.000} ms{(item.InvertPolarity ? " inv" : "")}");
+                    log.AppendLine(FormattableString.Invariant(
+                        $"  [diag] phase lobe: chosen {Named(chosen)} score {phase.ChosenScore:0.00}; best {Named(phase.Pick)} score {phase.PickScore:0.00} peaking at {phase.PeakDelayMs:0.000} ms; of {lobes.Count} optima.") +
+                        (phase.NamesALobe
+                            ? ""
+                            : FormattableString.Invariant(
+                                $" Under {JunctionPhaseLobe.MinimumScore:0.00} the phase names no lobe.")));
+                    if (phase.NamesALobe)
+                    {
+                        if (phase.Pick != chosen)
+                        {
+                            log.AppendLine(FormattableString.Invariant(
+                                $"  phase lobe: preferred {Named(phase.Pick)} (phase score {phase.PickScore:0.00}) over {Named(chosen)} ({phase.ChosenScore:0.00}) — the direct sound comes into phase there."));
+                            phaseLobeDetail = FormattableString.Invariant(
+                                $"phase score {phase.PickScore:0.00} vs {phase.ChosenScore:0.00} moved the pick");
+                        }
+
+                        // The sum's own figures stay with the optimum they were read at; only the delay moves.
+                        chosen = phase.Pick with { DelayMs = phase.PeakDelayMs };
+                    }
+                }
+            }
+
             // Low-junction polarity (see docs/tech/auto-alignment.md#low-junction-polarity): where the
             // direct-coherence witness stands down, the summation cannot tell a lobe from its
             // half-period-plus-inversion twin, and the channels' own crests are the witness that remains.
@@ -2371,6 +2411,10 @@ public static class AutoAlignmentEngine
                         decisions, channel, directLobeDetail,
                         unsettled: directLobeUnsettled);
                 }
+                if (phaseLobeDetail != null)
+                {
+                    AmendDecision(decisions, channel, phaseLobeDetail);
+                }
                 if (lowPolarityDetail != null)
                 {
                     AmendDecision(
@@ -2402,6 +2446,9 @@ public static class AutoAlignmentEngine
             }
         }
     }
+
+    private static PlacementChannel Placement(AlignmentSnapshot snapshot) =>
+        new(snapshot.ImpulseResponse, snapshot.PeakIndex, snapshot.ValidRange);
 
     // Prior-free score: ScoreDb's prior scales with the window (sigma = window / 4), so cross-window comparisons must use this.
     private static double AcousticScore(AlignmentCandidate candidate) =>
@@ -3684,6 +3731,15 @@ public static class AutoAlignmentEngine
                 continue;
             }
 
+            // So do pairs at a high junction, which the phase placed (docs/tech/auto-alignment.md#phase-lobe).
+            if (adjacent.Max(junction => junction.CrossoverHz) is double highestHz &&
+                highestHz >= DirectSeedMinCrossoverHz)
+            {
+                log.AppendLine(FormattableString.Invariant(
+                    $"Co-move {link.Left.Name}+{link.Right.Name}: none, the {highestHz:0} Hz junction is the phase's to place"));
+                continue;
+            }
+
             IReadOnlyList<AlignmentSnapshot> current = reprocess(alignment);
 
             // Only the reference (near-listener) side votes: a two-side mean buys the far junction with the near one.
@@ -3927,6 +3983,88 @@ public static class AutoAlignmentEngine
             double spent = spentMs.GetValueOrDefault(channel);
             double sceneMs = current.DelayMs - spent;
             IReadOnlyList<AlignmentSnapshot> snapshots = reprocess(alignment);
+
+            // Feasibility span is rebased on the earliest channel: check a trial against both ends of the rest of the field.
+            List<double> othersMs = fullScope
+                .Where(item => item.Channel != channel)
+                .Select(item => alignment.GetValueOrDefault(item.Channel).DelayMs)
+                .ToList();
+            double othersMinMs = othersMs.Count > 0
+                ? othersMs.Min()
+                : double.PositiveInfinity;
+            double othersMaxMs = othersMs.Count > 0
+                ? othersMs.Max()
+                : double.NegativeInfinity;
+            // Absolute ticks of the DSP's 0.01 ms grid: the exact move to a tick is scored and that tick is written. The
+            // channel may stand off the grid here (the descent rebases the field by unrounded amounts).
+            // One tick more than fits: from an off-grid scene the far edge holds a tick a floor would drop, and the exact
+            // reach check below discards the surplus.
+            int reachTicks = (int)Math.Ceiling(reachMs / 0.01);
+            int sceneTick = (int)Math.Round(sceneMs / 0.01);
+            // No negatives, no uniform shift, no span widening past the DSP range (this pass runs after the cascade settled).
+            List<double> trials = Enumerable.Range(sceneTick - reachTicks, 2 * reachTicks + 1)
+                .Select(tick => Math.Round(tick * 0.01, 2))
+                .Where(trialMs =>
+                    Math.Abs(trialMs - sceneMs) <= reachMs + 1e-9 &&
+                    trialMs >= 0 &&
+                    Math.Max(othersMaxMs, trialMs) - Math.Min(othersMinMs, trialMs) <= maxDelayMs)
+                .ToList();
+
+            void Trim(double trialMs)
+            {
+                alignment[channel] = current with { DelayMs = trialMs };
+                spent = trialMs - sceneMs;
+                spentMs[channel] = spent;
+                AmendDecision(
+                    decisions, channel,
+                    FormattableString.Invariant(
+                        $"far-side polish, now {spent:+0.00;-0.00} ms off the scene position (<= {reachMs:0.00} ms)"));
+            }
+
+            // Under a high junction the trim follows that junction's phase: the sum there follows the cabin.
+            // See docs/tech/auto-alignment.md#phase-lobe.
+            AlignmentJunction top = adjacent.MaxBy(junction => junction.CrossoverHz)!;
+            if (top.CrossoverHz >= DirectSeedMinCrossoverHz &&
+                JunctionPhaseLobe.Curve(
+                    Placement(snapshots.First(item => item.Channel == channel)),
+                    Placement(snapshots.First(item => item.Channel == OtherMember(top, channel))),
+                    top.Lower.Channel == channel,
+                    channel.SampleRate, channel.ProcessorSampleRate,
+                    top.CrossoverHz, top.BandLowHz, top.BandHighHz,
+                    2.0 * reachMs + JunctionPhaseLobe.TrimStepMs, JunctionPhaseLobe.TrimStepMs) is { } curve)
+            {
+                double standing = JunctionPhaseLobe.ScoreAt(curve, 0);
+                double phaseScore = standing;
+                double phaseTrialMs = current.DelayMs;
+                foreach (double trialMs in trials)
+                {
+                    double score = JunctionPhaseLobe.ScoreAt(curve, trialMs - current.DelayMs);
+                    if (score > phaseScore)
+                    {
+                        phaseScore = score;
+                        phaseTrialMs = trialMs;
+                    }
+                }
+
+                if (phaseTrialMs != current.DelayMs &&
+                    phaseScore > standing + JunctionPhaseLobe.TrimMinimumGain)
+                {
+                    Trim(phaseTrialMs);
+                    // Only a trim under a mono channel's own junction gives that channel something to follow.
+                    moved |= adjacent.Any(junction =>
+                        plan.MonoChannels.Contains(OtherMember(junction, channel)));
+                    log.AppendLine(FormattableString.Invariant(
+                        $"Far-side polish {channel.Name}: {spent:+0.00;-0.00} ms off the scene position (phase score {standing:0.00} -> {phaseScore:0.00} at {top.CrossoverHz:0} Hz)"));
+                }
+                else
+                {
+                    log.AppendLine(FormattableString.Invariant(
+                        $"Far-side polish {channel.Name}: kept (phase score {standing:0.00} at {top.CrossoverHz:0} Hz, best in reach {phaseScore:0.00})"));
+                }
+
+                continue;
+            }
+
             List<VirtualCrossoverAnalysis.SumLossEvaluator> evaluators = adjacent
                 .Select(junction => JunctionSum(
                     snapshots, channel, OtherMember(junction, channel), junction.BandLowHz, junction.BandHighHz))
@@ -3944,42 +4082,15 @@ public static class AutoAlignmentEngine
             double Score(double deltaMs) =>
                 evaluators.Sum(evaluator => PenalizedLoss(evaluator, deltaMs)) / evaluators.Count;
 
-            // Feasibility span is rebased on the earliest channel: check a trial against both ends of the rest of the field.
-            List<double> othersMs = fullScope
-                .Where(item => item.Channel != channel)
-                .Select(item => alignment.GetValueOrDefault(item.Channel).DelayMs)
-                .ToList();
-            double othersMinMs = othersMs.Count > 0
-                ? othersMs.Min()
-                : double.PositiveInfinity;
-            double othersMaxMs = othersMs.Count > 0
-                ? othersMs.Max()
-                : double.NegativeInfinity;
             double baseline = Score(0);
             double bestTrialMs = current.DelayMs;
             double bestScore = baseline;
             double refusedDelta = 0;
             double refusedScore = baseline;
             string? refusedWhy = null;
-            // Absolute ticks of the DSP's 0.01 ms grid: the exact move to a tick is scored and that tick is written. The
-            // channel may stand off the grid here (the descent rebases the field by unrounded amounts).
-            // One tick more than fits: from an off-grid scene the far edge holds a tick a floor would drop, and the exact
-            // reach check below discards the surplus.
-            int reachTicks = (int)Math.Ceiling(reachMs / 0.01);
-            int sceneTick = (int)Math.Round(sceneMs / 0.01);
-            for (int tick = sceneTick - reachTicks; tick <= sceneTick + reachTicks; tick++)
+            foreach (double trialMs in trials)
             {
-                double trialMs = Math.Round(tick * 0.01, 2);
                 double delta = trialMs - current.DelayMs;
-                if (Math.Abs(trialMs - sceneMs) > reachMs + 1e-9 ||
-                    trialMs < 0 ||
-                    Math.Max(othersMaxMs, trialMs) -
-                        Math.Min(othersMinMs, trialMs) > maxDelayMs)
-                {
-                    // No negatives, no uniform shift, no span widening past the DSP range (this pass runs after the cascade settled).
-                    continue;
-                }
-
                 double score = Score(delta);
                 if (score <= bestScore)
                 {
@@ -4013,19 +4124,13 @@ public static class AutoAlignmentEngine
 
             if (bestTrialMs != current.DelayMs && bestScore > baseline + FarSidePolishMinimumGainDb)
             {
-                alignment[channel] = current with { DelayMs = bestTrialMs };
-                spent = bestTrialMs - sceneMs;
-                spentMs[channel] = spent;
+                Trim(bestTrialMs);
                 moved = true;
                 log.AppendLine(
                     $"Far-side polish {channel.Name}: " +
                     $"{spent:+0.00;-0.00} ms off the scene position " +
                     $"(own-junction dip-penalized loss " +
                     $"{baseline:0.00} -> {bestScore:0.00} dB)");
-                string amendment = FormattableString.Invariant(
-                    $"far-side polish, now {spent:+0.00;-0.00} ms off the scene position (<= ") +
-                    FormattableString.Invariant($"{reachMs:0.00} ms)");
-                AmendDecision(decisions, channel, amendment);
             }
             else
             {
@@ -4113,6 +4218,15 @@ public static class AutoAlignmentEngine
                 Counterpart(reference.Upper.Channel) != far.Upper.Channel ||
                 far.Upper.Channel == reference.Upper.Channel)
             {
+                continue;
+            }
+
+            // The phase names a high junction's lobe; this sum cannot (docs/tech/auto-alignment.md#phase-lobe).
+            if (reference.CrossoverHz >= DirectSeedMinCrossoverHz)
+            {
+                log.AppendLine(
+                    $"  stereo branch not asked at {reference.Lower.Channel.Name}/{reference.Upper.Channel.Name}: " +
+                    "the phase places a high junction.");
                 continue;
             }
 

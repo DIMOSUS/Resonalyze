@@ -152,7 +152,7 @@ public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
             List<VirtualCrossoverMetric.PhaseEntry> shipped =
                 metrics.BuildPhaseEntries(
                     saved,
-                    channels => JunctionPhaseSpectra.Build(
+                    channels => ProcessedChannels.JunctionPhaseSpectra(
                         channels,
                         sampleRate,
                         gate.OffsetMs,
@@ -294,7 +294,7 @@ public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
         if (window is { Mode: PhaseWindowMode.FrequencyDependent, Shared: false } &&
             window.Cycles == JunctionPhaseSpectra.FdwCycles)
         {
-            return JunctionPhaseSpectra.Build(
+            return ProcessedChannels.JunctionPhaseSpectra(
                 ordered,
                 sampleRate,
                 project.PhaseGateFor(project.ActiveSideRight).OffsetMs,
@@ -304,7 +304,7 @@ public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
         }
 
         double? pinned = project.PhaseGateFor(project.ActiveSideRight).OffsetMs;
-        IReadOnlyList<PlacementChannel> placement = PlacementChannel.From(ordered);
+        IReadOnlyList<PlacementChannel> placement = ProcessedChannels.Placement(ordered);
         double sharedOffsetMs = PhaseGatePlacement.ResolveSharedOffsetMs(
             placement, sampleRate, pinned);
         List<double> offsets = PhaseGatePlacement.ResolvePerCurveOffsets(

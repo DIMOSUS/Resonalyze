@@ -13,6 +13,7 @@ because a specific field measurement went wrong without it.
 | Tie-breaks between candidates | `dsp/AlignmentSelection.cs` (`AlignmentSelection`) |
 | Low-crossover polarity witness | `dsp/LowJunctionPolarity.cs` (`LowJunctionPolarity`) |
 | Direct-sound check on the final lobe | `dsp/DirectLobeWitness.cs` (`DirectLobeWitness`) |
+| Phase score that places a high junction | `dsp/JunctionPhaseLobe.cs` (`JunctionPhaseLobe`), over `dsp/JunctionPhaseSpectra.cs` and `dsp/PhaseGatePlacement.cs` |
 | Branch a junction's two sides disagree on | `dsp/StereoJunctionBranch.cs` (`StereoJunctionBranch`) |
 | Band-limited arrival detector, energy onset, manual-mode honesty probe | `dsp/TimeAlignmentAnalysis.cs` (`TimeAlignmentAnalysis`) |
 | Loss surfaces, candidates, direct-sound cuts, coherence ladder | `VirtualCrossoverAnalysis` (`FindAlignmentCandidates`, `BuildAlignmentBins`, `CutDirectSound`, `CutDirectSoundPair`, `SumLossEvaluator`, `ArrivalCoherencePoint`) |
@@ -963,6 +964,87 @@ to 0.037 dB better (21 junctions better / 13 worse, against 18 / 16), and dip fr
 It stands down under a lock, a forced polarity or a joint search, and below
 `DirectCoherenceMinCrossoverHz`, where `#low-junction-polarity` takes over.
 
+## Phase lobe
+
+At or above `DirectSeedMinCrossoverHz` the last word on a free search belongs to the junction read-out's
+own phase score (`JunctionPhaseLobe`): it names the delay lobe and the delay inside it. The summation
+cannot. Its window is 8.66 periods of the band's low edge (`#junction-window-length-and-fft-sampling` in
+`virtual-dsp-analysis.md`), 11.5 ms at a 750-3000 Hz junction, and a cabin puts copies of both drivers
+inside it. The read-out's 8-cycle window is 5.3 ms at the crossover and 2.7 ms at the band's top, so the
+same junction reads as the fronts make it.
+
+The field case is the October batch of the reference car (`v9`). On one tune the wide-window promotion
+took a lobe a period early for 1.82 dB (tweeter 0.36 ms ahead of the mid, the hand tune 0.22 behind); on
+another the search settled on the inverted twin half a period late, where the direct cut's whitened
+correlation reads 0.93 because it weights the band's edges like its middle. The hand tunes of that car,
+from `v6` on, stand on the read-out's optimum: within 0.03 ms on the near side of every one of them, and
+within 0.07 ms on all but one far side.
+
+**The curve.** `JunctionPhaseLobe.Curve` is `JunctionPhaseAlignment.SweepCurve` over the read-out's
+spectra of the pair (`JunctionPhaseSpectra.Build`, the panel's placement: each channel's own start, or
+the earlier of the two where a channel's own window would cut its leading edge), re-expressed against
+the searched channel's delay. The gate is a fixed 5 / 50 / 20 ms: above 1 kHz the 8-cycle window alone
+shapes the read, so the lengths the panel is set to do not move it. Opening the gate at the band-limited
+front (`FindGateAnchor`) was tried first and is wrong for a linear-phase FIR split, whose pre-ringing it
+takes for the front: `FirCrossoverAlignmentTests` read 0.52 at the true alignment and a score rising all
+the way to the window's edge, against 0.999 through the panel's placement.
+
+**The lobes.** Every optimum the fine, wide and retry searches found is asked for the lobe it stands in
+(`PeakOf`): the best score within half a period of its delay, in its own polarity, and where that peak
+sits. Half a period is the whole cell, since the next lobe of the same relation peaks a period off; a
+quarter period left a pick whose optimum sat exactly a quarter period from the peak where it was. A
+maximum on the reach's edge is a slope: the optimum keeps its delay and scores what the curve reads
+there. Scored by the edge value, an optimum half a period off claimed the true peak's score and kept its
+own delay.
+
+**The pick** (`Read`).
+
+- **The phase ranks lobes, not polarities.** A half-period twin scores within the read's own noise. On
+  the reference car the near side reads 0.94 in phase against 0.85-0.93 inverted, the far side 0.90-0.91
+  inverted against 0.83-0.86 in phase, and the hand tune is in phase on all four. So the relation the
+  filters expect (in phase unless `#expected-polarity` says otherwise) is kept, and a pick that already
+  stands in the other relation stays there only if that relation's best lobe scores higher by
+  `JunctionPhaseAlignment.PolarityFlipAdvantage` (0.05, the read-out's own). Two simpler rules were
+  measured and dropped: letting the better-scoring polarity win by that margin sent both far sides of
+  the reference car to the inverted twin in a single-side run, and holding the standing pick's polarity
+  left a near side inverted and one lobe further out.
+- **Below `MinimumScore` (0.75) the curve names nothing** and the summation's pick stands. Single-side
+  runs on far sides of the archive are where it matters: best scores of 0.67 and 0.62 pointed a period
+  away from the saved tune's lobe, and 0.68 pointed at it. The floor refuses all three; the lowest score
+  that moved a pick on the archive is 0.80.
+- **The delay is the lobe's peak**, not the summation's optimum under it, which sat 0.03-0.06 ms off on
+  the reference car (read-out score 0.82 at the optimum, 0.96 at the peak). The summation's loss and dip
+  stay with the optimum they were read at, so the decision's margin is still the summation's; the
+  detail says when the phase moved the pick.
+
+It stands down where the direct lobe check does: under a lock, a forced polarity or a joint search. A
+scene-locked far side is placed by its cross-side target and trimmed by the polish below.
+
+**The passes behind the descent** score the summation, and on a high junction each of them undid the
+above: the pair co-move walked the reference car's tweeter pair a quarter period (0.15 ms), and the
+stereo branch check flipped the stack above the mid/tweeter split on two cabins. So, at or above
+`DirectSeedMinCrossoverHz`:
+
+- a linked pair bordering such a junction is not co-moved;
+- the stereo branch check does not ask such a junction;
+- the far-side polish trims a channel whose highest junction is such a one by that junction's phase
+  score: the same ticks inside the same reach, taken where the score gains `TrimMinimumGain` (0.02).
+  A trim is bounded, so it needs no floor. It reports a move to the polish/mono round only where the
+  channel borders a mono channel: on one cabin a 0.04 ms trim of the far mid re-ran the sub's co-move,
+  which hopped 6.16 ms and flipped, to the lobe its first pass had vetoed.
+
+**Field effect** (23 archived sessions, 46 sides; the top junction of each side at or above 1 kHz against
+the saved tune, counted on the tune's lobe when the polarity matches and the gap is within 0.10 ms): 29
+of 42 before, 39 of 42 after in the stereo run, 35 of 42 in single-side runs. In the stereo run every
+side that changes lobe moves onto the saved tune's. The read-out's score at the proposal goes from 0.73
+to 0.83 on average (the saved tunes read 0.73). No junction under 1 kHz changes lobe; they move by up to
+0.12 ms where the far mid above them is trimmed. Still off, as before: one far side most of a period
+out, one cabin whose saved tune is not a reference, and in single-side runs four more far sides.
+
+The session battery prints the read-out's score and fix at the saved tune and at the proposal
+(`phase saved`, `phase proposed`); at a high junction that line and the direct sound's `zero r` are the
+judge, not the full-window loss.
+
 ## Low-junction polarity
 
 Below `DirectCoherenceMinCrossoverHz` the direct-coherence witness stands down, and nothing else
@@ -1061,6 +1143,8 @@ per session. Setting `RESONALYZE_SESSION_BATTERY_STEREO` runs `ComputeStereo` in
 sides, through the panel's own plan builders (`CollectStereoSides`, `PickStereoBridge`,
 `StereoBridgeBand`, `ComputeStereoAlignment`) so the battery cannot drift from what the app does.
 A session with no front-chain pair resolved on both sides says so and falls back to one side.
+`RESONALYZE_SESSION_BATTERY_BOTHSIDES` keeps the single-side run but judges each side alone, the far one
+included: a far side on its own is where a lobe witness is weakest.
 
 **Bridge gates.** The bridge is the single link between the sides, so its arrivals are gated, not
 trusted:
@@ -1089,8 +1173,8 @@ r 0.75 against 0.81 for its flip partner, 0.04 dB on the panel metric — commit
 the far side is the one that pays: at that junction it lands anti-correlated (r -0.97) and 0.45 dB down.
 The information that would settle the branch lives on the side that is never asked.
 
-`RebalanceJunctionBranches` asks it, after both descents. For each junction that has a twin on the far
-side it probes ONE move: the whole stack ABOVE the junction, on both sides, shifted half a period and
+`RebalanceJunctionBranches` asks it, after both descents. For each junction under
+`DirectSeedMinCrossoverHz` that has a twin on the far side it probes ONE move: the whole stack ABOVE the junction, on both sides, shifted half a period and
 flipped. That operation changes the junction and nothing else — every junction above it moves rigidly,
 which is why a lone pair co-move cannot express it (the tweeter has to follow the midrange).
 
@@ -1128,7 +1212,12 @@ which is why a lone pair co-move cannot express it (the tweeter has to follow th
 
 The trial and the adopted move go through the same `ApplyBranchMove`: a delay without the flip is the
 worst of both branches, which `RebalanceJunctionBranches_AdoptedMove_DelaysAndFlipsTheStackAbove`
-pins with a reference junction tied between its lobes and a far tweeter wired inverted on the alias.
+pins with a reference junction tied between its lobes and a far upper driver wired inverted on the alias.
+
+A junction at or above `DirectSeedMinCrossoverHz` is not asked. The question is put to the summation,
+which cannot tell such a junction's lobes apart, and the lobe there is the phase's to name (see
+[Phase lobe](#phase-lobe)): on the archive the check flipped the stack above the mid/tweeter split of
+two cabins off the lobe their saved tunes stand on.
 
 Field effect (10 stereo sessions, 20 sides, 58 junctions, walk anchored on the top channel): five
 moves are adopted. The v6 200 Hz split goes +2.58 ms flipped and lands on the owner's lobe (left
@@ -1305,6 +1394,9 @@ quality the scene mandate cost without touching the image.
   offset co-move identically.
 - **Mono neighbours.** Pairs bordering the mono channel are not co-moved, because the mono is timed
   by the left pass alone (the sub/left-woofer relation must match a left-only run).
+- **High junctions.** Nor are pairs bordering a junction at or above `DirectSeedMinCrossoverHz`: the
+  descent stood it on its phase peak, and this sum would re-time it by the cabin (see
+  [Phase lobe](#phase-lobe)).
 
 **Mono co-move** (`ComoveMonoChannels`). The mono channel's lobe was chosen by the left junction
 alone. Moving or flipping one mono channel cannot change any pair's L−R timing, so it is swept across
@@ -1366,6 +1458,10 @@ recover its own far-side junctions, by an eighth of the period of its highest ju
   next 0.28 would cost the sub junction's 70-140 Hz half 0.27 dB for a 0.16 dB gain.
 - **Gain threshold.** Below the co-move's 0.05 dB, because such a trim only buys fractions of a dB:
   on the v6 cabin the honest gains ran 0.01-0.03 dB, and even 0.02 dB refused them all.
+- **Under a high junction the phase scores the trim.** A channel whose highest junction is at or above
+  `DirectSeedMinCrossoverHz` takes the tick inside the same reach where that junction's phase score is
+  best, not the summation's (see [Phase lobe](#phase-lobe)); where the junction reads no phase the
+  summation trims as below.
 - **Order.** Band order from the bridge down. Mono channels never move here; they follow in the mono
   co-move this pass alternates with (below).
 - **Grid.** Absolute ticks of the DSP's 0.01 ms grid, since gains between its points are unrealizable: the

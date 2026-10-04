@@ -1,25 +1,16 @@
 using System.Numerics;
-using Resonalyze.Dsp;
 
-namespace Resonalyze;
+namespace Resonalyze.Dsp;
 
-/// <summary>What window placement needs from a channel; not <see cref="ProcessedChannel"/> so the EQ Wizard's frozen handoff responses can use it.</summary>
-internal readonly record struct PlacementChannel(
+/// <summary>What window placement needs from a channel.</summary>
+public readonly record struct PlacementChannel(
     Complex[] ImpulseResponse,
     int PeakIndex,
-    ValidSampleRange ValidRange)
-{
-    public static PlacementChannel From(ProcessedChannel channel) =>
-        new(channel.ImpulseResponse, channel.PeakIndex, channel.ValidRange);
+    ValidSampleRange ValidRange);
 
-    public static IReadOnlyList<PlacementChannel> From(
-        IReadOnlyList<ProcessedChannel> channels) =>
-        channels.Select(From).ToList();
-}
-
-/// <summary>Phase window placement and common detrend τ, shared by Virtual DSP and EQ Wizard so a tune holds in both.
+/// <summary>Phase window placement and common detrend τ, shared by Virtual DSP, EQ Wizard and Auto delay so a tune holds in all three.
 /// See docs/tech/junction-phase-and-group-placement.md#phase-gate-placement.</summary>
-internal static class PhaseGatePlacement
+public static class PhaseGatePlacement
 {
     /// <summary>Auto gate anchor: earliest band-limited front across the channels (not a bare peak).</summary>
     public static double EarliestStartMs(
@@ -53,7 +44,7 @@ internal static class PhaseGatePlacement
         var perCurve = new List<double>(channels.Count);
         foreach (PlacementChannel item in channels)
         {
-            var view = new ImpulseMeasurementView(item.ImpulseResponse, 0, sampleRate);
+            var view = new RecordOriginMeasurement(item.ImpulseResponse, sampleRate);
             double startMs = TransferIrStartCache.ResolveStartMs(
                 item.ImpulseResponse, sampleRate, item.PeakIndex, item.ValidRange);
             if (!AllowsPerCurveGate(
@@ -78,11 +69,9 @@ internal static class PhaseGatePlacement
     /// <summary>Ceiling on <see cref="DataHelper.GateLeadingEdgeLossDb"/>: above it the window cuts into the channel's leading edge.</summary>
     public const double MaxLeadingEdgeLossDb = -20.0;
 
-    private static int SharedStartAnchorIndex(
-        IReadOnlyList<PlacementChannel> channels,
-        int sampleRate) =>
-        channels.Min(item => ProcessedChannels.StartAnchorIndex(
-            item.ImpulseResponse, item.PeakIndex, sampleRate, item.ValidRange));
+    private static int StartAnchorIndex(PlacementChannel item, int sampleRate) =>
+        TransferIrStartCache.ResolveStartIndex(
+            item.ImpulseResponse, sampleRate, item.PeakIndex, item.ValidRange);
 
     /// <summary>One τ for the whole set so RELATIVE phase survives the detrend.</summary>
     /// <param name="manualDetrendMs">User τ for Manual; null references the set's shared front anchor.</param>
@@ -101,13 +90,24 @@ internal static class PhaseGatePlacement
         if (detrendMode == PhaseDetrendMode.Manual)
         {
             return manualDetrendMs ??
-                SharedStartAnchorIndex(channels, sampleRate) * 1_000.0 / sampleRate;
+                channels.Min(item => StartAnchorIndex(item, sampleRate)) * 1_000.0 / sampleRate;
         }
 
-        PlacementChannel anchor = channels.MinBy(item => ProcessedChannels.StartAnchorIndex(
-            item.ImpulseResponse, item.PeakIndex, sampleRate, item.ValidRange));
+        PlacementChannel anchor = channels.MinBy(item => StartAnchorIndex(item, sampleRate));
         return DataHelper.ResolveCommonPhaseDetrendMilliseconds(
-            new ImpulseMeasurementView(anchor.ImpulseResponse, 0, sampleRate),
+            new RecordOriginMeasurement(anchor.ImpulseResponse, sampleRate),
             template with { DetrendMode = PhaseDetrendMode.Auto });
     }
+}
+
+/// <summary>A response read from the record's own origin: gate offsets handed to it are absolute times.</summary>
+internal sealed class RecordOriginMeasurement(Complex[] impulseResponse, int sampleRate) : IImpulseMeasurement
+{
+    public Complex[]? ImpulseResponse { get; } = impulseResponse;
+
+    public int PeakIndex => 0;
+
+    public int SampleRate { get; } = sampleRate;
+
+    public double HarmonicIROffset(double harmonic) => 0.0;
 }

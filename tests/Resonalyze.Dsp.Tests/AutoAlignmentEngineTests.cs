@@ -821,6 +821,25 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Theory]
+    [InlineData(4)]
+    [InlineData(32)]
+    public void Compute_ACabinCopySkewedAgainstTheFronts_TheHighJunctionStandsWhereTheFrontsMeet(int skewSamples)
+    {
+        // The fronts meet at zero. A copy twice as loud follows 6.25 ms behind, inside the summation's window and
+        // past the phase's, and meets a twelfth of a period or a whole period off.
+        var woofer = new TestChannel("W", Taps((0, 1.0), (300, 2.0)));
+        var tweeter = new TestChannel("T", Taps((0, 1.0), (300 + skewSamples, 2.0)));
+
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
+            Run([woofer, tweeter], [1_500], new StringBuilder());
+
+        AlignmentOverride lower = alignment.GetValueOrDefault(woofer);
+        AlignmentOverride upper = alignment.GetValueOrDefault(tweeter);
+        Assert.Equal(lower.InvertPolarity, upper.InvertPolarity);
+        Assert.InRange(upper.DelayMs - lower.DelayMs, -0.02, 0.02);
+    }
+
+    [Theory]
     // Offsets of the record's and the cut's extremum from the arrival anchor and the chain skew, ms.
     [InlineData(-0.763, -0.130, 0.519, false)] // v2
     [InlineData(-0.799, -0.184, 0.746, false)] // v4

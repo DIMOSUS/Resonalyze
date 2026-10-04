@@ -190,7 +190,7 @@ public partial class VirtualCrossoverPanel
         int sampleRate = processed[0].SampleRate;
         int reference = ProcessedChannels.SharedStartAnchorIndex(processed);
         double fitOffsetMs = PhaseGatePlacement.EarliestStartMs(
-            PlacementChannel.From(processed), sampleRate);
+            ProcessedChannels.Placement(processed), sampleRate);
 
         var traces = processed
             .Select(item => new IrPreviewTrace(

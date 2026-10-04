@@ -222,9 +222,9 @@ public sealed class VirtualCrossoverMetricsTests
         ];
 
         List<double> offsets = PhaseGatePlacement.ResolvePerCurveOffsets(
-            PlacementChannel.From(ordered),
+            ProcessedChannels.Placement(ordered),
             PhaseGatePlacement.EarliestStartMs(
-                PlacementChannel.From(ordered), 48_000),
+                ProcessedChannels.Placement(ordered), 48_000),
             48_000,
             pinnedOffsetMs: null,
             leftMs: 0.5,
@@ -277,7 +277,7 @@ public sealed class VirtualCrossoverMetricsTests
 
     private static IReadOnlyList<Complex[]> JunctionSpectra(
         IReadOnlyList<ProcessedChannel> ordered) =>
-        JunctionPhaseSpectra.Build(
+        ProcessedChannels.JunctionPhaseSpectra(
             ordered,
             ordered[0].SampleRate,
             pinnedOffsetMs: null,

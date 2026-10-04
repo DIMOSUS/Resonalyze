@@ -72,7 +72,7 @@ internal sealed record VirtualCrossoverFrame(
                 ordered =>
                 {
                     orderedSet = ordered;
-                    spectra = JunctionPhaseSpectra.Build(
+                    spectra = ProcessedChannels.JunctionPhaseSpectra(
                         ordered, phaseRate, pinnedOffsetMs, leftMs, plateauMs, rightMs);
                     return spectra;
                 });

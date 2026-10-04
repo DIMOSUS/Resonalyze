@@ -2729,8 +2729,8 @@ so a sub measured with both inputs comes back to its full level in Vector and
 3 dB below it in Energy, which is what a summing input makes of correlated and of
 unrelated signals. Where the fronts play, the curve sits up to 6 dB (Vector) or
 3 dB (Energy) above one side's Sum, and it is never below either side's Sum in
-Energy. **Blend** is Vector in the bass and Energy above, handed over in dB
-across one octave centred on the frequency in the field beside the selector
+Energy. **Blend** is Vector in the bass and Energy above, their powers handed
+over across one octave centred on the frequency in the field beside the selector
 (300 Hz by default, live only under Blend): below it the two sides stay
 coherent wherever the head is, and programme bass is mostly mono; above it
 their comb moves with every head movement, a microphone average smears it, and

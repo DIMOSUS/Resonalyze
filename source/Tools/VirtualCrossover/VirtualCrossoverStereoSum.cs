@@ -104,8 +104,8 @@ internal static class VirtualCrossoverStereoSum
                 parts.Channels, parts.AnchorIndex, parts.GateOffsetMs, calibrationFor, parts.Groups).Display;
     }
 
-    /// <summary>Vector below, Energy above, weighed in dB across the octave centred on <paramref name="blendHz"/>.
-    /// Both curves are on one grid.</summary>
+    /// <summary>Vector below, Energy above, their POWERS weighed across the octave centred on <paramref name="blendHz"/>:
+    /// the L/R cross-term fades out, so a null between the sides fills in as coherence goes. Both curves are on one grid.</summary>
     public static List<SignalPoint> Blend(
         IReadOnlyList<SignalPoint> vector, IReadOnlyList<SignalPoint> energy, double blendHz)
     {
@@ -118,7 +118,9 @@ internal static class VirtualCrossoverStereoSum
             {
                 0.0 => vector[i].Y,
                 1.0 => energy[i].Y,
-                _ => (1.0 - weight) * vector[i].Y + weight * energy[i].Y
+                _ => 10.0 * Math.Log10(
+                    (1.0 - weight) * Math.Pow(10.0, vector[i].Y / 10.0) +
+                    weight * Math.Pow(10.0, energy[i].Y / 10.0))
             };
             points.Add(new SignalPoint(vector[i].X, level));
         }

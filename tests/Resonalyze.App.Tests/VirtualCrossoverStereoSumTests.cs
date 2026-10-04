@@ -138,10 +138,11 @@ public sealed class VirtualCrossoverStereoSumTests
     }
 
     [Theory]
-    // Half an octave either side of 300 Hz is where the hand-over starts and ends.
+    // Half an octave either side of 300 Hz is where the hand-over starts and ends; in its middle the powers
+    // (10 and 2.51 for 10 dB and 4 dB) average to 6.26, 7.96 dB.
     [InlineData(100.0, 10.0)]
     [InlineData(212.13, 10.0)]
-    [InlineData(300.0, 7.0)]
+    [InlineData(300.0, 7.96)]
     [InlineData(424.26, 4.0)]
     [InlineData(5_000.0, 4.0)]
     public void Blend_IsVectorBelowAndEnergyAbove_HandedOverAcrossOneOctave(double hz, double expectedDb)
@@ -150,6 +151,21 @@ public sealed class VirtualCrossoverStereoSumTests
         List<SignalPoint> energy = [new SignalPoint(hz, 4.0)];
 
         Assert.Equal(expectedDb, VirtualCrossoverStereoSum.Blend(vector, energy, 300.0).Single().Y, 2);
+    }
+
+    [Fact]
+    public void Blend_FillsANullBetweenTheSides_AsCoherenceFades()
+    {
+        // Two equal sides in opposite polarity at the hand-over: Vector nulls, Energy reads +3.01 dB over one side.
+        ProcessedChannel left = Channel(Driver("Front L", VirtualCrossoverZone.Front), 1.0);
+        ProcessedChannel right = Channel(Driver("Front R", VirtualCrossoverZone.Front), -1.0);
+        var opposite = new VirtualCrossoverSideSum([], Arrival, SampleRate, [right]);
+
+        AnalysisCurve blend = VirtualCrossoverStereoSum.Build(
+            StereoSumMode.Blend, [left], opposite, Gate, _ => null, blendHz: 1_000.0)!;
+
+        // Half of Energy's power (2 over one side's 1): one side's level, 0 dB.
+        Assert.Equal(0.0, At1kHz(blend) - OneDriverDb(), 1);
     }
 
     [Fact]

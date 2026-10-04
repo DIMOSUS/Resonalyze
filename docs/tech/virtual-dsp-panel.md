@@ -573,8 +573,10 @@ side share, so it returns to its own level. Energy passes the side as a power-su
 contributions by power too), and never below either side. Separating the subs into a group of their own was the
 first version: it broke the sub–front coherence inside each side and read below a side's Sum at an in-phase
 junction. A side with no non-mono block of its own draws no L+R (it would be one side plus half a sub). Blend
-builds both and weighs them in dB with `Clamp(log2(f / fc) + 0.5, 0, 1)` on their shared grid, so the hand-over
-spans one octave around the project's `StereoSumBlendHz`; there is no physical crossover frequency to derive (after
+builds both and weighs their POWERS with `Clamp(log2(f / fc) + 0.5, 0, 1)` on their shared grid, so the hand-over
+spans one octave around the project's `StereoSumBlendHz`. Power, not dB: fading Vector into Energy is fading out the
+L/R cross-term, and a null between the sides must fill in as coherence goes (a dB average of a −160 dB null and
+Energy stays near −78 dB half-way); there is no physical crossover frequency to derive (after
 time alignment the sides agree at the microphone, and what combs is the head moving), hence a field. One
 anchor (the earlier side's start) and one gate offset (the earlier of the two sides' own placements, pins
 included) keep both arrivals inside the window. Under the hybrid, `VirtualCrossoverHybrid.StereoSum` rebuilds the

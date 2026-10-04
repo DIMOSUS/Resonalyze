@@ -347,7 +347,6 @@ public sealed class LiveCaptureDocument
         return stored;
     }
 
-    /// <summary>The drawn curve as points on its own grid; NaN levels (below the protective high-pass) are kept.</summary>
     /// <summary>A copy that reads <paramref name="db"/> louder; silent bins stay silent. Shares the other arrays: never edit it.</summary>
     public LiveCaptureDocument ShiftedBy(double db)
     {
@@ -357,6 +356,7 @@ public sealed class LiveCaptureDocument
         return copy;
     }
 
+    /// <summary>The drawn curve as points on its own grid; NaN levels (below the protective high-pass) are kept.</summary>
     public List<SignalPoint> ToCurvePoints()
     {
         var points = new List<SignalPoint>(CurveDb.Length);

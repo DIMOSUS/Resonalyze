@@ -483,6 +483,8 @@ was fitted to or the level it was fitted against; only a polarity flip changes n
   would deliver to the other settings. A mono token addresses LEFT outright; the side state is read physically.
   The address uses `SideFor(token.RightSide)`, not the active side, since the user may flip L/R while editing.
 - `SourceRevision`: a new measurement picked for that side while the session survives a tab trip.
+- `SideLevelShare`: a mono block's **L+R** toggle moves the level its side reads the measurement at by 6.02 dB
+  with no new source and no new revision.
 - `Calibration`, compared by curve content: the wizard disables its own selector during a handoff, and the panel's
   selector, one tab switch away, would otherwise walk around that lock.
 - `ProcessorSampleRateHz`: a bank fitted for 96 kHz run at 48 kHz is a different filter (up to 4 dB apart in the

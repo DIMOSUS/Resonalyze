@@ -1107,6 +1107,15 @@ stays that coarse; take it again for full detail.
 A snapshot saved by a version that drew the record from sample 0 is moved the same way
 when it loads, its second half before zero.
 
+Here the slot's numeric field is a **scale** rather than an offset: the overlay's
+amplitude in percent, 100 by default, from 1 to 1000 — a vertical shift only moves a
+trace's zero line, while a scale brings a quieter snapshot up to the live trace so the
+two shapes compare. It multiplies the trace on the linear and percent scales; on the dB
+scale it lifts or lowers it by 20·log10 of the scale (50 % is −6 dB), and the step,
+which keeps its own linear axis, is multiplied on every scale. Each slot keeps its
+scale in its file; a slot saved by an earlier version opens at 100, and an offset it
+carried is no longer drawn.
+
 Two markers name the instants the rest of the app acts on: the estimated
 **arrival** — the same shared figure the Auto gate offsets are anchored on — and
 the strongest **peak**, labelled with the record's signal-to-noise ratio whenever
@@ -1494,7 +1503,8 @@ Slots are stored automatically as human-readable JSON under the application data
 directory, as `overlays/<AnalysisMode>/overlay-01.json`. The numbered button
 opens a menu to **Capture curve**, **Import from text**, **Export to text**, or
 switch the slot to a **Calculated overlay** or **Target**; the checkbox shows or
-hides it, the numeric control applies a vertical offset, and **⚙ Settings…**
+hides it, the numeric control applies a vertical offset (in Impulse Response, a
+[scale in percent](#impulse-response) instead), and **⚙ Settings…**
 opens its dialog. A dialog opens with what the slot holds; switching a slot that
 holds something else to a calculated overlay or a target starts from that kind's
 defaults, not from what the slot held before, and never offers the slot's own capture

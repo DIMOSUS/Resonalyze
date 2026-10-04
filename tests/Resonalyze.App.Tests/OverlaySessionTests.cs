@@ -60,7 +60,7 @@ public sealed class OverlaySessionTests : IDisposable
     {
         session.Capture(Slot(1), AddLiveCurve(AnalysisCurveKind.Primary, "Frequency Response", 0.0));
 
-        Assert.True(session.SetOffset(Slot(1), 6m));
+        Assert.True(session.SetLevel(Slot(1), 6m));
 
         Assert.Equal(6.0, OverlaySeriesOf(1).Points[0].Y);
         Assert.Equal(0.0, OverlayFile.Load(Mode.FrequencyResponse, 1, root)!.Offset);
@@ -72,7 +72,7 @@ public sealed class OverlaySessionTests : IDisposable
     public void SwitchingModes_FlushesAPendingOffset_AndReloadsTheSlot()
     {
         session.Capture(Slot(1), AddLiveCurve(AnalysisCurveKind.Primary, "Frequency Response", 0.0));
-        session.SetOffset(Slot(1), -4m);
+        session.SetLevel(Slot(1), -4m);
 
         session.Prepare(Mode.PhaseResponse);
         Assert.Equal(Mode.PhaseResponse, Slot(1).SeriesMode);
@@ -446,9 +446,9 @@ public sealed class OverlaySessionTests : IDisposable
         session.Show(Slot(1));
         Assert.Same(drawn, Slot(1).DrawPoints);
 
-        session.SetOffset(Slot(1), 2m);
+        session.SetLevel(Slot(1), 200m);
         Assert.NotSame(drawn, Slot(1).DrawPoints);
-        Assert.Equal(3.0, Slot(1).DrawPoints![1].Y, 9);
+        Assert.Equal(2.0, Slot(1).DrawPoints![1].Y, 9);
         drawn = Slot(1).DrawPoints!;
 
         frame = ImpulseFrame(origin: 10);
@@ -489,12 +489,47 @@ public sealed class OverlaySessionTests : IDisposable
         Assert.Null(Slot(1).DrawPointsKey);
     }
 
-    private static ImpulseOverlayFrame ImpulseFrame(double origin) =>
+    [Theory]
+    [InlineData(ImpulseAmplitudeScale.Linear, AnalysisCurveKind.Primary, 0.5)]
+    [InlineData(ImpulseAmplitudeScale.Decibels, AnalysisCurveKind.Primary, -6.020599913)]
+    [InlineData(ImpulseAmplitudeScale.Decibels, AnalysisCurveKind.ImpulseStep, 0.5)]
+    public void AnImpulseSlotsScale_ScalesItsAmplitude_NotItsOffset(
+        ImpulseAmplitudeScale amplitude, AnalysisCurveKind kind, double peak)
+    {
+        mode = Mode.ImpulseResponse;
+        sources.SetImpulseFrameProvider(() => ImpulseFrame(origin: 0, amplitude));
+        sources.SetImpulseCaptureProvider(tag => new ImpulseOverlayCapture(
+            [new SignalPoint(100, 0.0), new SignalPoint(110, 1.0), new SignalPoint(120, 0.0)],
+            tag.Kind,
+            1.0,
+            48_000));
+        session.Prepare(mode);
+        var trace = new LineSeries
+        {
+            Title = "Trace",
+            Tag = new CurveTag(Mode.ImpulseResponse, kind),
+            YAxisKey = kind == AnalysisCurveKind.ImpulseStep ? PlotModelFactory.ImpulseStepAxisKey : null
+        };
+        trace.Points.AddRange([new DataPoint(100, 0.0), new DataPoint(110, 1.0), new DataPoint(120, 0.0)]);
+        model.Series.Add(trace);
+        session.Capture(Slot(1), trace);
+        Slot(1).State = Slot(1).State with { Offset = 7m };
+
+        Assert.True(session.SetLevel(Slot(1), 50m));
+
+        Assert.Equal(peak, ImpulseSeriesOf(1).Points[1].Y, 6);
+        session.FlushPendingSaves();
+        Assert.Equal(50.0, OverlayFile.Load(mode, 1, root)!.ScalePercent);
+    }
+
+    private static ImpulseOverlayFrame ImpulseFrame(
+        double origin,
+        ImpulseAmplitudeScale amplitude = ImpulseAmplitudeScale.Linear) =>
         new(
             new ImpulseResponseOptions
             {
                 TimeUnit = ImpulseTimeUnit.Samples,
-                AmplitudeScale = ImpulseAmplitudeScale.Linear
+                AmplitudeScale = amplitude
             },
             origin,
             1.0,

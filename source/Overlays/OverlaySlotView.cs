@@ -10,12 +10,14 @@ internal sealed partial class OverlaySlotView
     private readonly OverlaySlot slot;
     private readonly Panel panel;
     private readonly Button captureButton;
-    private readonly ThemedNumericUpDown offsetControl;
+    private readonly ThemedNumericUpDown levelControl;
+    private readonly decimal offsetIncrement;
     private readonly CheckBox checkBox;
     private readonly Label nameLabel;
     private readonly WrappingToolTip toolTip;
-    private readonly System.Windows.Forms.Timer offsetSaveTimer;
+    private readonly System.Windows.Forms.Timer levelSaveTimer;
     private bool presenting;
+    private bool? presentedScale;
     private string? presentedTitle;
 
     public OverlaySlotView(
@@ -23,7 +25,7 @@ internal sealed partial class OverlaySlotView
         OverlaySlot slot,
         Panel panel,
         Button captureButton,
-        ThemedNumericUpDown offsetControl,
+        ThemedNumericUpDown levelControl,
         CheckBox checkBox,
         Label nameLabel,
         WrappingToolTip toolTip)
@@ -32,7 +34,8 @@ internal sealed partial class OverlaySlotView
         this.slot = slot;
         this.panel = panel;
         this.captureButton = captureButton;
-        this.offsetControl = offsetControl;
+        this.levelControl = levelControl;
+        offsetIncrement = levelControl.Increment;
         this.checkBox = checkBox;
         this.nameLabel = nameLabel;
         this.toolTip = toolTip;
@@ -48,10 +51,9 @@ internal sealed partial class OverlaySlotView
         longPressTimer = new System.Windows.Forms.Timer { Interval = 500 };
         longPressTimer.Tick += LongPressTimerTick;
 
-        offsetSaveTimer = new System.Windows.Forms.Timer { Interval = 500 };
-        offsetSaveTimer.Tick += OffsetSaveTimerTick;
+        levelSaveTimer = new System.Windows.Forms.Timer { Interval = 500 };
+        levelSaveTimer.Tick += LevelSaveTimerTick;
 
-        toolTip.SetToolTip(offsetControl, "Overlay vertical offset (dB)");
         toolTip.SetToolTip(checkBox, "Show / hide this overlay");
         toolTip.SetToolTip(
             captureButton,
@@ -61,7 +63,7 @@ internal sealed partial class OverlaySlotView
         captureButton.Click += (_, _) => OpenCaptureMenu();
         captureButton.MouseDown += CaptureButtonMouseDown;
         captureButton.MouseUp += CaptureButtonMouseUp;
-        offsetControl.ValueChanged += OffsetValueChanged;
+        levelControl.ValueChanged += LevelValueChanged;
 
         Present();
     }
@@ -76,11 +78,12 @@ internal sealed partial class OverlaySlotView
         {
             checkBox.Checked = slot.Checked;
             checkBox.Enabled = slot.CheckEnabled;
-            offsetControl.Enabled = slot.OffsetEnabled;
-            // Assigning rewrites the field's text even at an equal value, which would drop a half-typed offset.
-            if (offsetControl.Value != state.Offset)
+            levelControl.Enabled = slot.LevelEnabled;
+            PresentLevelField(OverlayScale.Applies(state.Mode));
+            // Assigning rewrites the field's text even at an equal value, which would drop a half-typed level.
+            if (levelControl.Value != state.Level)
             {
-                offsetControl.Value = state.Offset;
+                levelControl.Value = state.Level;
             }
 
             SetPanelColor(state.Appearance.Color);
@@ -104,6 +107,24 @@ internal sealed partial class OverlaySlotView
         }
     }
 
+    private void PresentLevelField(bool scale)
+    {
+        if (presentedScale == scale)
+        {
+            return;
+        }
+
+        presentedScale = scale;
+        NumericFieldRange range = Session.LevelRange(slot);
+        levelControl.Minimum = range.Minimum;
+        levelControl.Maximum = range.Maximum;
+        levelControl.DecimalPlaces = range.Decimals;
+        levelControl.Increment = scale ? OverlayScale.Increment : offsetIncrement;
+        toolTip.SetToolTip(
+            levelControl,
+            scale ? "Overlay amplitude scale (%)" : "Overlay vertical offset (dB)");
+    }
+
     // Name drawn in black or white, whichever stays legible on the user-editable slot colour.
     private void SetPanelColor(Color color)
     {
@@ -120,23 +141,23 @@ internal sealed partial class OverlaySlotView
         }
     }
 
-    private void OffsetValueChanged(object? sender, EventArgs e)
+    private void LevelValueChanged(object? sender, EventArgs e)
     {
         if (presenting)
         {
             return;
         }
 
-        if (Session.SetOffset(slot, offsetControl.Value))
+        if (Session.SetLevel(slot, levelControl.Value))
         {
-            offsetSaveTimer.Stop();
-            offsetSaveTimer.Start();
+            levelSaveTimer.Stop();
+            levelSaveTimer.Start();
         }
     }
 
-    private void OffsetSaveTimerTick(object? sender, EventArgs e)
+    private void LevelSaveTimerTick(object? sender, EventArgs e)
     {
-        offsetSaveTimer.Stop();
+        levelSaveTimer.Stop();
         Session.FlushPendingSave(slot);
     }
 }

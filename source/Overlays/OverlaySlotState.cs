@@ -103,7 +103,7 @@ internal sealed record OverlayTargetSettings(
 
 /// <summary>
 /// One overlay slot's content: a captured curve, an operation between curves or a target, or nothing. It is what the
-/// slot file stores; <see cref="Offset"/> is held as the offset field shows it.
+/// slot file stores; <see cref="Offset"/> and <see cref="ScalePercent"/> are held as the level field shows them.
 /// </summary>
 internal sealed record OverlaySlotState(
     Mode Mode,
@@ -113,10 +113,14 @@ internal sealed record OverlaySlotState(
     int SmoothingInverseOctaves,
     CapturedCurve? Captured = null,
     OverlayOperationSettings? Operation = null,
-    OverlayTargetSettings? Target = null)
+    OverlayTargetSettings? Target = null,
+    decimal ScalePercent = OverlayScale.DefaultPercent)
 {
     public static OverlaySlotState Empty(Color color, decimal offset) =>
         new(Mode.None, "", offset, OverlayAppearance.Default(color), 0);
+
+    /// <summary>What the level field shows: the scale in the impulse view, the offset in every other.</summary>
+    public decimal Level => OverlayScale.Applies(Mode) ? ScalePercent : Offset;
 
     public OverlayKind Kind =>
         Operation != null ? OverlayKind.Operation :
@@ -150,11 +154,13 @@ internal sealed record OverlaySlotState(
             file.StrokeThickness,
             file.LineStyle,
             file.OpacityPercent);
-        decimal offset = offsetRange.Assign((decimal)Math.Clamp(
-            file.Offset,
-            (double)offsetRange.Minimum,
-            (double)offsetRange.Maximum));
-        var state = new OverlaySlotState(file.Mode, file.Title, offset, appearance, file.SmoothingCode);
+        var state = new OverlaySlotState(
+            file.Mode,
+            file.Title,
+            AsFieldShows(file.Offset, offsetRange),
+            appearance,
+            file.SmoothingCode,
+            ScalePercent: AsFieldShows(file.ScalePercent, OverlayScale.Range));
 
         return file.Kind switch
         {
@@ -197,6 +203,10 @@ internal sealed record OverlaySlotState(
             _ => state with { Captured = CapturedFromFile(file) }
         };
     }
+
+    // Clamped while still a double: a stored value past decimal's range would throw on the cast.
+    private static decimal AsFieldShows(double stored, NumericFieldRange range) =>
+        range.Assign((decimal)Math.Clamp(stored, (double)range.Minimum, (double)range.Maximum));
 
     private static CapturedCurve CapturedFromFile(OverlayFile file) => new(
         file.Points.Select(point => new DataPoint(point.X, point.Y)).ToArray(),
@@ -258,6 +268,7 @@ internal sealed record OverlaySlotState(
             Title = Title,
             CapturedMagnitudeScale = MagnitudeScale,
             Offset = (double)Offset,
+            ScalePercent = (double)ScalePercent,
             ColorArgb = Appearance.Color.ToArgb(),
             StrokeThickness = Appearance.StrokeThickness,
             LineStyle = Appearance.LineStyle,

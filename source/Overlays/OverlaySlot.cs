@@ -14,7 +14,7 @@ internal sealed class OverlaySlot
 
     public int Index { get; }
 
-    /// <summary>What a cleared slot holds: its default colour and offset.</summary>
+    /// <summary>What a cleared slot holds: its default colour, offset and scale.</summary>
     public OverlaySlotState Empty { get; }
 
     public OverlaySlotState State { get; set; }
@@ -30,14 +30,14 @@ internal sealed class OverlaySlot
 
     public bool CheckEnabled { get; set; }
 
-    public bool OffsetEnabled { get; set; }
+    public bool LevelEnabled { get; set; }
 
     /// <summary>A settings dialog is previewing; periodic redraws (live target refresh) must not stomp it.</summary>
     public bool PreviewActive { get; set; }
 
     public bool SavePending { get; set; }
 
-    /// <summary>A captured slot's curve as drawn (smoothed, offset); what operations and targets read as its source.</summary>
+    /// <summary>A captured slot's curve as drawn (smoothed, at its level); what operations and targets read as its source.</summary>
     public DataPoint[]? DrawPoints { get; set; }
 
     /// <summary>What an impulse capture's <see cref="DrawPoints"/> were rendered from; null for any other slot.</summary>

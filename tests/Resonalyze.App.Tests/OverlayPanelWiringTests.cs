@@ -46,6 +46,22 @@ public sealed class OverlayPanelWiringTests
     });
 
     [Fact]
+    public void InTheImpulseView_TheFieldHoldsTheScale_AndElsewhereTheOffset() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+
+        live.Panel.Session.Prepare(Mode.ImpulseResponse);
+        Assert.Equal(100m, live.Offset(1).Value);
+        live.Offset(1).Value = 500m;
+        Assert.Equal((500m, 0m), (live.Slot(1).State.ScalePercent, live.Slot(1).State.Offset));
+
+        live.Panel.Session.Prepare(Mode.FrequencyResponse);
+        Assert.Equal(0m, live.Offset(1).Value);
+        live.Offset(1).Value = 500m;
+        Assert.Equal((100m, 180m), (live.Slot(1).State.ScalePercent, live.Slot(1).State.Offset));
+    });
+
+    [Fact]
     public void TheCheckbox_HidesAndShowsTheCurve() => StaTest.Run(() =>
     {
         using var live = new LivePanel();

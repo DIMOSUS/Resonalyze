@@ -95,8 +95,26 @@ internal sealed class OverlayCurves
     /// <summary>For an impulse capture, what its drawn points depend on; null for any other slot or before the first framing.</summary>
     public object? ImpulseDrawKey(OverlaySlot slot) =>
         slot.State.Captured?.Impulse is { Samples.Count: > 1 } capture && Sources.TryGetImpulseFrame() is { } frame
-            ? (ImpulseOverlayRenderer.Key(capture, frame), slot.State.Offset)
+            ? (ImpulseOverlayRenderer.Key(capture, frame), LevelOf(slot))
             : null;
+
+    /// <summary>The slot's level field on its drawn values: an offset, or a scale of the amplitude, which a dB trace shows as a shift.</summary>
+    public OverlayLevel LevelOf(OverlaySlot slot)
+    {
+        OverlaySlotState state = slot.State;
+        if (!OverlayScale.Applies(state.Mode))
+        {
+            return new OverlayLevel(1.0, (double)state.Offset);
+        }
+
+        double gain = (double)state.ScalePercent / 100.0;
+        // The step keeps its own linear axis on every amplitude scale.
+        bool decibels = Sources.TryGetImpulseFrame()?.Options.AmplitudeScale == ImpulseAmplitudeScale.Decibels &&
+            SlotSemantics(slot).YAxisKey != PlotModelFactory.ImpulseStepAxisKey;
+        return decibels
+            ? new OverlayLevel(1.0, DataHelper.AmplitudeToDecibels(gain))
+            : new OverlayLevel(gain, 0.0);
+    }
 
     public DataPoint[]? CapturedPoints(OverlaySlot slot, int smoothing)
     {
@@ -105,7 +123,7 @@ internal sealed class OverlayCurves
             return null;
         }
 
-        double offset = (double)slot.State.Offset;
+        OverlayLevel level = LevelOf(slot);
 
         // Time-domain capture re-drawn under the current framing; octave smoothing does not apply. Without a framing
         // yet (the slots load before the mode's first build) there is nothing to draw, which is not a damaged file.
@@ -117,11 +135,11 @@ internal sealed class OverlayCurves
             }
 
             DataPoint[] framed = ImpulseOverlayRenderer.Render(capture, frame);
-            if (offset != 0.0)
+            if (level != OverlayLevel.Unchanged)
             {
                 for (int i = 0; i < framed.Length; i++)
                 {
-                    framed[i] = new DataPoint(framed[i].X, framed[i].Y + offset);
+                    framed[i] = new DataPoint(framed[i].X, level.Apply(framed[i].Y));
                 }
             }
 
@@ -142,7 +160,7 @@ internal sealed class OverlayCurves
 
             for (int i = 0; i < exact.Length; i++)
             {
-                exact[i] = new DataPoint(exact[i].X, exact[i].Y + offset);
+                exact[i] = new DataPoint(exact[i].X, level.Apply(exact[i].Y));
             }
 
             return exact;
@@ -153,7 +171,7 @@ internal sealed class OverlayCurves
             smoothing,
             psychoacousticMagnitude: MagnitudeSmoothingSemantics(slot));
         return smoothed
-            .Select(point => new DataPoint(point.X, point.Y + offset))
+            .Select(point => new DataPoint(point.X, level.Apply(point.Y)))
             .ToArray();
     }
 
@@ -222,7 +240,7 @@ internal sealed class OverlayCurves
             return null;
         }
 
-        return ApplyOffsetAndTilt(points, settings, result.Curve, slot.State.Offset);
+        return ApplyLevelAndTilt(points, settings, result.Curve, LevelOf(slot));
     }
 
     private DataPoint[]? ComplexSumPoints(
@@ -246,17 +264,16 @@ internal sealed class OverlayCurves
         OverlayPoint[] smoothed = showLoss
             ? sumPoints
             : OverlayMath.SmoothByOctaves(sumPoints, smoothing);
-        return ApplyOffsetAndTilt(smoothed, settings, OverlayCurveSemantics.None, slot.State.Offset);
+        return ApplyLevelAndTilt(smoothed, settings, OverlayCurveSemantics.None, LevelOf(slot));
     }
 
-    // Offset and tilt last, after smoothing, and only on decibels (dB/octave is meaningless on coherence).
-    private static DataPoint[] ApplyOffsetAndTilt(
+    // Level and tilt last, after smoothing; the tilt only on decibels (dB/octave is meaningless on coherence).
+    private static DataPoint[] ApplyLevelAndTilt(
         IReadOnlyList<OverlayPoint> points,
         OverlayOperationSettings settings,
         OverlayCurveSemantics semantics,
-        decimal offsetDb)
+        OverlayLevel level)
     {
-        double offset = (double)offsetDb;
         bool tilted = settings.TiltEnabled && semantics.IsDecibels;
         var result = new DataPoint[points.Count];
         for (int i = 0; i < points.Count; i++)
@@ -265,7 +282,7 @@ internal sealed class OverlayCurves
             double tilt = tilted
                 ? OverlayMath.TiltDb(point.X, settings.TiltDbPerOctave, settings.TiltPivotHz)
                 : 0;
-            result[i] = new DataPoint(point.X, point.Y + offset + tilt);
+            result[i] = new DataPoint(point.X, level.Apply(point.Y) + tilt);
         }
 
         return result;

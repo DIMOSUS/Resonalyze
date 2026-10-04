@@ -139,6 +139,7 @@ public partial class VirtualCrossoverPanel
         {
             comboBoxSumLoss.SelectedItem = session.Project.SumLossWindowMode;
             comboBoxStereoSum.SelectedItem = session.Project.StereoSum;
+            numericStereoBlend.Value = VirtualCrossoverLimits.StereoBlend.Clamp(session.Project.StereoSumBlendHz);
             // Intent only: captures attach as sources resolve, and HybridRequested also needs coverage.
             checkBoxHybrid.Checked = session.Project.ShowHybridCurves;
             checkBoxShowTarget.Checked = session.Project.ShowTargetCurve;

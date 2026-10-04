@@ -23,7 +23,7 @@ Code lives in `source/Tools/VirtualCrossover/`:
 
 ## Schema versions and migrations
 
-`VirtualCrossoverProjectFile.CurrentVersion` is 12. An incompatible change bumps it and adds a step to
+`VirtualCrossoverProjectFile.CurrentVersion` is 13. An incompatible change bumps it and adds a step to
 `Migrate`, which runs before `Validate`. Files from a newer version (a downgraded app) are never migrated:
 validation rejects them, `LoadOrDefault` moves the file to `.backup` and starts fresh, `LoadFrom` throws.
 
@@ -60,6 +60,9 @@ value, and only `Migrate` reads them.
 - **v10 → v11**: the FIR stage, bumped for the same reason.
 - **v11 → v12**: a side's response-file answers (`SpatialAverageFile`). An older build would drop them and resave
   the `.txt` path as a capture's, which the next load reads as a missing capture.
+- **v12 → v13**: a pair's `MeasuredFromBothInputs`, read on when absent: a mono block plays at half level per side
+  (see [virtual-dsp-panel.md](virtual-dsp-panel.md#mono-side-share)). Nothing is rewritten; the bump makes an older
+  build refuse the file instead of drawing every mono block 6 dB loud in the side views.
 - **Always**: the stereo scene's wire sign and layout flag are re-aligned (see [Stereo scene](#stereo-scene)).
 - **Always**: a Centre pair is made mono (`VirtualCrossoverZones.RequiresMono`). The block forces and locks its Mono
   box, so only a hand-edited file stores a stereo Centre; loaded as such, it would show a mono block that, under the
@@ -480,6 +483,8 @@ was fitted to or the level it was fitted against; only a polarity flip changes n
   would deliver to the other settings. A mono token addresses LEFT outright; the side state is read physically.
   The address uses `SideFor(token.RightSide)`, not the active side, since the user may flip L/R while editing.
 - `SourceRevision`: a new measurement picked for that side while the session survives a tab trip.
+- `SideLevelShare`: a mono block's **L+R** toggle moves the level its side reads the measurement at by 6.02 dB
+  with no new source and no new revision.
 - `Calibration`, compared by curve content: the wizard disables its own selector during a handoff, and the panel's
   selector, one tab switch away, would otherwise walk around that lock.
 - `ProcessorSampleRateHz`: a bank fitted for 96 kHz run at 48 kHz is a different filter (up to 4 dB apart in the

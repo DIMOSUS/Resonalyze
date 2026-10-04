@@ -8,6 +8,10 @@ internal static class VirtualCrossoverLimits
 {
     public static readonly NumericFieldRange TargetLevel = new(-120m, 60m, 1);
 
+    /// <summary>Where the L+R Blend hands over from Vector to Energy.</summary>
+    public static readonly NumericFieldRange StereoBlend = new(50m, 2_000m, 0);
+    public const double DefaultStereoBlendHz = 300.0;
+
     // A channel block's fields. See docs/tech/virtual-dsp-session-file.md#channel-field-ranges.
     public static readonly NumericFieldRange ChannelGain = new(-60m, 20m, 1);
     public static readonly NumericFieldRange ChannelDelay = new(0m, 100m, 2);

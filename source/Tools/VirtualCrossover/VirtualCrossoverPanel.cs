@@ -62,6 +62,7 @@ public partial class VirtualCrossoverPanel : UserControl
         InitializeComponent();
         ShowMessage = (text, caption, buttons, icon) => MessageBox.Show(FindForm(), text, caption, buttons, icon);
         numericTargetLevel.ApplyFieldRange(VirtualCrossoverLimits.TargetLevel);
+        numericStereoBlend.ApplyFieldRange(VirtualCrossoverLimits.StereoBlend);
         hybridReader = new VirtualCrossoverHybrid(session);
         warnings = new VirtualCrossoverWarnings(session);
         viewBuilder = new AcousticViewBuilder(session, hybridReader);
@@ -262,6 +263,7 @@ public partial class VirtualCrossoverPanel : UserControl
         };
         checkBoxShowTarget.CheckedChanged += (_, _) => OnViewChanged();
         numericTargetLevel.ValueChanged += (_, _) => OnTargetLevelEdited();
+        numericStereoBlend.ValueChanged += (_, _) => OnStereoBlendEdited();
         // Radios fire on check and uncheck; act only on the checked one.
         radioViewMagnitude.CheckedChanged += (_, _) =>
         {

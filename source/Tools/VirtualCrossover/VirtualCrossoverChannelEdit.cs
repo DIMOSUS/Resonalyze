@@ -9,6 +9,7 @@ internal enum VirtualCrossoverChannelField
     Delay,
     Polarity,
     Mono,
+    BothInputs,
     Zone,
     Mute,
     Bypass,
@@ -30,6 +31,7 @@ internal sealed record VirtualCrossoverChannelShown(
     double DelayMs,
     bool Inverted,
     bool Mono,
+    bool BothInputs,
     VirtualCrossoverZone Zone,
     bool Muted,
     bool Bypass,
@@ -68,6 +70,9 @@ internal static class VirtualCrossoverChannelEdit
                 break;
             case VirtualCrossoverChannelField.Mono:
                 pair.Mono = shown.Mono;
+                break;
+            case VirtualCrossoverChannelField.BothInputs:
+                pair.MeasuredFromBothInputs = shown.BothInputs;
                 break;
             case VirtualCrossoverChannelField.Zone:
                 pair.Zone = shown.Zone;

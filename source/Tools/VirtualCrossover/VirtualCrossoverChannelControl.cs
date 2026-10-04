@@ -43,6 +43,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         PopulateCrossoverCombos();
         WireEvents();
         UpdateZoneAvailability();
+        UpdateBothInputsAvailability();
         UpdateCrossoverAvailability();
         UpdateDelayTooltip();
         UpdateTotalGain();
@@ -111,6 +112,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
     internal ThemedNumericUpDown DelayInput => numericDelay;
     internal CheckBox InvertCheckBox => checkBoxInvert;
     internal CheckBox MonoCheckBox => checkBoxMono;
+    internal CheckBox BothInputsCheckBox => checkBoxBothInputs;
     internal ThemedComboBox ZoneComboBox => comboBoxZone;
     internal ThemedComboBox CrossoverKindComboBox => comboBoxCrossoverKind;
     internal ThemedNumericUpDown HighPassFrequencyInput => numericHighPassHz;
@@ -147,6 +149,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         (double)numericDelay.Value,
         checkBoxInvert.Checked,
         checkBoxMono.Checked,
+        checkBoxBothInputs.Checked,
         SelectedZone,
         Muted,
         checkBoxBypass.Checked,
@@ -207,6 +210,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
 
         UpdateZoneAvailability();
+        UpdateBothInputsAvailability();
         UpdateCrossoverAvailability();
         UpdateDelayTooltip();
         UpdateTotalGain();
@@ -240,7 +244,12 @@ public partial class VirtualCrossoverChannelControl : UserControl
             RaiseSettingsChanged(VirtualCrossoverChannelField.Delay);
         };
         checkBoxInvert.CheckedChanged += (_, _) => RaiseSettingsChanged(VirtualCrossoverChannelField.Polarity);
-        checkBoxMono.CheckedChanged += (_, _) => RaiseSettingsChanged(VirtualCrossoverChannelField.Mono);
+        checkBoxMono.CheckedChanged += (_, _) =>
+        {
+            UpdateBothInputsAvailability();
+            RaiseSettingsChanged(VirtualCrossoverChannelField.Mono);
+        };
+        checkBoxBothInputs.CheckedChanged += (_, _) => RaiseSettingsChanged(VirtualCrossoverChannelField.BothInputs);
         comboBoxZone.SelectedIndexChanged += (_, _) =>
         {
             UpdateZoneAvailability();
@@ -308,5 +317,11 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
         checkBoxMono.Enabled = !forced;
         UiStyle.SetTextEnabledLook(checkBoxMono, !forced, interactive: true);
+    }
+
+    // Only a mono block plays one measurement for both sides; a stereo pair hides it and keeps the answer for a later Mono.
+    private void UpdateBothInputsAvailability()
+    {
+        checkBoxBothInputs.Visible = checkBoxMono.Checked;
     }
 }

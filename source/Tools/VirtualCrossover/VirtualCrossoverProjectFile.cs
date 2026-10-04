@@ -494,6 +494,14 @@ public sealed class VirtualCrossoverChannelPairSettings
 {
     public bool Mono { get; set; }
 
+    /// <summary>A mono block measured with the signal in both L and R inputs: one side plays it at half amplitude.
+    /// Missing in older files, which read it on. See docs/tech/virtual-dsp-panel.md#mono-side-share.</summary>
+    public bool MeasuredFromBothInputs { get; set; } = true;
+
+    /// <summary>Amplitude at which one side plays the block's measurement.</summary>
+    [JsonIgnore]
+    public double SideLevelShare => Mono && MeasuredFromBothInputs ? 0.5 : 1.0;
+
     /// <summary>Installation zone; guessed by migration for files before v9.</summary>
     public VirtualCrossoverZone Zone { get; set; } = VirtualCrossoverZone.Front;
 
@@ -594,7 +602,7 @@ public sealed class VirtualCrossoverProjectFile
     public const string CurrentFormat = "resonalyze-virtual-crossover";
 
     // Bump on an incompatible change and add a Migrate step. Newer files are never migrated: LoadOrDefault backs up, LoadFrom rejects.
-    public const int CurrentVersion = 12;
+    public const int CurrentVersion = 13;
 
     // Channel letters and the plot palette go up to this count.
     public const int MaximumChannelCount = 12;
@@ -807,6 +815,8 @@ public sealed class VirtualCrossoverProjectFile
         VirtualCrossoverGroupView.FrontAndSub;
 
     public StereoSumMode StereoSum { get; set; } = StereoSumMode.Off;
+
+    public double StereoSumBlendHz { get; set; } = VirtualCrossoverLimits.DefaultStereoBlendHz;
 
     /// <summary>Rear fill delay behind the front stage (ms); part of the tune, not a dialog default.</summary>
     public double RearFillOffsetMs { get; set; } =
@@ -1351,6 +1361,12 @@ public sealed class VirtualCrossoverProjectFile
             // Bumped so an older build refuses a response file's answers rather than resaving its path as a capture's.
             file.Version = 12;
         }
+        if (file.Version == 12)
+        {
+            // Mono blocks read their level from MeasuredFromBothInputs, absent here and so on; bumped so an older build
+            // refuses a file whose mono blocks play at half level per side rather than drawing them 6 dB loud.
+            file.Version = 13;
+        }
 
         // Re-align the wire sign and layout flag for files carrying only one; a negative sign wins over a missing flag.
         if (file.StereoSceneOffsetMs < 0)
@@ -1530,6 +1546,11 @@ public sealed class VirtualCrossoverProjectFile
         {
             throw new InvalidDataException(
                 "The virtual crossover L+R sum mode is invalid.");
+        }
+        if (!VirtualCrossoverLimits.StereoBlend.Includes(StereoSumBlendHz))
+        {
+            throw new InvalidDataException(
+                "The virtual crossover L+R blend frequency is invalid.");
         }
         if (!double.IsFinite(RearFillOffsetMs) || RearFillOffsetMs is < 0 or > 30)
         {

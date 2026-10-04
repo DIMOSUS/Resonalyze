@@ -159,7 +159,6 @@ public sealed class VirtualCrossoverFirTests
 
             VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadOrDefault(root);
 
-            Assert.Equal(12, VirtualCrossoverProjectFile.CurrentVersion);
             Assert.Equal(VirtualCrossoverProjectFile.CurrentVersion, loaded.Version);
             Assert.False(loaded.ResolveDspFirFilters());
             Assert.All(loaded.Pairs, pair => Assert.False(pair.Left.HasFir));

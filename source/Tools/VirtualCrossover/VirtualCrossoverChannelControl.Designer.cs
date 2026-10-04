@@ -39,6 +39,7 @@ namespace Resonalyze
             numericDelay = new ThemedNumericUpDown();
             checkBoxInvert = new ReleaseClickCheckBox();
             checkBoxMono = new ReleaseClickCheckBox();
+            checkBoxBothInputs = new ReleaseClickCheckBox();
             comboBoxZone = new ThemedComboBox();
             buttonMoveUp = new ReleaseClickButton();
             buttonMoveDown = new ReleaseClickButton();
@@ -109,7 +110,7 @@ namespace Resonalyze
             labelGain.AutoSize = true;
             labelGain.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelGain.ForeColor = UiPalette.TextDefault;
-            labelGain.Location = new Point(8, 56);
+            labelGain.Location = new Point(8, 60);
             labelGain.Name = "labelGain";
             labelGain.Size = new Size(48, 15);
             labelGain.TabIndex = 2;
@@ -120,7 +121,7 @@ namespace Resonalyze
             buttonCollapse.FlatStyle = FlatStyle.Popup;
             buttonCollapse.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold, GraphicsUnit.Point, 204);
             buttonCollapse.ForeColor = UiPalette.TextPrimary;
-            buttonCollapse.Location = new Point(8, 77);
+            buttonCollapse.Location = new Point(8, 84);
             buttonCollapse.Name = "buttonCollapse";
             buttonCollapse.Size = new Size(48, 20);
             buttonCollapse.TabIndex = 9;
@@ -134,7 +135,7 @@ namespace Resonalyze
             numericGain.DecimalPlaces = 1;
             numericGain.ForeColor = UiPalette.TextPrimary;
             numericGain.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
-            numericGain.Location = new Point(70, 54);
+            numericGain.Location = new Point(70, 58);
             numericGain.Maximum = new decimal(new int[] { 20, 0, 0, 0 });
             numericGain.Minimum = new decimal(new int[] { 60, 0, 0, int.MinValue });
             numericGain.MinimumSize = new Size(36, 19);
@@ -150,7 +151,7 @@ namespace Resonalyze
             labelDelay.AutoSize = true;
             labelDelay.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelDelay.ForeColor = UiPalette.TextDefault;
-            labelDelay.Location = new Point(212, 56);
+            labelDelay.Location = new Point(212, 60);
             labelDelay.Name = "labelDelay";
             labelDelay.Size = new Size(37, 15);
             labelDelay.TabIndex = 4;
@@ -162,7 +163,7 @@ namespace Resonalyze
             numericDelay.DecimalPlaces = 2;
             numericDelay.ForeColor = UiPalette.TextPrimary;
             numericDelay.Increment = new decimal(new int[] { 1, 0, 0, 131072 });
-            numericDelay.Location = new Point(252, 54);
+            numericDelay.Location = new Point(252, 58);
             numericDelay.Maximum = new decimal(new int[] { 100, 0, 0, 0 });
             numericDelay.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
             numericDelay.MinimumSize = new Size(36, 19);
@@ -177,7 +178,7 @@ namespace Resonalyze
             // 
             comboBoxZone.BackColor = UiPalette.ControlSurface;
             comboBoxZone.ForeColor = UiPalette.TextPrimary;
-            comboBoxZone.Location = new Point(70, 77);
+            comboBoxZone.Location = new Point(70, 84);
             comboBoxZone.MinimumSize = new Size(36, 19);
             comboBoxZone.Name = "comboBoxZone";
             comboBoxZone.Size = new Size(68, 19);
@@ -185,35 +186,64 @@ namespace Resonalyze
             // 
             // checkBoxInvert
             // 
-            checkBoxInvert.AutoSize = true;
-            checkBoxInvert.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxInvert.Appearance = Appearance.Button;
+            checkBoxInvert.BackColor = UiPalette.ButtonBackground;
+            checkBoxInvert.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
+            checkBoxInvert.FlatStyle = FlatStyle.Flat;
+            checkBoxInvert.Font =  new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxInvert.ForeColor = UiPalette.TextDefault;
-            checkBoxInvert.Location = new Point(208, 77);
+            checkBoxInvert.Location = new Point(262, 84);
             checkBoxInvert.Name = "checkBoxInvert";
-            checkBoxInvert.Size = new Size(57, 19);
+            checkBoxInvert.Size = new Size(56, 20);
             checkBoxInvert.TabIndex = 12;
-            checkBoxInvert.Text = "Invert";
-            checkBoxInvert.UseVisualStyleBackColor = true;
+            checkBoxInvert.Text = "Inv";
+            checkBoxInvert.TextAlign = ContentAlignment.MiddleCenter;
+            checkBoxInvert.UseCompatibleTextRendering = true;
+            checkBoxInvert.UseVisualStyleBackColor = false;
             // 
             // checkBoxMono
             // 
-            checkBoxMono.AutoSize = true;
-            checkBoxMono.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxMono.Appearance = Appearance.Button;
+            checkBoxMono.BackColor = UiPalette.ButtonBackground;
+            checkBoxMono.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
+            checkBoxMono.FlatStyle = FlatStyle.Flat;
+            checkBoxMono.Font =  new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxMono.ForeColor = UiPalette.TextDefault;
-            checkBoxMono.Location = new Point(144, 77);
+            checkBoxMono.Location = new Point(144, 84);
             checkBoxMono.Name = "checkBoxMono";
-            checkBoxMono.Size = new Size(58, 19);
+            checkBoxMono.Size = new Size(56, 20);
             checkBoxMono.TabIndex = 11;
             checkBoxMono.Text = "Mono";
-            checkBoxMono.UseVisualStyleBackColor = true;
+            checkBoxMono.TextAlign = ContentAlignment.MiddleCenter;
+            checkBoxMono.UseCompatibleTextRendering = true;
+            checkBoxMono.UseVisualStyleBackColor = false;
+            //
+            // checkBoxBothInputs
+            //
+            checkBoxBothInputs.Appearance = Appearance.Button;
+            checkBoxBothInputs.BackColor = UiPalette.ButtonBackground;
+            checkBoxBothInputs.Checked = true;
+            checkBoxBothInputs.CheckState = CheckState.Checked;
+            checkBoxBothInputs.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
+            checkBoxBothInputs.FlatStyle = FlatStyle.Flat;
+            checkBoxBothInputs.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxBothInputs.ForeColor = UiPalette.TextDefault;
+            checkBoxBothInputs.Location = new Point(203, 84);
+            checkBoxBothInputs.Name = "checkBoxBothInputs";
+            checkBoxBothInputs.Size = new Size(56, 20);
+            checkBoxBothInputs.TabIndex = 25;
+            checkBoxBothInputs.Text = "L+R";
+            checkBoxBothInputs.TextAlign = ContentAlignment.MiddleCenter;
+            checkBoxBothInputs.UseCompatibleTextRendering = true;
+            checkBoxBothInputs.UseVisualStyleBackColor = false;
             //
             // buttonMoveUp
             //
             buttonMoveUp.FlatStyle = FlatStyle.Popup;
             buttonMoveUp.ForeColor = UiPalette.TextPrimary;
-            buttonMoveUp.Location = new Point(268, 77);
+            buttonMoveUp.Location = new Point(281, 32);
             buttonMoveUp.Name = "buttonMoveUp";
-            buttonMoveUp.Size = new Size(23, 20);
+            buttonMoveUp.Size = new Size(18, 20);
             buttonMoveUp.TabIndex = 23;
             buttonMoveUp.Text = "▲";
             buttonMoveUp.UseCompatibleTextRendering = true;
@@ -223,9 +253,9 @@ namespace Resonalyze
             //
             buttonMoveDown.FlatStyle = FlatStyle.Popup;
             buttonMoveDown.ForeColor = UiPalette.TextPrimary;
-            buttonMoveDown.Location = new Point(293, 77);
+            buttonMoveDown.Location = new Point(300, 32);
             buttonMoveDown.Name = "buttonMoveDown";
-            buttonMoveDown.Size = new Size(23, 20);
+            buttonMoveDown.Size = new Size(18, 20);
             buttonMoveDown.TabIndex = 24;
             buttonMoveDown.Text = "▼";
             buttonMoveDown.UseCompatibleTextRendering = true;
@@ -236,7 +266,7 @@ namespace Resonalyze
             labelCrossover.AutoSize = true;
             labelCrossover.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelCrossover.ForeColor = UiPalette.TextDefault;
-            labelCrossover.Location = new Point(8, 105);
+            labelCrossover.Location = new Point(8, 112);
             labelCrossover.Name = "labelCrossover";
             labelCrossover.Size = new Size(58, 15);
             labelCrossover.TabIndex = 8;
@@ -246,7 +276,7 @@ namespace Resonalyze
             // 
             comboBoxCrossoverKind.BackColor = UiPalette.ControlSurface;
             comboBoxCrossoverKind.ForeColor = UiPalette.TextPrimary;
-            comboBoxCrossoverKind.Location = new Point(70, 103);
+            comboBoxCrossoverKind.Location = new Point(70, 110);
             comboBoxCrossoverKind.MinimumSize = new Size(36, 19);
             comboBoxCrossoverKind.Name = "comboBoxCrossoverKind";
             comboBoxCrossoverKind.Size = new Size(100, 19);
@@ -256,7 +286,7 @@ namespace Resonalyze
             // 
             buttonAcousticGoal.FlatStyle = FlatStyle.Popup;
             buttonAcousticGoal.ForeColor = UiPalette.TextPrimary;
-            buttonAcousticGoal.Location = new Point(266, 103);
+            buttonAcousticGoal.Location = new Point(266, 110);
             buttonAcousticGoal.Name = "buttonAcousticGoal";
             buttonAcousticGoal.Size = new Size(50, 19);
             buttonAcousticGoal.TabIndex = 44;
@@ -269,7 +299,7 @@ namespace Resonalyze
             labelMeasuredPolarity.AutoSize = true;
             labelMeasuredPolarity.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelMeasuredPolarity.ForeColor = UiPalette.TextMuted;
-            labelMeasuredPolarity.Location = new Point(186, 105);
+            labelMeasuredPolarity.Location = new Point(186, 112);
             labelMeasuredPolarity.Name = "labelMeasuredPolarity";
             labelMeasuredPolarity.Size = new Size(75, 15);
             labelMeasuredPolarity.TabIndex = 25;
@@ -280,7 +310,7 @@ namespace Resonalyze
             labelHighPass.AutoSize = true;
             labelHighPass.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelHighPass.ForeColor = UiPalette.TextDefault;
-            labelHighPass.Location = new Point(8, 131);
+            labelHighPass.Location = new Point(8, 138);
             labelHighPass.Name = "labelHighPass";
             labelHighPass.Size = new Size(41, 15);
             labelHighPass.TabIndex = 10;
@@ -292,7 +322,7 @@ namespace Resonalyze
             numericHighPassHz.DecimalPlaces = 0;
             numericHighPassHz.ForeColor = UiPalette.TextPrimary;
             numericHighPassHz.Increment = new decimal(new int[] { 10, 0, 0, 0 });
-            numericHighPassHz.Location = new Point(70, 129);
+            numericHighPassHz.Location = new Point(70, 136);
             numericHighPassHz.LogarithmicFrequencyStep = true;
             numericHighPassHz.Maximum = new decimal(new int[] { 24000, 0, 0, 0 });
             numericHighPassHz.Minimum = new decimal(new int[] { 10, 0, 0, 0 });
@@ -308,7 +338,7 @@ namespace Resonalyze
             // 
             comboBoxHighPassFamily.BackColor = UiPalette.ControlSurface;
             comboBoxHighPassFamily.ForeColor = UiPalette.TextPrimary;
-            comboBoxHighPassFamily.Location = new Point(134, 129);
+            comboBoxHighPassFamily.Location = new Point(134, 136);
             comboBoxHighPassFamily.MinimumSize = new Size(36, 19);
             comboBoxHighPassFamily.Name = "comboBoxHighPassFamily";
             comboBoxHighPassFamily.Size = new Size(74, 19);
@@ -318,7 +348,7 @@ namespace Resonalyze
             // 
             comboBoxHighPassSlope.BackColor = UiPalette.ControlSurface;
             comboBoxHighPassSlope.ForeColor = UiPalette.TextPrimary;
-            comboBoxHighPassSlope.Location = new Point(211, 129);
+            comboBoxHighPassSlope.Location = new Point(211, 136);
             comboBoxHighPassSlope.MinimumSize = new Size(36, 19);
             comboBoxHighPassSlope.Name = "comboBoxHighPassSlope";
             comboBoxHighPassSlope.Size = new Size(54, 19);
@@ -329,7 +359,7 @@ namespace Resonalyze
             labelLowPass.AutoSize = true;
             labelLowPass.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelLowPass.ForeColor = UiPalette.TextDefault;
-            labelLowPass.Location = new Point(8, 157);
+            labelLowPass.Location = new Point(8, 164);
             labelLowPass.Name = "labelLowPass";
             labelLowPass.Size = new Size(38, 15);
             labelLowPass.TabIndex = 14;
@@ -341,7 +371,7 @@ namespace Resonalyze
             numericLowPassHz.DecimalPlaces = 0;
             numericLowPassHz.ForeColor = UiPalette.TextPrimary;
             numericLowPassHz.Increment = new decimal(new int[] { 10, 0, 0, 0 });
-            numericLowPassHz.Location = new Point(70, 155);
+            numericLowPassHz.Location = new Point(70, 162);
             numericLowPassHz.LogarithmicFrequencyStep = true;
             numericLowPassHz.Maximum = new decimal(new int[] { 24000, 0, 0, 0 });
             numericLowPassHz.Minimum = new decimal(new int[] { 10, 0, 0, 0 });
@@ -357,7 +387,7 @@ namespace Resonalyze
             // 
             comboBoxLowPassFamily.BackColor = UiPalette.ControlSurface;
             comboBoxLowPassFamily.ForeColor = UiPalette.TextPrimary;
-            comboBoxLowPassFamily.Location = new Point(134, 155);
+            comboBoxLowPassFamily.Location = new Point(134, 162);
             comboBoxLowPassFamily.MinimumSize = new Size(36, 19);
             comboBoxLowPassFamily.Name = "comboBoxLowPassFamily";
             comboBoxLowPassFamily.Size = new Size(74, 19);
@@ -367,7 +397,7 @@ namespace Resonalyze
             // 
             comboBoxLowPassSlope.BackColor = UiPalette.ControlSurface;
             comboBoxLowPassSlope.ForeColor = UiPalette.TextPrimary;
-            comboBoxLowPassSlope.Location = new Point(211, 155);
+            comboBoxLowPassSlope.Location = new Point(211, 162);
             comboBoxLowPassSlope.MinimumSize = new Size(36, 19);
             comboBoxLowPassSlope.Name = "comboBoxLowPassSlope";
             comboBoxLowPassSlope.Size = new Size(54, 19);
@@ -378,7 +408,7 @@ namespace Resonalyze
             labelPeq.AutoSize = true;
             labelPeq.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelPeq.ForeColor = UiPalette.TextDefault;
-            labelPeq.Location = new Point(8, 183);
+            labelPeq.Location = new Point(8, 190);
             labelPeq.Name = "labelPeq";
             labelPeq.Size = new Size(29, 15);
             labelPeq.TabIndex = 18;
@@ -388,7 +418,7 @@ namespace Resonalyze
             // 
             buttonPeqMenu.FlatStyle = FlatStyle.Popup;
             buttonPeqMenu.ForeColor = UiPalette.TextPrimary;
-            buttonPeqMenu.Location = new Point(70, 181);
+            buttonPeqMenu.Location = new Point(70, 188);
             buttonPeqMenu.Name = "buttonPeqMenu";
             buttonPeqMenu.Size = new Size(80, 19);
             buttonPeqMenu.TabIndex = 22;
@@ -400,7 +430,7 @@ namespace Resonalyze
             // 
             labelPeqInfo.AutoEllipsis = true;
             labelPeqInfo.ForeColor = UiPalette.TextMuted;
-            labelPeqInfo.Location = new Point(152, 181);
+            labelPeqInfo.Location = new Point(152, 188);
             labelPeqInfo.Name = "labelPeqInfo";
             labelPeqInfo.Size = new Size(167, 19);
             labelPeqInfo.TabIndex = 21;
@@ -411,7 +441,7 @@ namespace Resonalyze
             labelPhase.AutoSize = true;
             labelPhase.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelPhase.ForeColor = UiPalette.TextDefault;
-            labelPhase.Location = new Point(8, 209);
+            labelPhase.Location = new Point(8, 216);
             labelPhase.Name = "labelPhase";
             labelPhase.Size = new Size(40, 15);
             labelPhase.TabIndex = 38;
@@ -423,7 +453,7 @@ namespace Resonalyze
             numericPhase.DecimalPlaces = 3;
             numericPhase.ForeColor = UiPalette.TextPrimary;
             numericPhase.Increment = new decimal(new int[] { 5625, 0, 0, 196608 });
-            numericPhase.Location = new Point(70, 207);
+            numericPhase.Location = new Point(70, 214);
             numericPhase.Maximum = new decimal(new int[] { 354375, 0, 0, 196608 });
             numericPhase.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
             numericPhase.MinimumSize = new Size(36, 19);
@@ -438,7 +468,7 @@ namespace Resonalyze
             //
             labelPhaseInfo.AutoEllipsis = true;
             labelPhaseInfo.ForeColor = UiPalette.TextMuted;
-            labelPhaseInfo.Location = new Point(144, 209);
+            labelPhaseInfo.Location = new Point(144, 216);
             labelPhaseInfo.Name = "labelPhaseInfo";
             labelPhaseInfo.Size = new Size(175, 19);
             labelPhaseInfo.TabIndex = 40;
@@ -449,7 +479,7 @@ namespace Resonalyze
             labelFir.AutoSize = true;
             labelFir.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelFir.ForeColor = UiPalette.TextDefault;
-            labelFir.Location = new Point(8, 235);
+            labelFir.Location = new Point(8, 242);
             labelFir.Name = "labelFir";
             labelFir.Size = new Size(25, 15);
             labelFir.TabIndex = 41;
@@ -459,7 +489,7 @@ namespace Resonalyze
             //
             buttonFir.FlatStyle = FlatStyle.Popup;
             buttonFir.ForeColor = UiPalette.TextPrimary;
-            buttonFir.Location = new Point(70, 233);
+            buttonFir.Location = new Point(70, 240);
             buttonFir.Name = "buttonFir";
             buttonFir.Size = new Size(80, 19);
             buttonFir.TabIndex = 42;
@@ -471,7 +501,7 @@ namespace Resonalyze
             //
             labelFirInfo.AutoEllipsis = true;
             labelFirInfo.ForeColor = UiPalette.TextMuted;
-            labelFirInfo.Location = new Point(152, 233);
+            labelFirInfo.Location = new Point(152, 240);
             labelFirInfo.Name = "labelFirInfo";
             labelFirInfo.Size = new Size(167, 19);
             labelFirInfo.TabIndex = 43;
@@ -490,41 +520,56 @@ namespace Resonalyze
             // 
             // checkBoxShowRaw
             // 
-            checkBoxShowRaw.AutoSize = true;
-            checkBoxShowRaw.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxShowRaw.Appearance = Appearance.Button;
+            checkBoxShowRaw.BackColor = UiPalette.ButtonBackground;
+            checkBoxShowRaw.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
+            checkBoxShowRaw.FlatStyle = FlatStyle.Flat;
+            checkBoxShowRaw.Font =  new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxShowRaw.ForeColor = UiPalette.TextDefault;
-            checkBoxShowRaw.Location = new Point(70, 33);
+            checkBoxShowRaw.Location = new Point(70, 32);
             checkBoxShowRaw.Name = "checkBoxShowRaw";
-            checkBoxShowRaw.Size = new Size(48, 19);
+            checkBoxShowRaw.Size = new Size(68, 20);
             checkBoxShowRaw.TabIndex = 4;
             checkBoxShowRaw.Text = "Raw";
-            checkBoxShowRaw.UseVisualStyleBackColor = true;
+            checkBoxShowRaw.TextAlign = ContentAlignment.MiddleCenter;
+            checkBoxShowRaw.UseCompatibleTextRendering = true;
+            checkBoxShowRaw.UseVisualStyleBackColor = false;
             // 
             // checkBoxShowProcessed
             // 
-            checkBoxShowProcessed.AutoSize = true;
+            checkBoxShowProcessed.Appearance = Appearance.Button;
+            checkBoxShowProcessed.BackColor = UiPalette.ButtonBackground;
             checkBoxShowProcessed.Checked = true;
             checkBoxShowProcessed.CheckState = CheckState.Checked;
-            checkBoxShowProcessed.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxShowProcessed.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
+            checkBoxShowProcessed.FlatStyle = FlatStyle.Flat;
+            checkBoxShowProcessed.Font =  new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxShowProcessed.ForeColor = UiPalette.TextDefault;
-            checkBoxShowProcessed.Location = new Point(132, 33);
+            checkBoxShowProcessed.Location = new Point(140, 32);
             checkBoxShowProcessed.Name = "checkBoxShowProcessed";
-            checkBoxShowProcessed.Size = new Size(79, 19);
+            checkBoxShowProcessed.Size = new Size(68, 20);
             checkBoxShowProcessed.TabIndex = 5;
-            checkBoxShowProcessed.Text = "Processed";
-            checkBoxShowProcessed.UseVisualStyleBackColor = true;
+            checkBoxShowProcessed.Text = "DSP";
+            checkBoxShowProcessed.TextAlign = ContentAlignment.MiddleCenter;
+            checkBoxShowProcessed.UseCompatibleTextRendering = true;
+            checkBoxShowProcessed.UseVisualStyleBackColor = false;
             // 
             // checkBoxBypass
             // 
-            checkBoxBypass.AutoSize = true;
-            checkBoxBypass.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxBypass.Appearance = Appearance.Button;
+            checkBoxBypass.BackColor = UiPalette.ButtonBackground;
+            checkBoxBypass.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
+            checkBoxBypass.FlatStyle = FlatStyle.Flat;
+            checkBoxBypass.Font =  new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxBypass.ForeColor = UiPalette.TextDefault;
-            checkBoxBypass.Location = new Point(220, 33);
+            checkBoxBypass.Location = new Point(210, 32);
             checkBoxBypass.Name = "checkBoxBypass";
-            checkBoxBypass.Size = new Size(62, 19);
+            checkBoxBypass.Size = new Size(68, 20);
             checkBoxBypass.TabIndex = 6;
             checkBoxBypass.Text = "Bypass";
-            checkBoxBypass.UseVisualStyleBackColor = true;
+            checkBoxBypass.TextAlign = ContentAlignment.MiddleCenter;
+            checkBoxBypass.UseCompatibleTextRendering = true;
+            checkBoxBypass.UseVisualStyleBackColor = false;
             // 
             // buttonSpatialAverage
             // 
@@ -559,7 +604,7 @@ namespace Resonalyze
             numericHighPassRipple.DecimalPlaces = 1;
             numericHighPassRipple.ForeColor = UiPalette.TextPrimary;
             numericHighPassRipple.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
-            numericHighPassRipple.Location = new Point(268, 129);
+            numericHighPassRipple.Location = new Point(268, 136);
             numericHighPassRipple.Maximum = new decimal(new int[] { 30, 0, 0, 65536 });
             numericHighPassRipple.Minimum = new decimal(new int[] { 1, 0, 0, 65536 });
             numericHighPassRipple.MinimumSize = new Size(36, 19);
@@ -576,7 +621,7 @@ namespace Resonalyze
             numericLowPassRipple.DecimalPlaces = 1;
             numericLowPassRipple.ForeColor = UiPalette.TextPrimary;
             numericLowPassRipple.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
-            numericLowPassRipple.Location = new Point(269, 155);
+            numericLowPassRipple.Location = new Point(269, 162);
             numericLowPassRipple.Maximum = new decimal(new int[] { 30, 0, 0, 65536 });
             numericLowPassRipple.Minimum = new decimal(new int[] { 1, 0, 0, 65536 });
             numericLowPassRipple.MinimumSize = new Size(36, 19);
@@ -591,7 +636,7 @@ namespace Resonalyze
             // 
             labelTotalGain.AutoSize = true;
             labelTotalGain.ForeColor = UiPalette.TextMuted;
-            labelTotalGain.Location = new Point(131, 56);
+            labelTotalGain.Location = new Point(131, 60);
             labelTotalGain.Name = "labelTotalGain";
             labelTotalGain.Size = new Size(47, 15);
             labelTotalGain.TabIndex = 37;
@@ -616,6 +661,7 @@ namespace Resonalyze
             Controls.Add(numericDelay);
             Controls.Add(checkBoxInvert);
             Controls.Add(checkBoxMono);
+            Controls.Add(checkBoxBothInputs);
             Controls.Add(comboBoxZone);
             Controls.Add(buttonMoveUp);
             Controls.Add(buttonMoveDown);
@@ -646,10 +692,10 @@ namespace Resonalyze
             Controls.Add(checkBoxBypass);
             Font = new Font("Segoe UI", 9F);
             ForeColor = UiPalette.TextPrimary;
-            MaximumSize = new Size(324, 258);
-            MinimumSize = new Size(324, 258);
+            MaximumSize = new Size(324, 265);
+            MinimumSize = new Size(324, 265);
             Name = "VirtualCrossoverChannelControl";
-            Size = new Size(322, 256);
+            Size = new Size(322, 263);
             (numericGain).EndInit();
             (numericDelay).EndInit();
             (numericHighPassHz).EndInit();
@@ -673,6 +719,7 @@ namespace Resonalyze
         private ThemedNumericUpDown numericDelay;
         private ReleaseClickCheckBox checkBoxInvert;
         private ReleaseClickCheckBox checkBoxMono;
+        private ReleaseClickCheckBox checkBoxBothInputs;
         private ThemedComboBox comboBoxZone;
         private ReleaseClickButton buttonMoveUp;
         private ReleaseClickButton buttonMoveDown;

@@ -13,6 +13,8 @@ internal sealed record VirtualDspEqReturnToken(
     long ProjectGeneration,
     int SourceRevision,
     bool Mono,
+    // The level the side read its measurement at: the L+R toggle moves it with no new source.
+    double SideLevelShare,
     DspChannelChain PreviewChain,
     bool WithChain,
     // What the target was shaped with; a goal changed on the card moves this and nothing else.
@@ -217,6 +219,7 @@ internal static class VirtualDspEqHandoff
                 projectGeneration,
                 state.SourceRevision,
                 channel.Pair.Mono,
+                channel.Pair.SideLevelShare,
                 previewChain,
                 withChain,
                 source.TargetCrossover,
@@ -266,7 +269,8 @@ internal static class VirtualDspEqHandoff
             return false;
         }
 
-        if (token.Mono != token.Channel.Pair.Mono)
+        if (token.Mono != token.Channel.Pair.Mono ||
+            !token.SideLevelShare.Equals(token.Channel.Pair.SideLevelShare))
         {
             return false;
         }

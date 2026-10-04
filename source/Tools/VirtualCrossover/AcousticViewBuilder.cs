@@ -16,7 +16,8 @@ internal sealed record VirtualCrossoverViewState(
     bool HybridRequested,
     EqTargetCurve? Target,
     double TargetLevelDb,
-    StereoSumMode StereoSum = StereoSumMode.Off);
+    StereoSumMode StereoSum = StereoSumMode.Off,
+    double StereoBlendHz = VirtualCrossoverLimits.DefaultStereoBlendHz);
 
 /// <summary>The magnitude read-outs one frame already computed, handed to the views that draw them.</summary>
 internal sealed record AcousticFrameCurves(

@@ -29,6 +29,8 @@ public sealed class VirtualCrossoverHybridSideTests
     {
         VirtualCrossoverChannel channel = new("Sub");
         channel.Pair.Mono = true;
+        // Measured from one input: each side plays the capture as stored.
+        channel.Pair.MeasuredFromBothInputs = false;
         channel.PhysicalSideState(false).SampleRate = 48_000;
         channel.PhysicalSideState(false).SpatialAverage = Capture(-14);
 

@@ -535,6 +535,7 @@ public partial class VirtualCrossoverPanel
             control.BypassCheckBox.Checked = channel.Pair.Bypass;
             control.ZoneComboBox.SelectedItem = channel.Pair.Zone;
             control.MonoCheckBox.Checked = channel.Pair.Mono;
+            control.BothInputsCheckBox.Checked = channel.Pair.MeasuredFromBothInputs;
             control.Muted = !channel.Pair.Enabled;
             control.Collapsed = channel.Pair.Collapsed;
         });

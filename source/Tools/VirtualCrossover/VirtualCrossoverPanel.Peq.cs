@@ -259,15 +259,13 @@ public partial class VirtualCrossoverPanel
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
         bool noPeq = settings.PeqBands.Count == 0 && settings.PeqPreampDb == 0;
-        string text = noPeq
-            ? "No PEQ"
-            : $"{settings.PeqSourceName ?? "PEQ"}: {settings.PeqBands.Count} bands, " +
-              $"preamp {settings.PeqPreampDb:0.0} dB";
+        // The counts are what the narrow row must keep; where the bank came from waits in the tooltip.
+        string counts = $"{settings.PeqBands.Count} bands, preamp {settings.PeqPreampDb:0.0} dB";
         // The block keeps its gain readout in step with the preamp itself.
         VirtualCrossoverChannelControl control = ControlFor(channel);
         control.PeqPreampDb = settings.PeqPreampDb;
         Label peqInfoLabel = control.PeqInfoLabel;
-        peqInfoLabel.Text = text;
-        toolTip.SetToolTip(peqInfoLabel, noPeq ? string.Empty : text);
+        peqInfoLabel.Text = noPeq ? "No PEQ" : counts;
+        toolTip.SetToolTip(peqInfoLabel, noPeq ? string.Empty : $"{settings.PeqSourceName ?? "PEQ"}: {counts}");
     }
 }

@@ -2394,8 +2394,10 @@ Russian layouts, elsewhere on others), whenever the caret is not in a field —
 **L→R** / **R→L** copy chain settings across sides
 (a dialog picks the channels and which parts travel — see below), **Lock** keeps
 the two sides' crossovers, polarity and FIR filters in step while it is on (also below),
-and a **Mono** checkbox turns a pair into a single shared driver — the typical
-one-subwoofer car layout — feeding both sides' sums. The setup grows from two up
+and a **Mono** toggle turns a pair into a single shared driver — the typical
+one-subwoofer car layout — feeding both sides' sums. The block's toggles (the
+curve toggles, **Bypass**, **Mono**, **L+R** and **Inv**) are buttons that stay
+pressed while on. The setup grows from two up
 to twelve pairs with **Add** and **Remove** under the block list, and **+/−**
 folds a block down to its header. **Reset** beside them starts the panel over:
 every block back to an empty default one, the list back to three, and the
@@ -2443,7 +2445,7 @@ Each channel runs through:
   entirely and has no junction with either. **Center** forces **Mono** and locks
   it — a centre plays a signal derived from L and R, so it has no side, and a
   session file that stores a centre as stereo opens mono; every
-  other zone leaves the checkbox free, since a subwoofer pair can be stereo and
+  other zone leaves the toggle free, since a subwoofer pair can be stereo and
   a rear pair normally is. Zone and Mono are deliberately separate fields: Mono
   is a routing fact, and one car can carry two mono subwoofers in different
   bands beside a mono centre.
@@ -2457,8 +2459,18 @@ Each channel runs through:
   record: a stereo pair becomes Front, and a mono block becomes Sub unless it
   high-passes, which no subwoofer does — that one becomes Center. Nothing else
   about such a project changes, so a wrong guess costs one combo box.
-- **Invert** — the DSP polarity switch
-- **▲▼** — move the block one place up or down the list. A block is lettered by
+- **L+R** — on a **Mono** block, how it was measured: pressed (the default),
+  with the signal in both the L and the R input at once, as a subwoofer fed
+  from both is usually measured. One side then drives it with half that
+  signal, so every side view — curves, Sum, Sum loss, the junction read-outs,
+  Auto delay, Tune junction, Auto crossover, the hybrid captures — takes the
+  block 6.02 dB below its file, and the L+R curve (under the plot, below) adds the two
+  halves back to the full level. Released: it was measured from one input, which
+  is what each side plays. It holds whether the processor mixes its inputs as a
+  sum or as an average, as long as both inputs count equally. Shown only
+  while **Mono** is on; projects saved before it existed open with it pressed
+- **Inv** — the DSP polarity switch
+- **▲▼** (on the Curves row) — move the block one place up or down the list. A block is lettered by
   its POSITION, so the ones that move are re-lettered and take the plot colour of
   their new row; nothing keys off the letter, and the project file does not even
   store it. Everything the block owns — its sources, its settings, the
@@ -2473,7 +2485,7 @@ Each channel runs through:
   [EQ Wizard's frequency fields](#eq-wizard) do.
   A Linkwitz-Riley pair sums flat only when its two halves are in phase:
   LR24 and LR48 are, LR12 and LR36 sit 180° apart, so one of the two
-  channels needs **Invert** or the sum nulls at the corner
+  channels needs **Inv** or the sum nulls at the corner
 - **Phase** — the channel phase control of the processors that have one, shown
   only when [DSP processor](#dsp-processor) says the device does. It is not a
   filter dialled in by frequency: the angle is what the user sets, in steps of
@@ -2708,14 +2720,23 @@ null is the best summation.
 
 The **L+R** selector draws both sides as one curve, on the Magnitude view of
 **Front + Sub** only; anywhere else it sits muted. **Off** draws nothing.
-**Vector** is the complex sum of every summing channel of both sides — what a
-signal fed to both sides at once sums to at the microphone — with a **Mono**
-block counted once, since it is one driver playing for both; a stereo pair of
-subs enters with both. **Energy** adds front L, front R and the subs by power,
-each of the three a complex sum of its own channels: the junctions inside a side
-keep their phase, but the two sides do not comb against each other. Where the
-fronts play, the curve sits up to 6 dB (Vector) or 3 dB (Energy) above one
-side's Sum; where only a mono sub plays, it reads the sub alone. Both modes read
+**Vector** is Sum L + Sum R as complex responses — what one signal fed to both
+sides at once sums to at the microphone. **Energy** is |Sum L|² + |Sum R|²: the
+two sides carrying unrelated signals, so they add by power and do not comb
+against each other, while the junctions inside each side keep their phase. A
+**Mono** block is in both sides' Sums at its side share (see its **L+R** toggle),
+so a sub measured with both inputs comes back to its full level in Vector and
+3 dB below it in Energy, which is what a summing input makes of correlated and of
+unrelated signals. Where the fronts play, the curve sits up to 6 dB (Vector) or
+3 dB (Energy) above one side's Sum, and it is never below either side's Sum in
+Energy. **Blend** is Vector in the bass and Energy above, their powers handed
+over across one octave centred on the frequency in the field beside the selector
+(300 Hz by default, live only under Blend): below it the two sides stay
+coherent wherever the head is, and programme bass is mostly mono; above it
+their comb moves with every head movement, a microphone average smears it, and
+what is left to tune is the power. The frequency belongs to the car — roughly
+where half a wavelength becomes the path difference between the sides across
+the seat. All modes read
 through one window opened at the earlier of the two sides' placements, so the
 later side's arrival is inside it. Under **Hybrid** it is built the way the
 hybrid Sum is — each channel's spatial-average level with its response's phase,

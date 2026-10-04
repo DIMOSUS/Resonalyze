@@ -6,12 +6,14 @@ namespace Resonalyze;
 /// <summary>Runtime state of one L/R channel block; members delegate to the active side, a mono pair routes both to the left. UI-free.</summary>
 internal sealed class VirtualCrossoverChannel : IVirtualCrossoverAlignmentChannel
 {
-    private readonly VirtualCrossoverChannelState leftState = new();
-    private readonly VirtualCrossoverChannelState rightState = new();
+    private readonly VirtualCrossoverChannelState leftState;
+    private readonly VirtualCrossoverChannelState rightState;
 
     public VirtualCrossoverChannel(string name)
     {
         Name = name;
+        leftState = new VirtualCrossoverChannelState(() => Pair.SideLevelShare);
+        rightState = new VirtualCrossoverChannelState(() => Pair.SideLevelShare);
     }
 
     // The block's position letter, not an identity: moving a block re-letters it and nothing keys off it.

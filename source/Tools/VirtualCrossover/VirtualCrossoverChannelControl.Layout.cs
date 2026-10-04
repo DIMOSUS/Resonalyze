@@ -89,7 +89,8 @@ public partial class VirtualCrossoverChannelControl
         {
             bool kept = (!collapsed || child.Top < FoldLine) &&
                 (phaseControlShown || !IsPhaseRow(child)) &&
-                (firControlShown || !IsFirRow(child));
+                (firControlShown || !IsFirRow(child)) &&
+                (child != checkBoxBothInputs || checkBoxMono.Checked);
             child.Visible = kept;
             if (kept)
             {

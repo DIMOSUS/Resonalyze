@@ -583,6 +583,21 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
+    public void ReturnAfterAMonoBlocksLevelShareChanged_Refuses()
+    {
+        // Same source and revision, but the side now reads it 6 dB louder: the bank was fitted to another curve.
+        VirtualCrossoverChannel channel = BuildChannel();
+        channel.Pair.Mono = true;
+        VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
+        channel.Pair.MeasuredFromBothInputs = false;
+        var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
+
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
+        Assert.Empty(channel.Settings.PeqBands);
+    }
+
+    [Fact]
     public void ReturnAfterTheSideGotANewMeasurement_Refuses()
     {
         VirtualCrossoverChannel channel = BuildChannel();
@@ -966,6 +981,7 @@ public sealed class VirtualDspEqHandoffTests
             ProjectGeneration: 1,
             channel.SideState(rightSide).SourceRevision,
             channel.Pair.Mono,
+            channel.Pair.SideLevelShare,
             channel.Pair.ToChain(rightSide) with { Peq = null },
             WithChain: true,
             VirtualDspEqHandoff.TargetCrossoverFor(channel.SideSettings(rightSide)),

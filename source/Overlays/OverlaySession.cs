@@ -537,10 +537,17 @@ internal sealed class OverlaySession
         plotChanged();
     }
 
-    /// <summary>The user changed the offset field; true when a save is now pending.</summary>
-    public bool SetOffset(OverlaySlot slot, decimal offset)
+    /// <summary>What the slot's level field holds: the scale's range in the impulse view, the offset's elsewhere.</summary>
+    public NumericFieldRange LevelRange(OverlaySlot slot) =>
+        OverlayScale.Applies(slot.SeriesMode) ? OverlayScale.Range : offsetRange;
+
+    /// <summary>The user changed the level field (<see cref="OverlaySlotState.Level"/>); true when a save is now pending.</summary>
+    public bool SetLevel(OverlaySlot slot, decimal value)
     {
-        slot.State = slot.State with { Offset = offsetRange.Assign(offset) };
+        decimal level = LevelRange(slot).Assign(value);
+        slot.State = OverlayScale.Applies(slot.SeriesMode)
+            ? slot.State with { ScalePercent = level }
+            : slot.State with { Offset = level };
         if (slot.Kind == OverlayKind.Captured && slot.State.Captured == null)
         {
             return false;
@@ -762,7 +769,7 @@ internal sealed class OverlaySession
     {
         bool wasChecked = slot.Checked;
         slot.CheckEnabled = available;
-        slot.OffsetEnabled = true;
+        slot.LevelEnabled = true;
         Present(slot);
 
         if (!available)
@@ -914,14 +921,14 @@ internal sealed class OverlaySession
         ClearDrawPoints(slot);
         slot.Checked = false;
         slot.CheckEnabled = false;
-        slot.OffsetEnabled = false;
+        slot.LevelEnabled = false;
         Present(slot);
     }
 
     private void SetAvailability(OverlaySlot slot, bool available)
     {
         slot.CheckEnabled = available;
-        slot.OffsetEnabled = available;
+        slot.LevelEnabled = available;
         if (!available)
         {
             slot.Checked = false;

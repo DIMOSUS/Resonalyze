@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Text.RegularExpressions;
 using OxyPlot;
 using Resonalyze.Dsp;
 
@@ -36,13 +37,16 @@ public sealed class OverlaySlotStateTests
                     [new SignalPoint(-1, 0.25), new SignalPoint(0, 0.5), new SignalPoint(1, -0.25), new SignalPoint(2, 0.125), new SignalPoint(3, 0.0625)],
                     AnalysisCurveKind.ImpulseStep,
                     0.75,
-                    96_000)));
+                    96_000)),
+            ScalePercent: 40m);
 
         OverlaySlotState loaded = RoundTrip(state, slot: 3);
 
         CapturedCurve captured = loaded.Captured!;
         Assert.Equal(OverlayKind.Captured, loaded.Kind);
-        Assert.Equal(("Main", -3m, Appearance, 6), (loaded.Title, loaded.Offset, loaded.Appearance, loaded.SmoothingInverseOctaves));
+        Assert.Equal(
+            ("Main", -3m, 40m, Appearance, 6),
+            (loaded.Title, loaded.Offset, loaded.ScalePercent, loaded.Appearance, loaded.SmoothingInverseOctaves));
         Assert.Equal(state.Captured!.Points, captured.Points);
         Assert.Equal(MagnitudeScale.SoundPressureLevel, captured.MagnitudeScale);
         Assert.Equal(PlotModelFactory.CoherenceAxisKey, captured.YAxisKey);
@@ -183,6 +187,47 @@ public sealed class OverlaySlotStateTests
         file.Offset = stored;
 
         Assert.Equal(shown, OverlaySlotState.FromFile(file, OffsetRange).Offset);
+    }
+
+    [Theory]
+    [InlineData(37.5, 38)]
+    [InlineData(0, 1)]
+    [InlineData(1e9, 1_000)]
+    public void AFilesScale_IsReadAsTheScaleFieldShowsIt(double stored, int shown)
+    {
+        var file = new OverlaySlotState(Mode.ImpulseResponse, "x", 0m, Appearance, 0, Operation: OverlayOperationSettings.Default)
+            .ToFile(1);
+        file.ScalePercent = stored;
+
+        OverlaySlotState state = OverlaySlotState.FromFile(file, OffsetRange);
+
+        Assert.Equal(shown, state.ScalePercent);
+        Assert.Equal(shown, state.Level);
+    }
+
+    [Fact]
+    public void AFileWrittenWithoutAScale_LoadsAtFullScale()
+    {
+        string root = Directory.CreateTempSubdirectory("resonalyze-overlay-state-").FullName;
+        try
+        {
+            var captured = new CapturedCurve([new DataPoint(0, 0), new DataPoint(1, 1)], MagnitudeScale.Relative);
+            new OverlaySlotState(Mode.ImpulseResponse, "x", 0m, Appearance, 0, captured, ScalePercent: 40m)
+                .ToFile(1)
+                .Save(root);
+            string path = OverlayFile.GetPath(Mode.ImpulseResponse, 1, root);
+            string json = File.ReadAllText(path);
+            File.WriteAllText(path, Regex.Replace(json, @"\s*""scalePercent"": [^,]+,", ""));
+
+            OverlayFile loaded = OverlayFile.Load(Mode.ImpulseResponse, 1, root)!;
+
+            Assert.DoesNotContain("scalePercent", File.ReadAllText(path));
+            Assert.Equal(100m, OverlaySlotState.FromFile(loaded, OffsetRange).ScalePercent);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]

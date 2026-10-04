@@ -46,6 +46,10 @@ public sealed class OverlayFile
     public string Title { get; set; } = string.Empty;
 
     public double Offset { get; set; }
+
+    // The Impulse Response view's level field (OverlayScale), drawn there instead of the offset; older files read 100.
+    public double ScalePercent { get; set; } = (double)OverlayScale.DefaultPercent;
+
     public int ColorArgb { get; set; }
     public double StrokeThickness { get; set; } = 2;
     public OverlayLineStyle LineStyle { get; set; } = OverlayLineStyle.Solid;
@@ -312,6 +316,10 @@ public sealed class OverlayFile
         if (!double.IsFinite(Offset))
         {
             throw new InvalidDataException("The overlay offset is invalid.");
+        }
+        if (!double.IsFinite(ScalePercent))
+        {
+            throw new InvalidDataException("The overlay scale is invalid.");
         }
         if (!double.IsFinite(StrokeThickness) ||
             StrokeThickness is < 0.5 or > 10)

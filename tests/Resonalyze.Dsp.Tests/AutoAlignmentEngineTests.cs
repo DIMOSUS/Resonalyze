@@ -793,7 +793,7 @@ public sealed class AutoAlignmentEngineTests
         var woofer = new TestChannel("W", Taps((0, 1.0), (150, 1.0), (960, 3.0)));
         var tweeter = new TestChannel("T", Taps((0, 1.0), (104, 1.0), (914, 3.0)));
 
-        AssertTheFrontsMeet(woofer, tweeter);
+        AssertTheFrontsMeet(woofer, tweeter, seededFrom: "direct-cut");
     }
 
     [Fact]
@@ -803,14 +803,17 @@ public sealed class AutoAlignmentEngineTests
         var woofer = new TestChannel("W", Taps((0, 1.0), (960, 3.0)));
         var tweeter = new TestChannel("T", Taps((0, 0.9), (48, 1.0), (960, 3.0)));
 
-        AssertTheFrontsMeet(woofer, tweeter);
+        AssertTheFrontsMeet(woofer, tweeter, seededFrom: "phat");
     }
 
-    private static void AssertTheFrontsMeet(TestChannel woofer, TestChannel tweeter)
+    private static void AssertTheFrontsMeet(TestChannel woofer, TestChannel tweeter, string seededFrom)
     {
+        var log = new StringBuilder();
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
-            Run([woofer, tweeter], [1_500], new StringBuilder());
+            Run([woofer, tweeter], [1_500], log);
 
+        // A later pass can repair a wrong seed on a synthetic pair, so the seed's source is checked beside the outcome.
+        Assert.Contains($"-> seed {seededFrom} ", TestLog.Line(log.ToString(), "Pair W/T"));
         AlignmentOverride lower = alignment.GetValueOrDefault(woofer);
         AlignmentOverride upper = alignment.GetValueOrDefault(tweeter);
         Assert.Equal(lower.InvertPolarity, upper.InvertPolarity);

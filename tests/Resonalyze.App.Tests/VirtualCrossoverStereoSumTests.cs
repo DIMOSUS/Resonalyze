@@ -33,11 +33,11 @@ public sealed class VirtualCrossoverStereoSumTests
 
     private static double At1kHz(AnalysisCurve curve) => At(curve, 1_000.0);
 
-    // Front L and R at one arrival with a mono sub: the sub is one response in both sides' lists.
+    // Front L and R at one arrival with a mono sub measured from both inputs: each side plays it at half amplitude.
     private static (List<ProcessedChannel> Shown, VirtualCrossoverSideSum Opposite) Stage(
         double frontRightAmplitude, int oppositeRate = SampleRate)
     {
-        ProcessedChannel sub = Channel(Driver("Sub", VirtualCrossoverZone.Sub, mono: true), 1.0);
+        ProcessedChannel sub = Channel(Driver("Sub", VirtualCrossoverZone.Sub, mono: true), 0.5);
         ProcessedChannel frontLeft = Channel(Driver("Front L", VirtualCrossoverZone.Front), 1.0);
         ProcessedChannel frontRight = Channel(
             Driver("Front R", VirtualCrossoverZone.Front), frontRightAmplitude, oppositeRate);
@@ -57,11 +57,11 @@ public sealed class VirtualCrossoverStereoSumTests
     }
 
     [Theory]
-    // In phase: 1 + 1 + sub 1 = 3; by power 1 + 1 + 1 = 3.
-    [InlineData(1.0, 9.542, 4.771)]
-    // Front R inverted: the fronts cancel as vectors, leaving the sub; by power nothing cancels.
-    [InlineData(-1.0, 0.0, 4.771)]
-    public void TheSidesAddWithTheMonoSubCountedOnce(double frontRight, double vectorDb, double energyDb)
+    // In phase: (1 + ½) + (1 + ½) = 3; by power 1.5² + 1.5² = 4.5.
+    [InlineData(1.0, 9.542, 6.532)]
+    // Front R inverted: the fronts cancel as vectors, leaving the sub whole; by power 1.5² + 0.5² = 2.5.
+    [InlineData(-1.0, 0.0, 3.979)]
+    public void TheSidesAddAsTheirSums_TheMonoSubHalfInEach(double frontRight, double vectorDb, double energyDb)
     {
         double reference = OneDriverDb();
 
@@ -126,13 +126,30 @@ public sealed class VirtualCrossoverStereoSumTests
     [Fact]
     public void MonoBlocksAloneAreTheirOwnLPlusR_ButOneSideAloneIsNot()
     {
-        ProcessedChannel sub = Channel(Driver("Sub", VirtualCrossoverZone.Sub, mono: true), 1.0);
+        ProcessedChannel sub = Channel(Driver("Sub", VirtualCrossoverZone.Sub, mono: true), 0.5);
         ProcessedChannel frontLeft = Channel(Driver("Front L", VirtualCrossoverZone.Front), 1.0);
         var onlySub = new VirtualCrossoverSideSum([], Arrival, SampleRate, [sub]);
 
-        AnalysisCurve? monoOnly = VirtualCrossoverStereoSum.Build(StereoSumMode.Vector, [sub], onlySub, Gate, _ => null);
-        Assert.Equal(0.0, At1kHz(monoOnly!) - OneDriverDb(), 2);
+        AnalysisCurve? vector = VirtualCrossoverStereoSum.Build(StereoSumMode.Vector, [sub], onlySub, Gate, _ => null);
+        AnalysisCurve? energy = VirtualCrossoverStereoSum.Build(StereoSumMode.Energy, [sub], onlySub, Gate, _ => null);
+        Assert.Equal(0.0, At1kHz(vector!) - OneDriverDb(), 2);
+        Assert.Equal(-3.01, At1kHz(energy!) - OneDriverDb(), 2);
         Assert.Null(VirtualCrossoverStereoSum.Build(StereoSumMode.Vector, [frontLeft, sub], onlySub, Gate, _ => null));
+    }
+
+    [Theory]
+    // Half an octave either side of 300 Hz is where the hand-over starts and ends.
+    [InlineData(100.0, 10.0)]
+    [InlineData(212.13, 10.0)]
+    [InlineData(300.0, 7.0)]
+    [InlineData(424.26, 4.0)]
+    [InlineData(5_000.0, 4.0)]
+    public void Blend_IsVectorBelowAndEnergyAbove_HandedOverAcrossOneOctave(double hz, double expectedDb)
+    {
+        List<SignalPoint> vector = [new SignalPoint(hz, 10.0)];
+        List<SignalPoint> energy = [new SignalPoint(hz, 4.0)];
+
+        Assert.Equal(expectedDb, VirtualCrossoverStereoSum.Blend(vector, energy, 300.0).Single().Y, 2);
     }
 
     [Fact]

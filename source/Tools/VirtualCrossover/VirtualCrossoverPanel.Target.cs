@@ -40,6 +40,17 @@ public partial class VirtualCrossoverPanel
         OnViewChanged();
     }
 
+    private void OnStereoBlendEdited()
+    {
+        if (suppressProjectEvents)
+        {
+            return;
+        }
+
+        session.Project.StereoSumBlendHz = (double)numericStereoBlend.Value;
+        OnViewChanged();
+    }
+
     private void ShowTargetLevel()
     {
         bool suppressed = suppressProjectEvents;

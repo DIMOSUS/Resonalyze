@@ -485,7 +485,9 @@ Building the system is five steps, in the order this section takes them:
 1. add or remove channel blocks until there is one per **driver band** of the real
    system, arranged from lowest to highest frequency;
 2. load each block's `.json` files — the **Left** and **Right** measurements of a
-   stereo band, or a single one with **Mono** on for a shared subwoofer;
+   stereo band, or a single one with **Mono** on for a shared subwoofer; leave its
+   **L+R** pressed if the subwoofer was measured with the signal in both inputs, and
+   release it if only one input carried the sweep;
 3. set each block's **Zone**;
 4. name the [processor](#name-the-processor-you-are-tuning) the project is for;
 5. set the [display](#set-the-display-correctly) — calibration and smoothing.
@@ -519,7 +521,7 @@ The panel is dense, so here are its six regions:
    and **Sum loss** against the right-hand axis (its selector: **Full** for the sum
    the cabin hears, **FDW-8** for the direct sound alone, **Disable** for no curve).
 3. **What the plot shows** — which curves are drawn, the **L+R** sum of both sides
-   (**Vector** or **Energy**, in Front + Sub), the target and its level, the
+   (**Vector**, **Energy** or **Blend** with its hand-over frequency, in Front + Sub), the target and its level, the
    microphone calibration, the Hybrid toggle, the view (Magnitude, Phase, Impulse,
    Group delay, Step), smoothing, **Gate** — the window of every view but Magnitude,
    which takes only its offset — and **Show**.
@@ -541,11 +543,12 @@ The same controls repeat on every block:
 1. **Source** — the measurement for the side selected below the card list; **MMM /
    Array** attaches or selects its spatial average; the speaker button excludes the
    block from the plots, Sum, metrics and Auto delay.
-2. **Curves** — **Raw** and **Processed** draw the measurement and the result through
-   the chain; **Bypass** takes the chain out of the block.
+2. **Curves** — **Raw** and **DSP** draw the measurement and the result through
+   the chain; **Bypass** takes the chain out of the block; **▲▼** move the block in the
+   list.
 3. **Level and time** — channel gain, total gain after PEQ preamp, and delay.
-4. **Group and order** — **Zone**, **Mono**, polarity inversion, **▲▼** to move the
-   block in the list, and **−** to fold it down to its first rows.
+4. **Group** — **Zone**, **Mono**, **L+R** (how a mono block was measured), **Inv**
+   (polarity), and **−** to fold the block down to its first rows.
 5. **Crossover** — kind, the measured polarity of the IR, the acoustic goal a
    [Tune junction](#refining-one-junction-tune-junction) Apply leaves, HP/LP corners,
    family, slope, and ripple where the family has one.

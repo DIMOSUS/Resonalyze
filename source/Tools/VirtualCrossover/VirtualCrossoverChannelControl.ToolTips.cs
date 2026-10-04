@@ -77,6 +77,11 @@ public partial class VirtualCrossoverChannelControl
             "delay tunes it with the left side and reports the right\r\n" +
             "junction it pins.");
         toolTip.SetToolTip(
+            checkBoxBothInputs,
+            "Measured with the signal in both L and R inputs: one side\r\n" +
+            "plays it 6 dB lower, so each side's curves and Sum use −6 dB\r\n" +
+            "and L+R the full level. Off: measured from one input.");
+        toolTip.SetToolTip(
             comboBoxZone,
             "Which part of the installation this block is: Front, Rear or\r\n" +
             "Center. The grouped views and Auto delay's staging follow it.\r\n" +
@@ -146,7 +151,7 @@ public partial class VirtualCrossoverChannelControl
             "own measurement.");
         toolTip.SetToolTip(
             checkBoxShowProcessed,
-            "Plot this channel's processed response — the measured\r\n" +
+            "Plot this channel through its DSP chain — the measured\r\n" +
             "driver after gain, delay, polarity, the crossover and PEQ.\r\n" +
             "The toggle is shared by both sides; each side draws its\r\n" +
             "own measurement.");

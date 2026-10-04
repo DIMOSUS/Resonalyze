@@ -10,6 +10,7 @@ public sealed class VirtualCrossoverChannelEditTests
         DelayMs: 1.23,
         Inverted: true,
         Mono: true,
+        BothInputs: false,
         Zone: VirtualCrossoverZone.Rear,
         Muted: true,
         Bypass: true,
@@ -26,6 +27,7 @@ public sealed class VirtualCrossoverChannelEditTests
         [VirtualCrossoverChannelField.Delay] = ["DelayMs"],
         [VirtualCrossoverChannelField.Polarity] = ["Inverted"],
         [VirtualCrossoverChannelField.Mono] = ["Mono"],
+        [VirtualCrossoverChannelField.BothInputs] = ["BothInputs"],
         [VirtualCrossoverChannelField.Zone] = ["Zone"],
         [VirtualCrossoverChannelField.Mute] = ["Muted"],
         [VirtualCrossoverChannelField.Bypass] = ["Bypass"],
@@ -112,7 +114,8 @@ public sealed class VirtualCrossoverChannelEditTests
 
     internal static Dictionary<string, object> Values(VirtualCrossoverChannelPairSettings pair, VirtualCrossoverChannelSettings side) =>
         Values(new VirtualCrossoverChannelShown(
-            side.GainDb, side.DelayMs, side.InvertPolarity, pair.Mono, pair.Zone, !pair.Enabled, pair.Bypass,
+            side.GainDb, side.DelayMs, side.InvertPolarity, pair.Mono, pair.MeasuredFromBothInputs, pair.Zone,
+            !pair.Enabled, pair.Bypass,
             pair.ShowRawCurve, pair.ShowProcessedCurve, side.CrossoverKind, side.HighPassEdge, side.LowPassEdge,
             side.PhaseRotationDegrees));
 
@@ -122,6 +125,7 @@ public sealed class VirtualCrossoverChannelEditTests
         ["DelayMs"] = shown.DelayMs,
         ["Inverted"] = shown.Inverted,
         ["Mono"] = shown.Mono,
+        ["BothInputs"] = shown.BothInputs,
         ["Zone"] = shown.Zone,
         ["Muted"] = shown.Muted,
         ["Bypass"] = shown.Bypass,

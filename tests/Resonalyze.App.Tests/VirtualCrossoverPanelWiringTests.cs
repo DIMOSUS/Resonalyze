@@ -96,6 +96,13 @@ public sealed class VirtualCrossoverPanelWiringTests
             live.Set<ThemedComboBox>("comboBoxStereoSum", box => box.SelectedItem = StereoSumMode.Vector);
             DataPoint[] vector = [.. Assert.Single(live.MainSeriesIn(VirtualCrossoverColors.StereoSum)).Points];
             Assert.NotEqual(energy, vector);
+            Assert.False(live.Control<ThemedNumericUpDown>("numericStereoBlend").Enabled);
+
+            live.Set<ThemedComboBox>("comboBoxStereoSum", box => box.SelectedItem = StereoSumMode.Blend);
+            Assert.True(live.Control<ThemedNumericUpDown>("numericStereoBlend").Enabled);
+            live.Set<ThemedNumericUpDown>("numericStereoBlend", field => field.Value = 500m);
+            Assert.Equal(500.0, live.Session.Project.StereoSumBlendHz);
+            Assert.Single(live.MainSeriesIn(VirtualCrossoverColors.StereoSum));
 
             live.Set<ThemedComboBox>(
                 "comboBoxGroupView", box => box.SelectedItem = VirtualCrossoverGroupView.GroupsCompared);

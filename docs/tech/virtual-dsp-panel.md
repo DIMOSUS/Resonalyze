@@ -550,15 +550,32 @@ which `CanDrawOppositeSum` checks (per-side checks cannot: two relative capture 
 but say nothing about their relative level). One anchor and offset serve that side's channels and its sum,
 and the sum is smoothed only at the end of the reconstruction.
 
+## Mono side share
+
+A mono block's file holds what it played during its measurement. Measured with the sweep in both inputs (the
+pair's `MeasuredFromBothInputs`, on by default), it played `(gL + gR)·S`; one side drives it with `gL·S`, half the
+amplitude for equal input weights, whether the processor's mixer sums or averages. `VirtualCrossoverChannelState`
+therefore reads its measurement, its processing source and its captures (`SpatialAverageFor`) at the pair's
+`SideLevelShare` (0.5, else 1), so every side reader — curves, Sum, loss, junction read-outs, Auto delay, Tune
+junction, Auto crossover, the hybrid and its set offset, the EQ handoff — takes the same level without knowing
+about it. The scaled copies are cached per share, so the processing cache, which keys on the source instance,
+reprocesses exactly when the flag or Mono changes. Chains, headroom and exports never see the share: it is
+acoustic, not a DSP gain. Before the share, a mono sub entered each side whole: tuned flat per side, it played
+6 dB short against the fronts in the car.
+
 ## L+R sum
 
 `VirtualCrossoverStereoSum` adds the shown side's summing channels to the opposite side's, read by the same
 `ComputeSideSumAsync` as the dashed opposite Sum (asked for one channel instead of two when only the L+R needs
-it). A mono block is one response in both sides' lists, so the opposite list drops it: one driver plays once.
-Vector is `MagnitudeGateSnapshot.MeasuredSum` over the union. Energy passes power-sum groups to the same call —
-front L, front R and every Sub-zone block — so the junctions inside a side keep their phase while the sides, and
-the subs against them, add by power. Power-summing the two side Sums (|ΣL + S|² + |ΣR + S|²) was the alternative:
-it keeps each side's sub–front interference but counts a mono sub in both terms, which the owner rejected. One
+it). Vector is `MagnitudeGateSnapshot.MeasuredSum` over both lists — Sum L + Sum R, a mono block in both at its
+side share, so it returns to its own level. Energy passes the side as a power-sum group to the same call:
+|Sum L|² + |Sum R|², exact for uncorrelated programme in the two sides (a summing sub input adds their
+contributions by power too), and never below either side. Separating the subs into a group of their own was the
+first version: it broke the sub–front coherence inside each side and read below a side's Sum at an in-phase
+junction. A side with no non-mono block of its own draws no L+R (it would be one side plus half a sub). Blend
+builds both and weighs them in dB with `Clamp(log2(f / fc) + 0.5, 0, 1)` on their shared grid, so the hand-over
+spans one octave around the project's `StereoSumBlendHz`; there is no physical crossover frequency to derive (after
+time alignment the sides agree at the microphone, and what combs is the head moving), hence a field. One
 anchor (the earlier side's start) and one gate offset (the earlier of the two sides' own placements, pins
 included) keep both arrivals inside the window. Under the hybrid, `VirtualCrossoverHybrid.StereoSum` rebuilds the
 opposite channels' hybrid curves as the opposite-side hybrid sum does and runs the shown side's offset through

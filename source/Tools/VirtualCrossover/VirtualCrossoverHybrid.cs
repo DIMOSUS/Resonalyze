@@ -614,8 +614,17 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
         IReadOnlyList<ProcessedChannel> summed,
         IReadOnlyList<AnalysisCurve> magnitudes,
         HybridMagnitudes hybrid,
-        VirtualCrossoverSideSum? opposite)
+        VirtualCrossoverSideSum? opposite,
+        double blendHz = VirtualCrossoverLimits.DefaultStereoBlendHz)
     {
+        if (mode == StereoSumMode.Blend)
+        {
+            return StereoSum(StereoSumMode.Vector, shown, summed, magnitudes, hybrid, opposite) is { } vector &&
+                StereoSum(StereoSumMode.Energy, shown, summed, magnitudes, hybrid, opposite) is { } energy
+                    ? vector with { Points = VirtualCrossoverStereoSum.Blend(vector.Points, energy.Points, blendHz) }
+                    : null;
+        }
+
         bool oppositeRight = !session.ActiveSideRight;
         MagnitudeGateSnapshot snapshot = session.MagnitudeGate;
         List<int> positions = [.. Enumerable.Range(0, shown.Count).Where(index => summed.Contains(shown[index]))];
@@ -647,10 +656,7 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
         }
 
         List<SignalPoint>? points = Sum(
-            [
-                .. positions.Select(index => hybrid.UnsmoothedChannels[index]),
-                .. parts.OppositePositions.Select(index => oppositeHybrid.UnsmoothedChannels[index])
-            ],
+            [.. positions.Select(index => hybrid.UnsmoothedChannels[index]), .. oppositeHybrid.UnsmoothedChannels],
             hybrid.OffsetDb,
             parts.Channels,
             parts.AnchorIndex,
@@ -658,8 +664,7 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
             parts.GateOffsetMs,
             [
                 .. positions.Select(index => (IReadOnlyList<SignalPoint>)magnitudes[index].Points),
-                .. parts.OppositePositions.Select(index =>
-                    (IReadOnlyList<SignalPoint>)oppositeMagnitudes[index].Display.Points)
+                .. oppositeMagnitudes.Select(curve => (IReadOnlyList<SignalPoint>)curve.Display.Points)
             ],
             parts.Groups);
         return points == null ? null : new AnalysisCurve("L+R", points);

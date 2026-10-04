@@ -702,15 +702,15 @@ internal static class Shots
         figure.Gutter(40, onLeft: true, sample: new Point(318, 100))
               .Region(Box(3, 3, 319, 30), "1", new Point(20, 16),
                   leader: true, badgeRadius: 10)
-              .Region(Box(3, 31, 319, 53), "2", new Point(20, 42),
+              .Region(Box(3, 31, 319, 55), "2", new Point(20, 43),
                   leader: true, badgeRadius: 10)
-              .Region(Box(3, 53, 319, 75), "3", new Point(20, 64),
+              .Region(Box(3, 56, 319, 80), "3", new Point(20, 68),
                   leader: true, badgeRadius: 10)
-              .Region(Box(3, 75, 319, 100), "4", new Point(20, 87),
+              .Region(Box(3, 81, 319, 106), "4", new Point(20, 94),
                   leader: true, badgeRadius: 10)
-              .Region(Box(3, 101, 319, 178), "5", new Point(20, 139),
+              .Region(Box(3, 107, 319, 185), "5", new Point(20, 146),
                   leader: true, badgeRadius: 10)
-              .Region(Box(3, 179, 319, 203), "6", new Point(20, 191),
+              .Region(Box(3, 186, 319, 210), "6", new Point(20, 198),
                   leader: true, badgeRadius: 10)
               .Save(path);
     }

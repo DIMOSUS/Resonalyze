@@ -4,22 +4,55 @@ using Resonalyze.Dsp;
 namespace Resonalyze;
 
 /// <summary>Resolved source measurement of one side plus its processed-IR cache; UI-free.</summary>
-internal sealed class VirtualCrossoverChannelState
+/// <remarks>The measurement and the captures read at the side's level share: a mono block measured with both inputs fed
+/// plays at half amplitude when one side does. See docs/tech/virtual-dsp-panel.md#mono-side-share.</remarks>
+internal sealed class VirtualCrossoverChannelState(Func<double> levelShare)
 {
-    private Complex[]? transferImpulseResponse;
+    private Complex[]? measuredImpulseResponse;
+    private SideLevel? sideLevel;
+    private (LiveCaptureDocument Capture, double Share, LiveCaptureDocument Read)? sharedCapture;
 
+    public VirtualCrossoverChannelState()
+        : this(() => 1.0)
+    {
+    }
+
+    /// <summary>The measurement as this side plays it; set with the measurement as recorded.</summary>
     public Complex[]? TransferImpulseResponse
     {
-        get => transferImpulseResponse;
+        get => Level()?.ImpulseResponse;
         set
         {
-            transferImpulseResponse = value;
-            ProcessingSource = value == null
-                ? null
-                : new VirtualCrossoverSourceSnapshot(value);
+            measuredImpulseResponse = value;
+            sideLevel = null;
         }
     }
-    public VirtualCrossoverSourceSnapshot? ProcessingSource { get; private set; }
+
+    public VirtualCrossoverSourceSnapshot? ProcessingSource => Level()?.Source;
+
+    // One copy per share, swapped whole: readers on other threads see a consistent pair.
+    private SideLevel? Level()
+    {
+        if (measuredImpulseResponse is not { } measured)
+        {
+            return null;
+        }
+
+        double share = levelShare();
+        SideLevel? current = sideLevel;
+        if (current != null && current.Share == share && ReferenceEquals(current.Measured, measured))
+        {
+            return current;
+        }
+
+        Complex[] read = share == 1.0 ? measured : [.. measured.Select(sample => sample * share)];
+        current = new SideLevel(measured, share, read, new VirtualCrossoverSourceSnapshot(read));
+        sideLevel = current;
+        return current;
+    }
+
+    private sealed record SideLevel(
+        Complex[] Measured, double Share, Complex[] ImpulseResponse, VirtualCrossoverSourceSnapshot Source);
 
     /// <summary>Attached average of this driver (moving-mic capture or response file); only replaces the magnitude the hybrid view draws.</summary>
     public LiveCaptureDocument? SpatialAverage { get; set; }
@@ -51,14 +84,32 @@ internal sealed class VirtualCrossoverChannelState
     /// <summary>Zeroed outside this band (divided-out high-pass, unswept range): curves stop at its edges, sums do not.</summary>
     public MeasuredBand MeasuredBand { get; set; } = MeasuredBand.Everything;
 
+    /// <summary>The capture of the family as this side plays it (see <see cref="TransferImpulseResponse"/>).</summary>
     public LiveCaptureDocument? SpatialAverageFor(
-        VirtualCrossoverSpatialAverageMode mode) =>
-        mode switch
+        VirtualCrossoverSpatialAverageMode mode)
+    {
+        LiveCaptureDocument? capture = mode switch
         {
             VirtualCrossoverSpatialAverageMode.MicArray => ArrayCapture,
             VirtualCrossoverSpatialAverageMode.MovingMic => SpatialAverage,
             _ => null
         };
+        double share = levelShare();
+        if (capture == null || share == 1.0)
+        {
+            return capture;
+        }
+
+        // Kept per capture and share: readers compare captures by identity.
+        if (sharedCapture is { } kept && ReferenceEquals(kept.Capture, capture) && kept.Share == share)
+        {
+            return kept.Read;
+        }
+
+        LiveCaptureDocument read = capture.ShiftedBy(20.0 * Math.Log10(share));
+        sharedCapture = (capture, share, read);
+        return read;
+    }
     public int TransferPeakIndex { get; set; }
     public int SampleRate { get; set; }
 

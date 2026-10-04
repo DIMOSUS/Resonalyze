@@ -70,9 +70,15 @@ public partial class VirtualCrossoverPanel
         toolTip.SetToolTip(
             comboBoxStereoSum,
             "Both sides as one L+R curve (Front + Sub, Magnitude). Vector:\r\n" +
-            "complex sum, a mono sub counted once. Energy: front L, front R\r\n" +
-            "and sub added by power, no comb between the sides. With\r\n" +
-            "Hybrid, both sides' captures must form one set.");
+            "Sum L + Sum R, one signal in both sides. Energy: the two Sums\r\n" +
+            "added by power, no comb between them. Blend: Vector below\r\n" +
+            "the frequency beside it, Energy above.");
+        toolTip.SetToolTip(
+            numericStereoBlend,
+            "Where Blend hands over from Vector to Energy, over one\r\n" +
+            "octave around it: below it the sides stay coherent across\r\n" +
+            "the seat; above it their comb moves with the head and\r\n" +
+            "only the power counts.");
         toolTip.SetToolTip(
             radioDspGroupDelay,
             "What the lower plot shows for each channel's DSP chain:\r\n" +

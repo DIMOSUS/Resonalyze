@@ -348,6 +348,15 @@ public sealed class LiveCaptureDocument
     }
 
     /// <summary>The drawn curve as points on its own grid; NaN levels (below the protective high-pass) are kept.</summary>
+    /// <summary>A copy that reads <paramref name="db"/> louder; silent bins stay silent. Shares the other arrays: never edit it.</summary>
+    public LiveCaptureDocument ShiftedBy(double db)
+    {
+        var copy = (LiveCaptureDocument)MemberwiseClone();
+        copy.SpectrumDb = [.. SpectrumDb.Select(level => level <= SilentBinDb ? level : level + db)];
+        copy.CurveDb = [.. CurveDb.Select(level => level <= SilentBinDb ? level : level + db)];
+        return copy;
+    }
+
     public List<SignalPoint> ToCurvePoints()
     {
         var points = new List<SignalPoint>(CurveDb.Length);

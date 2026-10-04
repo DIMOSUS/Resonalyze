@@ -31,6 +31,7 @@ public partial class VirtualCrossoverPanel
         bool stereoSum = StereoSumModes.Applies(SelectedGroupView) && radioViewMagnitude.Checked;
         comboBoxStereoSum.Enabled = stereoSum;
         Ui.UiStyle.SetTextEnabledLook(labelStereoSum, stereoSum);
+        numericStereoBlend.Enabled = stereoSum && SelectedStereoSum == StereoSumMode.Blend;
         bool groupSums = VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView);
         if (groupSums)
         {
@@ -93,6 +94,7 @@ public partial class VirtualCrossoverPanel
 
         session.Project.SumLossWindowMode = SelectedSumLossWindow;
         session.Project.StereoSum = SelectedStereoSum;
+        numericStereoBlend.Enabled = comboBoxStereoSum.Enabled && SelectedStereoSum == StereoSumMode.Blend;
         session.Project.ShowHybridCurves = checkBoxHybrid.Checked;
         session.Project.ShowTargetCurve = checkBoxShowTarget.Checked;
         // Newer view flags are written beside older ones so an older build opens the nearest view.
@@ -364,9 +366,11 @@ public partial class VirtualCrossoverPanel
             {
                 stereoSumCurve = hybrid == null
                     ? VirtualCrossoverStereoSum.Build(
-                        view.StereoSum, frame.Summed, oppositeSide, session.MagnitudeGate, session.Calibration.For)
+                        view.StereoSum, frame.Summed, oppositeSide, session.MagnitudeGate, session.Calibration.For,
+                        view.StereoBlendHz)
                     : hybridReader.StereoSum(
-                        view.StereoSum, frame.Shown, frame.Summed, magnitudes!, hybrid, oppositeSide);
+                        view.StereoSum, frame.Shown, frame.Summed, magnitudes!, hybrid, oppositeSide,
+                        view.StereoBlendHz);
             }
         }
 
@@ -496,7 +500,8 @@ public partial class VirtualCrossoverPanel
         HybridRequested,
         checkBoxShowTarget.Checked ? targetCurve : null,
         session.Project.TargetLevelDb,
-        SelectedStereoSum);
+        SelectedStereoSum,
+        session.Project.StereoSumBlendHz);
 
     private void UpdateWarnings(
         List<ProcessedChannel> processed, List<ProcessedChannel> shown, HybridMagnitudes? hybrid, bool rightSide)

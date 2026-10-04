@@ -7,22 +7,26 @@ public enum StereoSumMode
 {
     Off,
 
-    /// <summary>Complex sum of both sides' channels, a mono channel once.</summary>
+    /// <summary>Sum L + Sum R as vectors: one signal fed to both sides.</summary>
     Vector,
 
-    /// <summary>|Σ front L|² + |Σ front R|² + |Σ sub|²: each group a vector sum, the groups added by power.</summary>
-    Energy
+    /// <summary>|Sum L|² + |Sum R|²: uncorrelated signals in the two sides.</summary>
+    Energy,
+
+    /// <summary>Vector in the bass, where the sides stay coherent across the seat, Energy above, over one octave.</summary>
+    Blend
 }
 
 public static class StereoSumModes
 {
     public static readonly IReadOnlyList<StereoSumMode> All =
-        [StereoSumMode.Off, StereoSumMode.Vector, StereoSumMode.Energy];
+        [StereoSumMode.Off, StereoSumMode.Vector, StereoSumMode.Energy, StereoSumMode.Blend];
 
     public static string DisplayName(StereoSumMode mode) => mode switch
     {
         StereoSumMode.Vector => "Vector",
         StereoSumMode.Energy => "Energy",
+        StereoSumMode.Blend => "Blend",
         _ => "Off"
     };
 
@@ -30,22 +34,17 @@ public static class StereoSumModes
         view == VirtualCrossoverGroupView.FrontAndSub;
 }
 
-/// <summary>What the L+R curve sums: the shown side's summing channels, then the opposite side's own ones, through one
-/// window that opens at the earlier side's.</summary>
-/// <param name="OppositePositions">Where each opposite channel sits in <see cref="VirtualCrossoverSideSum.Channels"/>.</param>
-/// <param name="Groups">Each channel's power-sum group; null for one vector sum.</param>
+/// <summary>What the L+R curve sums: the shown side's summing channels, then the opposite side's, through one window
+/// that opens at the earlier side's. A mono block is in both, at its side share (docs/tech/virtual-dsp-panel.md#mono-side-share).</summary>
+/// <param name="Groups">Each channel's side for the power sum; null for one vector sum.</param>
 internal sealed record StereoSumParts(
     List<ProcessedChannel> Channels,
-    int ShownCount,
-    List<int> OppositePositions,
     int AnchorIndex,
     double GateOffsetMs,
     List<int>? Groups);
 
 internal static class VirtualCrossoverStereoSum
 {
-    private const int SubGroup = 2;
-
     /// <param name="shown">The shown side's summing channels.</param>
     /// <returns>Null when off, when the other side lacks its own blocks, or when the sides' rates differ.</returns>
     public static StereoSumParts? Parts(
@@ -62,27 +61,21 @@ internal static class VirtualCrossoverStereoSum
             return null;
         }
 
-        // A mono channel is one response in both sides' lists: it plays once.
-        List<int> positions = [.. Enumerable.Range(0, opposite.Channels.Count)
-            .Where(index => !opposite.Channels[index].Channel.Pair.Mono)];
         // Nothing of the other side's own is half an L+R, unless every block is mono and so plays for both.
-        if (positions.Count == 0 && shown.Any(item => !item.Channel.Pair.Mono))
+        if (opposite.Channels.All(item => item.Channel.Pair.Mono) && shown.Any(item => !item.Channel.Pair.Mono))
         {
             return null;
         }
 
-        List<ProcessedChannel> others = [.. positions.Select(index => opposite.Channels[index])];
         int shownAnchor = ProcessedChannels.SharedStartAnchorIndex(shown);
         double gateOffsetMs = Math.Min(
             gate.ResolveGateOffsetMs(oppositeSide: false, shownAnchor, shown[0].SampleRate),
             gate.OppositeOffsetMs(opposite));
         List<int>? groups = mode == StereoSumMode.Energy
-            ? [.. shown.Select(item => GroupOf(item, side: 0)), .. others.Select(item => GroupOf(item, side: 1))]
+            ? [.. shown.Select(_ => 0), .. opposite.Channels.Select(_ => 1)]
             : null;
         return new StereoSumParts(
-            [.. shown, .. others],
-            shown.Count,
-            positions,
+            [.. shown, .. opposite.Channels],
             Math.Min(shownAnchor, opposite.AnchorIndex),
             gateOffsetMs,
             groups);
@@ -94,13 +87,42 @@ internal static class VirtualCrossoverStereoSum
         IReadOnlyList<ProcessedChannel> shown,
         VirtualCrossoverSideSum? opposite,
         MagnitudeGateSnapshot gate,
-        Func<ProcessedChannel, CalibrationFile?> calibrationFor) =>
-        Parts(mode, shown, opposite, gate) is not { } parts
+        Func<ProcessedChannel, CalibrationFile?> calibrationFor,
+        double blendHz = VirtualCrossoverLimits.DefaultStereoBlendHz)
+    {
+        if (mode == StereoSumMode.Blend)
+        {
+            return Build(StereoSumMode.Vector, shown, opposite, gate, calibrationFor) is { } vector &&
+                Build(StereoSumMode.Energy, shown, opposite, gate, calibrationFor) is { } energy
+                    ? vector with { Points = Blend(vector.Points, energy.Points, blendHz) }
+                    : null;
+        }
+
+        return Parts(mode, shown, opposite, gate) is not { } parts
             ? null
             : gate.MeasuredSum(
                 parts.Channels, parts.AnchorIndex, parts.GateOffsetMs, calibrationFor, parts.Groups).Display;
+    }
 
-    // Stereo subs share one group: they play the same bass and add as vectors.
-    private static int GroupOf(ProcessedChannel item, int side) =>
-        item.Channel.Pair.Zone == VirtualCrossoverZone.Sub ? SubGroup : side;
+    /// <summary>Vector below, Energy above, weighed in dB across the octave centred on <paramref name="blendHz"/>.
+    /// Both curves are on one grid.</summary>
+    public static List<SignalPoint> Blend(
+        IReadOnlyList<SignalPoint> vector, IReadOnlyList<SignalPoint> energy, double blendHz)
+    {
+        int count = Math.Min(vector.Count, energy.Count);
+        var points = new List<SignalPoint>(count);
+        for (int i = 0; i < count; i++)
+        {
+            double weight = Math.Clamp(Math.Log2(vector[i].X / blendHz) + 0.5, 0.0, 1.0);
+            double level = weight switch
+            {
+                0.0 => vector[i].Y,
+                1.0 => energy[i].Y,
+                _ => (1.0 - weight) * vector[i].Y + weight * energy[i].Y
+            };
+            points.Add(new SignalPoint(vector[i].X, level));
+        }
+
+        return points;
+    }
 }

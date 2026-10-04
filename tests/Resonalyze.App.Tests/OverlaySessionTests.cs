@@ -496,23 +496,8 @@ public sealed class OverlaySessionTests : IDisposable
     public void AnImpulseSlotsScale_ScalesItsAmplitude_NotItsOffset(
         ImpulseAmplitudeScale amplitude, AnalysisCurveKind kind, double peak)
     {
-        mode = Mode.ImpulseResponse;
-        sources.SetImpulseFrameProvider(() => ImpulseFrame(origin: 0, amplitude));
-        sources.SetImpulseCaptureProvider(tag => new ImpulseOverlayCapture(
-            [new SignalPoint(100, 0.0), new SignalPoint(110, 1.0), new SignalPoint(120, 0.0)],
-            tag.Kind,
-            1.0,
-            48_000));
-        session.Prepare(mode);
-        var trace = new LineSeries
-        {
-            Title = "Trace",
-            Tag = new CurveTag(Mode.ImpulseResponse, kind),
-            YAxisKey = kind == AnalysisCurveKind.ImpulseStep ? PlotModelFactory.ImpulseStepAxisKey : null
-        };
-        trace.Points.AddRange([new DataPoint(100, 0.0), new DataPoint(110, 1.0), new DataPoint(120, 0.0)]);
-        model.Series.Add(trace);
-        session.Capture(Slot(1), trace);
+        EnterImpulseView(amplitude);
+        CaptureImpulse(1, kind);
         Slot(1).State = Slot(1).State with { Offset = 7m };
 
         Assert.True(session.SetLevel(Slot(1), 50m));
@@ -521,6 +506,74 @@ public sealed class OverlaySessionTests : IDisposable
         session.FlushPendingSaves();
         Assert.Equal(50.0, OverlayFile.Load(mode, 1, root)!.ScalePercent);
     }
+
+    [Theory]
+    [InlineData(1, 2, 0.5)]
+    [InlineData(2, 1, -6.020599913)]
+    public void APreviewedOperation_IsScaledOnTheAxisOfTheCurveItPreviews(int heldSource, int previewedSource, double peak)
+    {
+        EnterImpulseView(ImpulseAmplitudeScale.Decibels);
+        CaptureImpulse(1, AnalysisCurveKind.Primary);
+        CaptureImpulse(2, AnalysisCurveKind.ImpulseStep);
+        OverlayOperationSettings held = OverlayOperationSettings.Default with
+        {
+            Operation = OverlayOperation.CurveA,
+            SourceSlotA = heldSource
+        };
+        session.ApplyOperation(Slot(3), "Calculated", held, Slot(3).State.Appearance, 0);
+        session.SetLevel(Slot(3), 50m);
+
+        session.PreviewOperation(Slot(3), Preview(held with { SourceSlotA = previewedSource }));
+
+        Assert.Equal(peak, ImpulseSeriesOf(3).Points[1].Y, 6);
+    }
+
+    private void EnterImpulseView(ImpulseAmplitudeScale amplitude)
+    {
+        mode = Mode.ImpulseResponse;
+        sources.SetImpulseFrameProvider(() => ImpulseFrame(origin: 0, amplitude));
+        sources.SetImpulseCaptureProvider(tag => new ImpulseOverlayCapture(
+            [new SignalPoint(100, 0.0), new SignalPoint(110, 1.0), new SignalPoint(120, 0.0)],
+            tag.Kind,
+            1.0,
+            48_000));
+        session.Prepare(mode);
+    }
+
+    private void CaptureImpulse(int slot, AnalysisCurveKind kind)
+    {
+        var trace = new LineSeries
+        {
+            Title = kind.ToString(),
+            Tag = new CurveTag(Mode.ImpulseResponse, kind),
+            YAxisKey = kind == AnalysisCurveKind.ImpulseStep ? PlotModelFactory.ImpulseStepAxisKey : null
+        };
+        trace.Points.AddRange([new DataPoint(100, 0.0), new DataPoint(110, 1.0), new DataPoint(120, 0.0)]);
+        model.Series.Add(trace);
+        session.Capture(Slot(slot), trace);
+    }
+
+    private static OverlayOperationPreview Preview(OverlayOperationSettings settings) =>
+        new(
+            "Preview",
+            settings.SourceSlotA,
+            settings.SourceCurveKeyA,
+            settings.SourceSlotB,
+            settings.SourceCurveKeyB,
+            settings.Operation,
+            settings.BlendFrequencyHz,
+            settings.BlendWidthOctaves,
+            settings.UseAmplitudeSpace,
+            settings.TiltEnabled,
+            settings.TiltDbPerOctave,
+            settings.TiltPivotHz,
+            settings.CompareDelayMs,
+            settings.CompareInvertPolarity,
+            Color.White,
+            2,
+            OverlayLineStyle.Solid,
+            100,
+            0);
 
     private static ImpulseOverlayFrame ImpulseFrame(
         double origin,

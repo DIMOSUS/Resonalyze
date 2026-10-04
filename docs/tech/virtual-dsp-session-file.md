@@ -23,7 +23,7 @@ Code lives in `source/Tools/VirtualCrossover/`:
 
 ## Schema versions and migrations
 
-`VirtualCrossoverProjectFile.CurrentVersion` is 12. An incompatible change bumps it and adds a step to
+`VirtualCrossoverProjectFile.CurrentVersion` is 13. An incompatible change bumps it and adds a step to
 `Migrate`, which runs before `Validate`. Files from a newer version (a downgraded app) are never migrated:
 validation rejects them, `LoadOrDefault` moves the file to `.backup` and starts fresh, `LoadFrom` throws.
 
@@ -60,6 +60,9 @@ value, and only `Migrate` reads them.
 - **v10 → v11**: the FIR stage, bumped for the same reason.
 - **v11 → v12**: a side's response-file answers (`SpatialAverageFile`). An older build would drop them and resave
   the `.txt` path as a capture's, which the next load reads as a missing capture.
+- **v12 → v13**: a pair's `MeasuredFromBothInputs`, read on when absent: a mono block plays at half level per side
+  (see [virtual-dsp-panel.md](virtual-dsp-panel.md#mono-side-share)). Nothing is rewritten; the bump makes an older
+  build refuse the file instead of drawing every mono block 6 dB loud in the side views.
 - **Always**: the stereo scene's wire sign and layout flag are re-aligned (see [Stereo scene](#stereo-scene)).
 - **Always**: a Centre pair is made mono (`VirtualCrossoverZones.RequiresMono`). The block forces and locks its Mono
   box, so only a hand-edited file stores a stereo Centre; loaded as such, it would show a mono block that, under the

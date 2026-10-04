@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text.Json.Nodes;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
@@ -42,6 +43,37 @@ public sealed class VirtualCrossoverMonoSideShareTests
         Assert.Same(half, state.ProcessingSource);
         channel.Pair.MeasuredFromBothInputs = false;
         Assert.NotSame(half, state.ProcessingSource);
+    }
+
+    [Fact]
+    public void AV12Project_OpensAsTheCurrentVersion_WithItsMonoBlocksMeasuredFromBothInputs()
+    {
+        string root = Directory.CreateTempSubdirectory("resonalyze-mono-share-").FullName;
+        try
+        {
+            var original = new VirtualCrossoverProjectFile();
+            original.Pairs[0].Mono = true;
+            original.Save(root);
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            file["version"] = 12;
+            foreach (JsonNode? pair in file["pairs"]!.AsArray())
+            {
+                pair!.AsObject().Remove("measuredFromBothInputs");
+            }
+
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(VirtualCrossoverProjectFile.CurrentVersion, loaded.Version);
+            Assert.True(loaded.Pairs[0].MeasuredFromBothInputs);
+            Assert.Equal(0.5, loaded.Pairs[0].SideLevelShare);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     private static LiveCaptureDocument Capture(double db) => new()

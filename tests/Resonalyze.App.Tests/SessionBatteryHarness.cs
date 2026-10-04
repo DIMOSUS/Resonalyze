@@ -254,7 +254,8 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                 : $"   (window opens {leftEdgeMs:0.00} ms, plateau to " +
                   $"{gate.OffsetMs!.Value + project.PhaseGatePlateauMs:0.00} ms)"));
 
-        // Signed r: negative means the coherent alignment is the inverted one.
+        // Signed r: negative means the coherent alignment is the inverted one. "zero r" is the applied alignment's own
+        // coherence, the judge where the summation cannot tell lobes apart (docs/tech/auto-alignment.md#direct-sound-seed).
         void DirectPhat(string label, List<ProcessedChannel> set)
         {
             foreach (AdjacentPair pair in ProcessedChannels.GetAdjacentPairs(
@@ -278,6 +279,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                     $"{pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
                     $"on-lobe r {near.Y:+0.00;-0.00} @ {near.X:+0.00;-0.00} ms; " +
                     $"best r {best.Y:+0.00;-0.00} @ {best.X:+0.00;-0.00} ms; " +
+                    $"zero r {view.WhitenedDirect.MinBy(point => Math.Abs(point.X)).Y:+0.00;-0.00}; " +
                     $"arrival lag {view.ArrivalLagMs:+0.00;-0.00} ms");
             }
         }

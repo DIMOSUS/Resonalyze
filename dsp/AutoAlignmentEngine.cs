@@ -197,9 +197,6 @@ public static class AutoAlignmentEngine
     /// <summary>Min |r| for the direct-cut witness to speak; far above the seed floor since honest cuts correlate strongly (field min 0.58).</summary>
     private const double DirectSeedMinCoefficient = 0.5;
 
-    /// <summary>Joint-support margin (min |r| of both surfaces within a quarter period) needed to move a contested seed off the full-record extremum. See docs/tech/auto-alignment.md#direct-sound-seed.</summary>
-    private const double DirectSeedJointTieMarginR = 0.05;
-
     /// <summary>Max full-record extremum distance from the arrival (periods) while the direct cut offers a seed. See docs/tech/auto-alignment.md#direct-sound-seed.</summary>
     private const double DirectSeedTrustReachPeriods = 1.5;
 
@@ -478,6 +475,16 @@ public static class AutoAlignmentEngine
         double? chainSkewMs) =>
         chainSkewMs is { } skew &&
         Math.Abs(seedOffsetMs + skew) < reachMs;
+
+    /// <summary>True where the arrival anchor puts the record's extremum nearer than the cut's on every reading of it: as
+    /// measured, and with the pair's chain skew taken out where that is measurable. See docs/tech/auto-alignment.md#direct-sound-seed.</summary>
+    internal static bool AnchorBacksTheRecord(
+        double recordOffsetMs,
+        double cutOffsetMs,
+        double? chainSkewMs) =>
+        Math.Abs(recordOffsetMs) < Math.Abs(cutOffsetMs) &&
+        (chainSkewMs is not { } skew ||
+            Math.Abs(recordOffsetMs + skew) < Math.Abs(cutOffsetMs + skew));
 
     private static double? SideChainArrivalShiftMs(
         AlignmentSnapshot side,
@@ -1236,8 +1243,6 @@ public static class AutoAlignmentEngine
                     ? best
                     : null;
             }
-            Complex[] lowerDirectCut = [];
-            Complex[] upperDirectCut = [];
 
             string? Distrust()
             {
@@ -1338,7 +1343,7 @@ public static class AutoAlignmentEngine
             // Direct-cut witness: silenced by edge pin, weak r or position past the reach, leaving the full-record path unchanged.
             if (pair.CrossoverHz >= DirectSeedMinCrossoverHz)
             {
-                (lowerDirectCut, upperDirectCut) =
+                (Complex[] lowerDirectCut, Complex[] upperDirectCut) =
                     VirtualCrossoverAnalysis.CutDirectSoundPair(
                         pair.Lower.ImpulseResponse,
                         pair.Upper.ImpulseResponse,
@@ -1405,62 +1410,25 @@ public static class AutoAlignmentEngine
                     $"direct-cut ({because}; the record's dominant {seedLabel} {seed.DelayMs:+0.000;-0.000} ms is the polarity this junction will not be searched in)");
                 RecordPartnerReach(directPhat!);
             }
-            else if (directSeed is { } adjudicated && trustPhat &&
-                Math.Abs(adjudicated.DelayMs - seed.DelayMs) > halfPeriodAtFcMs)
+            else if (directSeed is { } wavefront && trustPhat &&
+                Math.Abs(wavefront.DelayMs - seed.DelayMs) > halfPeriodAtFcMs)
             {
-                // Two trusted extrema on different lobes: adjudicate by joint support (see DirectSeedJointTieMarginR).
-                List<SignalPoint> fullCurve =
-                    VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
-                        pair.Lower.ImpulseResponse,
-                        pair.Upper.ImpulseResponse,
-                        pair.Lower.Channel.SampleRate,
-                        pair.CrossoverHz,
-                        passOctaves,
-                        SeedCorrelationRangeMs(pair.CrossoverHz),
-                        centerLagMs,
-                        phaseTransform: true);
-                List<SignalPoint> directCurve =
-                    VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
-                        lowerDirectCut,
-                        upperDirectCut,
-                        pair.Lower.Channel.SampleRate,
-                        pair.CrossoverHz,
-                        passOctaves,
-                        SeedCorrelationRangeMs(pair.CrossoverHz),
-                        centerLagMs,
-                        phaseTransform: true);
-                double SupportNear(List<SignalPoint> curve, double positionMs)
-                {
-                    double best = 0;
-                    foreach (SignalPoint point in curve)
-                    {
-                        if (Math.Abs(point.X - positionMs) <= halfPeriodAtFcMs / 2.0)
-                        {
-                            best = Math.Max(best, Math.Abs(point.Y));
-                        }
-                    }
-
-                    return best;
-                }
-                double fullJoint = Math.Min(
-                    SupportNear(fullCurve, seed.DelayMs),
-                    SupportNear(directCurve, seed.DelayMs));
-                double directJoint = Math.Min(
-                    SupportNear(fullCurve, adjudicated.DelayMs),
-                    SupportNear(directCurve, adjudicated.DelayMs));
-                if (directJoint > fullJoint + DirectSeedJointTieMarginR)
-                {
-                    increment = -adjudicated.DelayMs;
-                    seedSource = FormattableString.Invariant(
-                        $"direct-cut over phat (joint {directJoint:0.00} vs {fullJoint:0.00})");
-                    RecordPartnerReach(directPhat!);
-                }
-                else
+                // Two trusted extrema on different lobes: the cut reads the fronts and the record the cabin behind them,
+                // unless the fronts' own anchor sides with the record (an echo inside the cut).
+                if (AnchorBacksTheRecord(
+                    seedOffsetMs, wavefront.DelayMs - centerLagMs, PairChainArrivalSkewMs(pair)))
                 {
                     increment = -seed.DelayMs;
                     seedSource = FormattableString.Invariant(
-                        $"phat (joint {fullJoint:0.00} vs direct {directJoint:0.00})");
+                        $"phat (the direct cut's {wavefront.DelayMs:+0.000;-0.000} ms is another lobe, farther from the arrival anchor)");
                     RecordPartnerReach(phat);
+                }
+                else
+                {
+                    increment = -wavefront.DelayMs;
+                    seedSource = FormattableString.Invariant(
+                        $"direct-cut (the record's {seedLabel} {seed.DelayMs:+0.000;-0.000} ms is another lobe)");
+                    RecordPartnerReach(directPhat!);
                 }
             }
             else if (trustPhat)

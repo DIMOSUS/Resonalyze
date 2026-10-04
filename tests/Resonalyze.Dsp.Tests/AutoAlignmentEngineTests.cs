@@ -112,6 +112,16 @@ public sealed class AutoAlignmentEngineTests
         return ir;
     }
 
+    // A front, a cabin copy as loud inside the junction window and a louder late field outside it, both moved by the shift.
+    private static Complex[] FrontWithCabin(int cabinShiftSamples)
+    {
+        var ir = new Complex[IrLength];
+        ir[BasePosition] = 1.0;
+        ir[BasePosition + 150 - cabinShiftSamples] = 1.0;
+        ir[BasePosition + 960 - cabinShiftSamples] = 3.0;
+        return ir;
+    }
+
     // Modal-latch shape: a soft band-limited front hidden under a late build-up below the pair band.
     private static Complex[] FrontUnderLateMode(
         double frontMs, double modeMs, double modeAmplitude)
@@ -771,6 +781,22 @@ public sealed class AutoAlignmentEngineTests
         Assert.InRange(alignment[tweeter].DelayMs, 0.9, 1.1);
         Assert.Contains(
             "seed direct-cut (phat: peak beyond the arrival's reach)", log.ToString());
+    }
+
+    [Fact]
+    public void Compute_RecordAndDirectCutOnDifferentLobes_TheFrontsSeed()
+    {
+        // The cabin sits 1.4 periods off the fronts and owns the record's extremum; the sum ranks the two lobes equal.
+        var woofer = new TestChannel("W", FrontWithCabin(0));
+        var tweeter = new TestChannel("T", FrontWithCabin(46));
+
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
+            Run([woofer, tweeter], [1_500], new StringBuilder());
+
+        AlignmentOverride lower = alignment.GetValueOrDefault(woofer);
+        AlignmentOverride upper = alignment.GetValueOrDefault(tweeter);
+        Assert.Equal(lower.InvertPolarity, upper.InvertPolarity);
+        Assert.InRange(upper.DelayMs - lower.DelayMs, -0.05, 0.05);
     }
 
     [Fact]

@@ -3863,7 +3863,10 @@ time on the two channels' **direct sound alone**, and where the two readings
 name different lobes the direct sound seeds: across a whole record a
 mid/tweeter handover's strongest extremum often belongs to the cabin, a
 reflection one to five periods from the wavefronts, and a search started there
-settles where the reflections sum best rather than where the fronts meet. A
+settles where the reflections sum best rather than where the fronts meet. The
+whole record keeps the seed only where the coarse arrival itself puts its
+extremum nearer the fronts than the direct sound's, which is what an echo
+arriving right behind a front and louder than it looks like. A
 seeding extremum that lands far from the coarse arrival is
 refused as a cycle skip. The distance itself is measured honestly first: each
 side's own chain drags its band arrival without moving the wavefront the tune

@@ -452,14 +452,29 @@ A silenced witness leaves the full-record path exactly as before.
 
 **Adjudication.**
 
-- **The two extrema disagree by more than half a period.** The direct cut seeds. The record's
-  extremum is where the whole record correlates, the cabin behind the fronts included, and stage 2
-  cannot come back from it: its window holds the seed's lobe and the two flip partners, and the
-  summation takes whichever of them the cabin favours. On the reference car's 1600 Hz mid/tweeter
-  junction (the v9 set) the record's trough sat at −0.02 ms (r 0.65) and the cut's at +0.61 ms
-  (r 0.93), one period on. Seeded from the record, the search took the flip partner on the far
-  side of it, where the direct wavefronts correlate at 0.31, and the right side inherited the lobe
-  at 0.30; the owner's tune reads 0.78 and 0.91.
+- **The two extrema disagree by more than half a period.** The direct cut seeds, unless the
+  arrival anchor sides with the record (next paragraph). The record's extremum is where the whole
+  record correlates, the cabin behind the fronts included, and stage 2 cannot come back from it:
+  its window holds the seed's lobe and the two flip partners, and the summation takes whichever
+  of them the cabin favours. On the reference car's 1600 Hz mid/tweeter junction (the v9 set) the
+  record's trough sat at −0.02 ms (r 0.65) and the cut's at +0.61 ms (r 0.93), one period on.
+  Seeded from the record, the search took the flip partner on the far side of it, where the
+  direct wavefronts correlate at 0.31, and the right side inherited the lobe at 0.30; the owner's
+  tune reads 0.78 and 0.91.
+
+  The cut is believed because it sits at the fronts, so the fronts' own anchor may take the seed
+  back (`AnchorBacksTheRecord`): where the record's extremum is nearer the arrival anchor than
+  the cut's on every reading of the anchor, as measured and with the pair's chain skew taken
+  out, the record seeds. That is an echo inside the cut: a reflection within 2.5 periods of a
+  front and louder than it in the pair band owns the cut's extremum, and seeding from it leaves
+  the fronts an echo apart. Swept on a synthetic pair (echo 0.5-1.5 periods behind the upper
+  front and 0.9-6 dB over it, with and without a late field at the front lag; 45 cases), a cut
+  that always seeds turned two right answers into a 1 ms miss (echo 1.5 periods out, 0.9 dB
+  over the front); with the anchor's say the sweep keeps every answer the old rule got right.
+  41 of the 45 miss under any of the rules. Both readings are required because at these splits
+  they sit about a period apart (chain skew 0.52-0.75 ms): on the archive's five contested cells
+  one reading or the other always puts the cut nearer (v2 and v4 as measured, v6 session 4 with
+  the skew out, the v9 set on both), so none of them goes back to the record.
 
   The seed used to go to the position with the higher joint support (the smaller of the two
   surfaces' |r| within a quarter period), and a tie kept the record. One period apart the record
@@ -468,11 +483,13 @@ A silenced witness leaves the full-record path exactly as before.
   position 0.47 or more (field: 0.47-0.62), while the record, the weaker surface, offers the
   cut's position less (0.23-0.49). The rule measured which surface was cleaner, and the cleaner
   one lost: all five contested cells of the archive went to the record (joint 0.39-0.53 against
-  0.23-0.49). Seeded from the cut, four sessions move (the fifth cell is a far side under
-  the scene lock) and the direct coherence at the applied alignment (the battery's `zero r`), over
-  their eight sides, goes from 0.38 to 0.76 on average: v4 0.34/0.12 to 0.85/0.85, on the owner's lobe on both
-  sides, and the v9 set under the two tunes saved for it 0.30/0.40 and 0.31/0.30 to 0.86/0.61
-  and 0.90/0.84. The price is v2's right side, 0.76 to 0.39 while its left gains 0.50 to 0.80:
+  0.23-0.49). Seeded from the cut, four sessions of the stereo battery move (the fifth cell, v6
+  session 4's right side, is a far side under the scene lock there; run alone it moves onto the
+  owner's lobe) and the direct coherence at the applied alignment (the battery's `zero r`), over
+  their eight sides, goes from 0.38 to 0.76 on average: v4 0.34/0.12 to 0.85/0.85, on the
+  owner's lobe on both sides, and the v9 set under the two tunes saved for it 0.30/0.40 and
+  0.31/0.30 to 0.86/0.61 and 0.90/0.84. The price is v2's right side, 0.76 to 0.39 while its
+  left gains 0.50 to 0.80:
   the far side is scene-locked to the reference side's lobe, and the branch check refuses the
   move that would serve it (a half-band loses 0.75 dB for a 0.67 dB far gain). The summation
   battery reads the change as a wash (stereo, 120 junction rows: −0.009 dB average, −0.11 dB of

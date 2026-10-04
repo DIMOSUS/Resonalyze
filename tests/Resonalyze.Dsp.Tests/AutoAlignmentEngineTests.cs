@@ -112,13 +112,15 @@ public sealed class AutoAlignmentEngineTests
         return ir;
     }
 
-    // A front, a cabin copy as loud inside the junction window and a louder late field outside it, both moved by the shift.
-    private static Complex[] FrontWithCabin(int cabinShiftSamples)
+    // Taps in samples behind the 10 ms front position.
+    private static Complex[] Taps(params (int Samples, double Amplitude)[] taps)
     {
         var ir = new Complex[IrLength];
-        ir[BasePosition] = 1.0;
-        ir[BasePosition + 150 - cabinShiftSamples] = 1.0;
-        ir[BasePosition + 960 - cabinShiftSamples] = 3.0;
+        foreach ((int samples, double amplitude) in taps)
+        {
+            ir[BasePosition + samples] += amplitude;
+        }
+
         return ir;
     }
 
@@ -786,10 +788,26 @@ public sealed class AutoAlignmentEngineTests
     [Fact]
     public void Compute_RecordAndDirectCutOnDifferentLobes_TheFrontsSeed()
     {
-        // The cabin sits 1.4 periods off the fronts and owns the record's extremum; the sum ranks the two lobes equal.
-        var woofer = new TestChannel("W", FrontWithCabin(0));
-        var tweeter = new TestChannel("T", FrontWithCabin(46));
+        // A cabin copy as loud as the fronts and a louder late field sit 1.4 periods off them: the record's extremum
+        // is the cabin's, and the sum ranks the two lobes equal.
+        var woofer = new TestChannel("W", Taps((0, 1.0), (150, 1.0), (960, 3.0)));
+        var tweeter = new TestChannel("T", Taps((0, 1.0), (104, 1.0), (914, 3.0)));
 
+        AssertTheFrontsMeet(woofer, tweeter);
+    }
+
+    [Fact]
+    public void Compute_EchoInsideTheDirectCut_TheRecordKeepsTheSeed()
+    {
+        // An echo 1.5 periods behind the tweeter's front and 0.9 dB over it owns the cut; the late field votes for the fronts.
+        var woofer = new TestChannel("W", Taps((0, 1.0), (960, 3.0)));
+        var tweeter = new TestChannel("T", Taps((0, 0.9), (48, 1.0), (960, 3.0)));
+
+        AssertTheFrontsMeet(woofer, tweeter);
+    }
+
+    private static void AssertTheFrontsMeet(TestChannel woofer, TestChannel tweeter)
+    {
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
             Run([woofer, tweeter], [1_500], new StringBuilder());
 
@@ -797,6 +815,22 @@ public sealed class AutoAlignmentEngineTests
         AlignmentOverride upper = alignment.GetValueOrDefault(tweeter);
         Assert.Equal(lower.InvertPolarity, upper.InvertPolarity);
         Assert.InRange(upper.DelayMs - lower.DelayMs, -0.05, 0.05);
+    }
+
+    [Theory]
+    // Offsets of the record's and the cut's extremum from the arrival anchor and the chain skew, ms.
+    [InlineData(-0.763, -0.130, 0.519, false)] // v2
+    [InlineData(-0.799, -0.184, 0.746, false)] // v4
+    [InlineData(0.107, -0.605, 0.651, false)] // v6 session 4
+    [InlineData(-1.494, -0.864, 0.670, false)] // v9, the earlier tune
+    [InlineData(-1.531, -0.900, 0.674, false)] // v9
+    [InlineData(0.003, -1.003, null, true)] // the echo above: no chain to measure
+    public void AnchorBacksTheRecord_OnTheArchivesContestedCells_OnlyForTheEcho(
+        double recordOffsetMs, double cutOffsetMs, double? chainSkewMs, bool expected)
+    {
+        Assert.Equal(
+            expected,
+            AutoAlignmentEngine.AnchorBacksTheRecord(recordOffsetMs, cutOffsetMs, chainSkewMs));
     }
 
     [Fact]

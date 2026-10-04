@@ -476,6 +476,16 @@ public static class AutoAlignmentEngine
         chainSkewMs is { } skew &&
         Math.Abs(seedOffsetMs + skew) < reachMs;
 
+    /// <summary>True where the arrival anchor puts the record's extremum nearer than the cut's on every reading of it: as
+    /// measured, and with the pair's chain skew taken out where that is measurable. See docs/tech/auto-alignment.md#direct-sound-seed.</summary>
+    internal static bool AnchorBacksTheRecord(
+        double recordOffsetMs,
+        double cutOffsetMs,
+        double? chainSkewMs) =>
+        Math.Abs(recordOffsetMs) < Math.Abs(cutOffsetMs) &&
+        (chainSkewMs is not { } skew ||
+            Math.Abs(recordOffsetMs + skew) < Math.Abs(cutOffsetMs + skew));
+
     private static double? SideChainArrivalShiftMs(
         AlignmentSnapshot side,
         double bandLowHz,
@@ -1403,11 +1413,23 @@ public static class AutoAlignmentEngine
             else if (directSeed is { } wavefront && trustPhat &&
                 Math.Abs(wavefront.DelayMs - seed.DelayMs) > halfPeriodAtFcMs)
             {
-                // Two trusted extrema on different lobes: the cut reads the fronts, the record the cabin behind them.
-                increment = -wavefront.DelayMs;
-                seedSource = FormattableString.Invariant(
-                    $"direct-cut (the record's {seedLabel} {seed.DelayMs:+0.000;-0.000} ms is another lobe)");
-                RecordPartnerReach(directPhat!);
+                // Two trusted extrema on different lobes: the cut reads the fronts and the record the cabin behind them,
+                // unless the fronts' own anchor sides with the record (an echo inside the cut).
+                if (AnchorBacksTheRecord(
+                    seedOffsetMs, wavefront.DelayMs - centerLagMs, PairChainArrivalSkewMs(pair)))
+                {
+                    increment = -seed.DelayMs;
+                    seedSource = FormattableString.Invariant(
+                        $"phat (the direct cut's {wavefront.DelayMs:+0.000;-0.000} ms is another lobe, farther from the arrival anchor)");
+                    RecordPartnerReach(phat);
+                }
+                else
+                {
+                    increment = -wavefront.DelayMs;
+                    seedSource = FormattableString.Invariant(
+                        $"direct-cut (the record's {seedLabel} {seed.DelayMs:+0.000;-0.000} ms is another lobe)");
+                    RecordPartnerReach(directPhat!);
+                }
             }
             else if (trustPhat)
             {

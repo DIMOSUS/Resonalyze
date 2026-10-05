@@ -4224,20 +4224,22 @@ tune is actually built in:
 
 - **Tools... → Capture to overlay…** saves one curve of the magnitude view as a
   Captured overlay in Frequency Response — compare it against a measurement of the
-  real system or a later tune, or feed it onward to the EQ Wizard. A dialog asks
-  which curve and which slot. The curves are those the magnitude view draws for the
-  shown side and group view, whether their toggles are on or not: each block's
-  processed response, the shown side's **Sum**, the other side's Sum and **L+R** as
-  Vector, Energy and Blend (Front + Sub only); under **Groups**, one curve per zone.
-  Each is the plot's own curve — the same channels in a Sum (a centre never), the
-  same window, and with **Hybrid** on the hybrid one — and its name says which blocks
-  it adds. The slot list shows what every slot holds. A free slot is offered first;
-  with none free, the slot holding this curve's earlier capture is offered, so a
-  retuned prediction replaces it and a calculated overlay reading that slot follows.
-  Any other slot can be picked, and the dialog names the curve it replaces. The curve
-  is saved as drawn, in the slot's own colour and with the plot's smoothing in it, so
-  the slot's smoothing starts at None. To find where the real system departs from the
-  prediction, measure the same part of the installation — one block, one side, or
+  real system or a later tune, or feed it onward to the EQ Wizard. A dialog asks which
+  curve and which slot. The curves are those the magnitude view draws for the shown
+  side and group view, whether their toggles are on or not: each block's processed
+  response, the shown side's **Sum**, the other side's Sum and **L+R** as Vector,
+  Energy and Blend (Front + Sub only); under **Groups**, one curve per zone. Each is
+  the plot's own curve — the same channels in a Sum (a centre never), the same window,
+  and with **Hybrid** on the hybrid one — and its name says which blocks it adds. The
+  slot list shows what every slot holds. A free slot is offered first; with none free,
+  the slot holding this curve's earlier capture is offered, so a retuned prediction
+  replaces it and a calculated overlay reading that slot follows. Any other slot can
+  be picked, and the dialog names the curve it replaces. Only a captured slot is ever
+  offered as the earlier capture, never a target or calculated one of the same name.
+  The curve is saved as drawn, with the plot's smoothing in it, and the slot starts
+  afresh — offset 0, its default colour, smoothing None — unlike a capture from the
+  plot, which keeps the slot's settings. To find where the real system departs from
+  the prediction, measure the same part of the installation — one block, one side, or
   both sides — and draw a calculated `A - B` overlay with that measurement (the live
   curve or a capture of it) as A and the prediction as B. Virtual DSP reads relative
   decibels, so compare with [dB SPL](#sound-pressure-level-db-spl) off: on the SPL

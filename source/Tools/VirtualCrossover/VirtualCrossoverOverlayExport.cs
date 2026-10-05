@@ -139,10 +139,11 @@ internal sealed class VirtualCrossoverOverlayExport(
         return curves;
     }
 
-    /// <summary>A free slot, else the one holding this curve's earlier capture, so it can be renewed; else none.</summary>
+    /// <summary>A free slot, else the one holding this curve's earlier capture, so it can be renewed; else none. A target
+    /// or calculated slot is never offered, whatever its name.</summary>
     public static int? DefaultSlot(IReadOnlyList<OverlaySlotOccupant> slots, string title) =>
         slots.FirstOrDefault(slot => slot.IsFree)?.Slot ??
-        slots.FirstOrDefault(slot => slot.Title == title)?.Slot;
+        slots.FirstOrDefault(slot => slot.Kind == OverlayKind.Captured && slot.Title == title)?.Slot;
 
     public static string SlotLabel(OverlaySlotOccupant slot) =>
         slot.Unreadable ? $"{slot.Slot}: unreadable file"

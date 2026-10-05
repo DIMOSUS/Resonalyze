@@ -23,6 +23,12 @@ public sealed class VirtualCrossoverOverlayExportTests
         Assert.Null(VirtualCrossoverOverlayExport.DefaultSlot(
             [.. taken.Select(slot => slot.Slot == 4 ? new OverlaySlotOccupant(4, null, null, Unreadable: true) : slot)],
             "another"));
+        foreach (OverlayKind kind in new[] { OverlayKind.Target, OverlayKind.Operation })
+        {
+            Assert.Null(VirtualCrossoverOverlayExport.DefaultSlot(
+                [.. taken.Select(slot => slot.Slot == 3 ? new OverlaySlotOccupant(3, "curve 3", kind) : slot)],
+                "curve 3"));
+        }
     }
 
     [Fact]

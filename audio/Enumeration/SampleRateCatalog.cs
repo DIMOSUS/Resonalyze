@@ -2,6 +2,9 @@ namespace Resonalyze.Audio;
 
 public static class SampleRateCatalog
 {
+    /// <summary>The lowest rate a measurement is taken and stored at.</summary>
+    public const int MinimumSampleRate = 44_100;
+
     private static readonly int[] StandardRates =
     [
         44_100,
@@ -14,7 +17,7 @@ public static class SampleRateCatalog
         384_000
     ];
 
-    public static IReadOnlyList<int> GetCandidateRates(int minimumSampleRate = 44_100)
+    public static IReadOnlyList<int> GetCandidateRates(int minimumSampleRate = MinimumSampleRate)
     {
         return StandardRates
             .Where(rate => rate >= minimumSampleRate)

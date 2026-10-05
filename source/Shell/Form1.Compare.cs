@@ -117,8 +117,14 @@ public partial class Form1
                 UpdateLastImpulseResponseDirectory(path);
             }
         }
-        catch (Exception exception) when (compareSelection.IsCurrent(load))
+        catch (Exception exception)
         {
+            // A replaced load's failure is dropped like its result; uncaught, it would end the async void handler.
+            if (!compareSelection.IsCurrent(load))
+            {
+                return;
+            }
+
             MessageBox.Show(
                 this,
                 $"Failed to load the compare impulse response.\r\n\r\n{exception.Message}",
@@ -146,8 +152,13 @@ public partial class Form1
                 entry.SourceFilePath,
                 result);
         }
-        catch (Exception exception) when (compareSelection.IsCurrent(load))
+        catch (Exception exception)
         {
+            if (!compareSelection.IsCurrent(load))
+            {
+                return;
+            }
+
             MessageBox.Show(
                 this,
                 $"Failed to load the compare history entry.\r\n\r\n{exception.Message}",

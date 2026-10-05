@@ -16,7 +16,7 @@ internal sealed class MeasurementHistoryService
         // An older store may arrive over depth; cut now, since a read-only session never saves.
         if (TrimEntries())
         {
-            SaveTrimmedEntries();
+            SaveEntries();
         }
     }
 
@@ -40,7 +40,7 @@ internal sealed class MeasurementHistoryService
         // The depth cap can push a saved row off the end, which must reach disk.
         if (TrimEntries())
         {
-            SaveTrimmedEntries();
+            SaveEntries();
         }
 
         OnChanged();
@@ -78,7 +78,7 @@ internal sealed class MeasurementHistoryService
 
         RetainSingleFileBackedResult(entry);
         TrimEntries();
-        persistence.Save(entries);
+        SaveEntries();
         OnChanged();
         return entry.Id;
     }
@@ -123,7 +123,7 @@ internal sealed class MeasurementHistoryService
 
         RetainSingleFileBackedResult(entry);
         TrimEntries();
-        persistence.Save(entries);
+        SaveEntries();
         OnChanged();
     }
 
@@ -136,7 +136,7 @@ internal sealed class MeasurementHistoryService
         }
 
         entries.Remove(entry);
-        persistence.Save(entries);
+        SaveEntries();
         OnChanged();
         return true;
     }
@@ -267,8 +267,8 @@ internal sealed class MeasurementHistoryService
         return removedPersisted;
     }
 
-    // Best effort: the list is already cut, and neither caller (shell initializer, finished sweep) can report it.
-    private void SaveTrimmedEntries()
+    // Best effort: memory is the truth, and the next save writes the whole list; a throw would skip Changed.
+    private void SaveEntries()
     {
         try
         {

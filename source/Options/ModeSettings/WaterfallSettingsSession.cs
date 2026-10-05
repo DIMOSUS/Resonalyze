@@ -33,8 +33,14 @@ internal sealed class WaterfallSettingsSession
 
     public ModeSettingsMeasurement Measurement { get; private set; } = new(null, 0);
 
+    /// <summary>Burst Decay's window, or the waterfall's first slice, which a backward step opens elsewhere.</summary>
     public SampleWindowPreview Preview =>
-        new(Measurement.Result, Fades.Window, Fades.Left, Fades.Right, Offset, IrPreviewSource.PrimaryAtStart);
+        new(Measurement.Result, Fades.Window, Fades.Left, Fades.Right, PreviewOffset, IrPreviewSource.PrimaryAtStart);
+
+    private int PreviewOffset =>
+        IsBurstDecay
+            ? Offset
+            : Offset + Fades.Left - WaterfallGenerateOptions.FirstSliceLead(Step, Fades.Window, Fades.Left, Fades.Right);
 
     public static WaterfallSettingsSession ForWaterfall() => new(false);
 

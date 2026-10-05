@@ -39,6 +39,8 @@ public partial class Form1
 
         if (analyzerDocument.Result is { } result && !analyzerDocument.IsBusy)
         {
+            // Read with the result: the dialog and the write let another measurement be opened before the save lands.
+            Guid? savedEntryId = sessionTracker.CurrentEntryId;
             await StopLiveCaptureAsync();
 
             using var dialog = new SaveFileDialog
@@ -61,8 +63,11 @@ public partial class Form1
             {
                 ImpulseResponseFile file = ImpulseResponseFile.From(result);
                 await file.SaveAsync(dialog.FileName);
-                sessionTracker.MarkSavedFile(dialog.FileName, file, result);
-                analyzerDocument.Rename(dialog.FileName);
+                if (sessionTracker.MarkSavedFile(savedEntryId, dialog.FileName, file, result))
+                {
+                    analyzerDocument.Rename(dialog.FileName);
+                }
+
                 UpdateLastImpulseResponseDirectory(dialog.FileName);
             }
             catch (Exception exception)
@@ -76,8 +81,11 @@ public partial class Form1
             }
             finally
             {
-                commandController.SetSaveAvailable(true);
-                commandController.SetLoadAvailable(true);
+                // A run or an import started during the write froze both, and gives them back when it ends.
+                if (!analyzerDocument.IsBusy)
+                {
+                    RefreshMeasurementCommands();
+                }
             }
         }
     }

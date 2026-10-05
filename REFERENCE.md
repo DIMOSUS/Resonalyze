@@ -669,7 +669,8 @@ the channel selection reports what the chosen pair will actually do.
 **Shared** runs alongside other applications and the endpoints' own mix format
 applies, so the line quotes that format and says when the two endpoints do not
 agree on a rate — Windows resamples the render side, while timing stays
-loopback-referenced.
+loopback-referenced. Apply refuses a mix rate below 44.1 kHz, the lowest a
+measurement is saved at; raise the endpoints' Default Format in Windows instead.
 
 **Exclusive** hands the requested format to the endpoint unchanged, so the sample
 rate list offers only the rates BOTH endpoints accept for the exact format being
@@ -2195,7 +2196,8 @@ tab-separated block REW exports for that equaliser: PK plus the LS_Q / HS_Q
 shelves, the AP1 / AP2 all-pass slots and REW's `Modal` rows, always 30 slots — a
 bank has no place for the
 preamp, so it is not written and the wizard tells you which channel gain to enter
-in the PC-Tool instead), and export-only for miniDSP biquads (RBJ coefficients at
+in the PC-Tool instead; importing one sets the preamp to 0 dB and says what it
+was), and export-only for miniDSP biquads (RBJ coefficients at
 44.1 / 48 / 96 / 192 kHz) and GraphicEQ (Wavelet / JamesDSP). The text formats
 write Q to up to three decimals, so a fitted Q 0.55 is not sent as 0.5. All-pass bands travel
 wherever the target can state one — Equalizer APO and REW as the second-order
@@ -2207,7 +2209,9 @@ An EasyEffects export is an EasyEffects 7 preset (the `equalizer#0` instance
 named in the pipeline's `plugins_order`), and import reads both 7 and the older
 unnumbered `equalizer`, skipping muted bands and folding input and output gain
 into the preamp. A CamillaDSP export is a v3 pipeline step (`channels: [0, 1]`).
-Equalizer APO's `Modal` and `PEQ` read as `PK`, as APO itself reads them, and a
+Equalizer APO's `Modal` and `PEQ` read as `PK`, as APO itself reads them, a bell
+may state its width as `BW Oct 0.167` in place of a Q (read at the processor's
+sample rate, where APO's width narrows towards Nyquist), and a
 `Filter:` line may leave its number out. A `config.txt` split by `Channel:` lines
 imports the first channel's chain (its section plus anything every channel runs);
 several `Preamp:` lines add up, as the stages APO runs them as.
@@ -2752,7 +2756,7 @@ later side's arrival is inside it. Under **Hybrid** it is built the way the
 hybrid Sum is — each channel's spatial-average level with its response's phase,
 at the shown side's offset — and, like the dashed opposite Sum, only while both
 sides' captures form one set. Nothing is drawn when the two sides were measured
-at different sample rates, or when the other side has no block of its own to add
+at different sample rates, or when only one side has a block of its own to add
 (a stage of mono blocks alone is drawn: each of them plays for both sides).
 
 The **Sum loss** selector beside the Sum toggle picks the window the loss — the
@@ -4572,7 +4576,8 @@ override, for a measurement that carries no calibration of its own or to compare
 microphone's correction against another's; none of it ever reaches a stamp. Own is
 marked unavailable while the open measurement carries no calibration, because
 "corrected by nothing" and "corrected by the microphone that measured it" must not look
-the same. The **EQ Wizard** and
+the same. Under Own a **Compare** reference is read through the calibration frozen into
+it, none for an import; an override applies to both. The **EQ Wizard** and
 **Virtual DSP** keep their own, because a project is a set of measurements rather
 than one, and Virtual DSP's list adds **Own (as measured)** for exactly that (see
 [Virtual DSP](#virtual-dsp)). Phase and Group Delay read timing rather than level and

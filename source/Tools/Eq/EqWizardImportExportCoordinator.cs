@@ -75,7 +75,7 @@ internal sealed class EqWizardImportExportCoordinator
 
             // Parsers never throw, so the format must say whether it recognised the file; a preamp-only profile has no bands
             // yet is valid, and must not be treated as a failure.
-            if (!request.Target.Format.TryImport(text, out EqualizationCurve curve))
+            if (!request.Target.Format.TryImport(text, request.SampleRateHz, out EqualizationCurve curve))
             {
                 return EqWizardFileResult<EqualizationCurve>.Failed(
                     new InvalidDataException(
@@ -267,7 +267,8 @@ internal sealed class EqWizardExportTarget : IEqWizardFileTarget
 
 internal sealed record EqWizardImportRequest(
     string Path,
-    EqWizardImportTarget Target);
+    EqWizardImportTarget Target,
+    double SampleRateHz);
 
 internal sealed record EqWizardExportRequest(
     string Path,

@@ -1,6 +1,3 @@
-using OxyPlot;
-using OxyPlot.Axes;
-using OxyPlot.Series;
 using Resonalyze.History;
 using Resonalyze.Ui;
 
@@ -246,30 +243,8 @@ internal partial class MeasurementHistoryWindow : Form
 
     private void UpdatePreview()
     {
-        if (historyDataGridView.CurrentRow?.Tag is not MeasurementHistoryEntry entry)
-        {
-            FRPlotView.Model = CreateEmptyPlotModel();
-            FRPlotView.InvalidatePlot(true);
-            return;
-        }
-
-        PlotModel model = CreatePreviewPlotModel();
-        AddFrequencyAxis(model);
-        AddDecibelAxis(model);
-
-        var series = new LineSeries
-        {
-            Color = UiPalette.CurveFallback.ToOxy(),
-            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
-        };
-
-        foreach (var point in entry.Preview.ToSignalPoints())
-        {
-            series.Points.Add(new DataPoint(point.X, point.Y));
-        }
-
-        model.Series.Add(series);
-        FRPlotView.Model = model;
+        FRPlotView.Model = MeasurementHistoryPreviewPlot.Create(
+            (historyDataGridView.CurrentRow?.Tag as MeasurementHistoryEntry)?.Preview);
         FRPlotView.InvalidatePlot(true);
     }
 
@@ -303,51 +278,6 @@ internal partial class MeasurementHistoryWindow : Form
                 : UiPalette.Warning;
             row.Cells[0].Style.SelectionForeColor = row.Cells[0].Style.ForeColor;
         }
-    }
-
-    private static PlotModel CreateEmptyPlotModel()
-    {
-        PlotModel model = CreatePreviewPlotModel();
-        AddFrequencyAxis(model);
-        AddDecibelAxis(model);
-        return model;
-    }
-
-    private static PlotModel CreatePreviewPlotModel() =>
-        PlotModelStyle.CreatePreviewModel();
-
-    private static void AddFrequencyAxis(PlotModel model)
-    {
-        PlotModelStyle.AddAxis(model, new LogarithmicAxis
-        {
-            Position = AxisPosition.Bottom,
-            AbsoluteMinimum = 20,
-            AbsoluteMaximum = 20000,
-            Minimum = 20,
-            Maximum = 20000,
-            IsPanEnabled = false,
-            IsZoomEnabled = false,
-            MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineStyle = LineStyle.Dot
-        });
-    }
-
-    private static void AddDecibelAxis(PlotModel model)
-    {
-        PlotModelStyle.AddAxis(model, new LinearAxis
-        {
-            Position = AxisPosition.Left,
-            AbsoluteMinimum = -120,
-            AbsoluteMaximum = 10,
-            MajorStep = 10,
-            Minimum = -90,
-            Maximum = 0,
-            MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineStyle = LineStyle.Dot,
-            Title = "dB",
-            IsPanEnabled = false,
-            IsZoomEnabled = false
-        });
     }
 
     private int ScaleLogical(int value) =>

@@ -368,7 +368,8 @@ namespace Resonalyze
                     nameof(GenerateOptions.Step),
                     "Waterfall step cannot be zero.");
             }
-            int windowFuncOffset = step >= 0 ? GenerateOptions.LeftTukeyWindow : window - GenerateOptions.RightTukeyWindow;
+            int windowFuncOffset = WaterfallGenerateOptions.FirstSliceLead(
+                step, window, GenerateOptions.LeftTukeyWindow, GenerateOptions.RightTukeyWindow);
 
             double leftTukeyWindow = (double)GenerateOptions.LeftTukeyWindow / window * 2.0;
             double rightTukeyWindow = (double)GenerateOptions.RightTukeyWindow / window * 2.0;

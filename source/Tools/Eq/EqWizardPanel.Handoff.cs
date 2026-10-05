@@ -58,6 +58,8 @@ public partial class EqWizardPanel
         CommitPendingBankEdit();
         // Ends either way: on failure the channel is gone; the wizard keeps the bank for export.
         EqWizardReturn sent = session.CompleteHandoff()!;
+        // A fit landing later would leave the wizard showing a bank other than the one sent.
+        autoTuneOrchestrator.Invalidate();
         PresentHandoff();
         ReturnPeqRequested?.Invoke(sent.Token, sent.Bank, sent.TargetLevelDb);
     }
@@ -70,6 +72,7 @@ public partial class EqWizardPanel
             return;
         }
 
+        autoTuneOrchestrator.Invalidate();
         PresentHandoff();
         BackToVirtualDspRequested?.Invoke();
     }

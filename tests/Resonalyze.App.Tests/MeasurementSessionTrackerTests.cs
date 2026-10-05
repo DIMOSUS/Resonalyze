@@ -61,8 +61,10 @@ public sealed class MeasurementSessionTrackerTests : IDisposable
             CreateTracker();
         (string path, ImpulseResponseFile file) = await CreateImpulseResponseFileAsync(
             "saved.json");
+        MeasurementResult result = file.ToResult();
+        document.TryBegin()!.Install(result, null);
 
-        tracker.MarkSavedFile(path, file, file.ToResult());
+        Assert.True(tracker.MarkSavedFile(null, path, file, result));
 
         MeasurementHistoryEntry entry = Assert.Single(history.Entries);
         Assert.Equal(entry.Id, tracker.CurrentEntryId);
@@ -81,11 +83,36 @@ public sealed class MeasurementSessionTrackerTests : IDisposable
         (string savedPath, ImpulseResponseFile savedFile) =
             await CreateImpulseResponseFileAsync("b.json");
 
-        tracker.MarkSavedFile(savedPath, savedFile, savedFile.ToResult());
+        Assert.True(tracker.MarkSavedFile(currentBeforeSave, savedPath, savedFile, document.Result!));
 
         Assert.Equal(currentBeforeSave, tracker.CurrentEntryId);
         MeasurementHistoryEntry entry = Assert.Single(history.Entries);
         Assert.Equal(savedPath, entry.SourceFilePath);
+    }
+
+    // Only Save and Load are frozen while the file is written, so a history entry can be opened before it lands.
+    [Fact]
+    public async Task MarkSavedFile_AfterAnotherEntryWasOpened_FilesTheSavedOneAndLeavesTheOpenOne()
+    {
+        (MeasurementSessionTracker tracker, MeasurementHistoryService history) =
+            CreateTracker();
+        (_, ImpulseResponseFile measuredFile) = await CreateImpulseResponseFileAsync("measured.json");
+        MeasurementResult measured = measuredFile.ToResult();
+        document.TryBegin()!.Install(measured, null);
+        tracker.MarkMeasurementCompleted(measured);
+        Guid saving = tracker.CurrentEntryId!.Value;
+        (string openedPath, ImpulseResponseFile openedFile) = await CreateImpulseResponseFileAsync("opened.json");
+        Open(tracker, openedPath, openedFile);
+        Guid opened = tracker.CurrentEntryId!.Value;
+        string savedPath = Path.Combine(directory, "saved.json");
+
+        Assert.False(tracker.MarkSavedFile(saving, savedPath, measuredFile, measured));
+
+        Assert.Equal(opened, tracker.CurrentEntryId);
+        MeasurementHistoryEntry openedEntry = history.FindById(opened)!;
+        Assert.Equal(openedPath, openedEntry.SourceFilePath);
+        Assert.Equal("opened.json", openedEntry.DisplayName);
+        Assert.Equal(savedPath, history.FindById(saving)!.SourceFilePath);
     }
 
     [Fact]

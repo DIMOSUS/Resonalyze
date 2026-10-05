@@ -1,3 +1,6 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
+
 namespace Resonalyze.App.Tests;
 
 /// <summary>Instances read and rewrite shared settings/history whole, so the last to close discards the other's session.</summary>
@@ -63,6 +66,25 @@ public sealed class SingleInstanceGuardTests
 
         Assert.NotNull(installed);
         Assert.NotNull(portable);
+    }
+
+    // Another Windows user's instance on a shared portable folder, or an elevated one: the name exists but cannot be opened.
+    [Fact]
+    public void TryAcquire_WhileHeldByAnInstanceThisAccountCannotOpen_RefusesTheCaller()
+    {
+        string directory = Directory();
+        var denied = new MutexSecurity();
+        denied.AddAccessRule(new MutexAccessRule(
+            new SecurityIdentifier(WellKnownSidType.WorldSid, null),
+            MutexRights.FullControl,
+            AccessControlType.Deny));
+        using Mutex foreign = MutexAcl.Create(
+            initiallyOwned: false, SingleInstanceGuard.NameFor(directory), out bool createdNew, denied);
+        Assert.True(createdNew);
+
+        SingleInstanceGuard? guard = SingleInstanceGuard.TryAcquire(directory);
+
+        Assert.Null(guard);
     }
 
     [Theory]

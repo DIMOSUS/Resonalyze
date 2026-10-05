@@ -40,4 +40,24 @@ public sealed class DebouncedSaverTests
 
         Assert.Equal(2, saves);
     }
+
+    [Fact]
+    public void Flush_WhenTheSaveThrows_KeepsItPending()
+    {
+        int attempts = 0;
+        using var saver = new DebouncedSaver(1000, () =>
+        {
+            if (++attempts == 1)
+            {
+                throw new IOException("The settings file is locked.");
+            }
+        });
+
+        saver.Schedule();
+        Assert.Throws<IOException>(saver.Flush);
+        saver.Flush();
+        saver.Flush();
+
+        Assert.Equal(2, attempts);
+    }
 }

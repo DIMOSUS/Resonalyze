@@ -222,7 +222,7 @@ public partial class VirtualCrossoverPanel
         try
         {
             // An unrecognised file would silently clear the channel's PEQ below.
-            if (!chosen.TryImport(File.ReadAllText(dialog.FileName), out curve))
+            if (!chosen.TryImport(File.ReadAllText(dialog.FileName), session.ProcessorSampleRateHz, out curve))
             {
                 ShowError(
                     "PEQ could not be imported.",
@@ -237,6 +237,7 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
+        string? preampNotice = EqExportWarnings.PreampNotImported(chosen, channel.Settings.PeqPreampDb);
         channel.Settings.PeqBands = curve.Bands
             .Take(EqualizationCurve.MaxBandCount)
             .ToList();
@@ -244,6 +245,10 @@ public partial class VirtualCrossoverPanel
         channel.Settings.PeqSourceName = Path.GetFileName(dialog.FileName);
         UpdatePeqReadouts(channel);
         SaveAndRedraw();
+        if (preampNotice != null)
+        {
+            ShowMessage(preampNotice, "Virtual DSP", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
     }
 
     private void ClearPeq(VirtualCrossoverChannel channel)

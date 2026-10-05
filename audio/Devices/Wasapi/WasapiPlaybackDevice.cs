@@ -276,7 +276,7 @@ internal sealed class WasapiPlaybackDevice : IAudioPlaybackDevice, IRenderDiagno
             }
             if (!signaled)
             {
-                RenderUnderruns++;
+                CountMissedBuffer();
                 continue;
             }
 
@@ -313,7 +313,7 @@ internal sealed class WasapiPlaybackDevice : IAudioPlaybackDevice, IRenderDiagno
             }
             if (!signaled)
             {
-                RenderUnderruns++;
+                CountMissedBuffer();
                 continue;
             }
 
@@ -343,6 +343,13 @@ internal sealed class WasapiPlaybackDevice : IAudioPlaybackDevice, IRenderDiagno
                 sourceEnded = !FillBuffer(render, availableFrames);
             }
         }
+    }
+
+    // A removed endpoint stops signalling; only a call on the client reports it, as the capture loop's read does.
+    private void CountMissedBuffer()
+    {
+        RenderUnderruns++;
+        _ = audioClient.CurrentPadding;
     }
 
     private TimeSpan GetBufferDuration() => TimeSpan.FromSeconds(

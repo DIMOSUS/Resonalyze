@@ -2,7 +2,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>Export-loss warnings worded once for the EQ Wizard and the Virtual DSP PEQ menu (they carry device instructions).</summary>
+/// <summary>Export-loss warnings and the import's preamp notice, worded once for the EQ Wizard and Virtual DSP.</summary>
 internal static class EqExportWarnings
 {
     public static string? ShelvingBandsDropped(
@@ -73,5 +73,19 @@ internal static class EqExportWarnings
             Environment.NewLine + Environment.NewLine +
             $"Enter {gain} in the channel's own gain control on the device after " +
             "importing the bands. Export anyway?";
+    }
+
+    /// <summary>A format without a preamp imports 0 dB over the preamp the bank had; null when nothing was lost.</summary>
+    public static string? PreampNotImported(IEqProfileFormat format, double currentPreampDb)
+    {
+        ArgumentNullException.ThrowIfNull(format);
+
+        if (format.CarriesPreamp || currentPreampDb == 0)
+        {
+            return null;
+        }
+
+        string gain = FormattableString.Invariant($"{currentPreampDb:+0.0;-0.0} dB");
+        return $"{format.Name} profiles carry no preamp, so the preamp was set to 0 dB (it was {gain}).";
     }
 }

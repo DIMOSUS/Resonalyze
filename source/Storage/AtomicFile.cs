@@ -6,7 +6,8 @@ internal static class AtomicFile
     public static void WriteAllText(string path, string contents) =>
         Write(path, stream =>
         {
-            using var writer = new StreamWriter(stream);
+            // Left open: Write flushes it to disk after this.
+            using var writer = new StreamWriter(stream, leaveOpen: true);
             writer.Write(contents);
         });
 
@@ -28,6 +29,8 @@ internal static class AtomicFile
             using (FileStream stream = File.Create(tempPath))
             {
                 writeContents(stream);
+                // On disk before the rename, or a crash can leave the real name pointing at an empty file.
+                stream.Flush(flushToDisk: true);
             }
 
             File.Move(tempPath, path, overwrite: true);

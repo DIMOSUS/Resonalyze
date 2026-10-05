@@ -21,11 +21,7 @@ public partial class Form1
                     () => new IROpt(),
                     opt => opt.Init(analyzerDocument, ModeSettingsSampleRate, viewSettings.ImpulseResponse),
                     opt => opt.SetOptions(viewSettings.ImpulseResponse),
-                    // These rescale or re-origin an axis, so refit instead of restoring zoom.
-                    viewResetKey: () => (
-                        viewSettings.ImpulseResponse.AmplitudeScale,
-                        viewSettings.ImpulseResponse.TimeUnit,
-                        viewSettings.ImpulseResponse.TimeOrigin));
+                    viewResetKey: () => viewSettings.ImpulseAxisMeaning);
                 break;
             case ModeTab.Frequency:
                 ToggleModeOptions(

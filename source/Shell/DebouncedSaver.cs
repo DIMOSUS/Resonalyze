@@ -30,7 +30,15 @@ internal sealed class DebouncedSaver : IDisposable
         }
 
         savePending = false;
-        save();
+        try
+        {
+            save();
+        }
+        catch
+        {
+            savePending = true;
+            throw;
+        }
     }
 
     public void Dispose()

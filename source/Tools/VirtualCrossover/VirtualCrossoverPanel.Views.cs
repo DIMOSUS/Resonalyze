@@ -225,6 +225,8 @@ public partial class VirtualCrossoverPanel
         // curves, sum, loss and read-out describe the same channels.
         VirtualCrossoverViewState view = CaptureViewState();
         VirtualCrossoverGroupView groupView = view.GroupView;
+        // The automatic commands refuse on it whatever the group view shows, an empty one included.
+        gatePlacement = GatePlacementVerdict.Judge(processed, session.MagnitudeGate, view.RightSide);
         var frame = VirtualCrossoverFrame.Of(processed, groupView);
         if (frame.Shown.Count == 0)
         {
@@ -383,7 +385,7 @@ public partial class VirtualCrossoverPanel
 
         using (AppProfiler.Zone("VirtualDSP.UpdateWarnings"))
         {
-            UpdateWarnings(processed, frame.Shown, hybrid, view.RightSide);
+            UpdateWarnings(processed, frame.Shown, hybrid);
         }
 
         // Split from the draw so the profiler separates curve building from OxyPlot.
@@ -503,10 +505,8 @@ public partial class VirtualCrossoverPanel
         SelectedStereoSum,
         session.Project.StereoSumBlendHz);
 
-    private void UpdateWarnings(
-        List<ProcessedChannel> processed, List<ProcessedChannel> shown, HybridMagnitudes? hybrid, bool rightSide)
+    private void UpdateWarnings(List<ProcessedChannel> processed, List<ProcessedChannel> shown, HybridMagnitudes? hybrid)
     {
-        gatePlacement = GatePlacementVerdict.Judge(processed, session.MagnitudeGate, rightSide);
         if (warnings.Judge(processed, hybrid, gatePlacement, shown) is not { } warning)
         {
             HideWarning();

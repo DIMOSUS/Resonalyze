@@ -402,7 +402,8 @@ magnitude once did. Burst Decay's periods axis still counts from the peak, which
 that much further into its window. Both read the circular pre-roll as the magnitude
 window does, so a start less than a left fade into the record matches Frequency
 Response there too; only the pre-roll wraps, so the Waterfall's later slices never read
-the direct sound again. The window preview is Frequency Response's. Every Fourier slice
+the direct sound again. The window preview is Frequency Response's, or with a negative Step
+the first slice's, whose right fade begins at the start. Every Fourier slice
 reads through one window, so a build pads it once (`OversampledWindow`) and reads each slice
 at that length, which is what `GetOversampledSpectrumData` does per call: the default 64
 slices allocated 50 MB a build and now 34.

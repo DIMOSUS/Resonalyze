@@ -32,6 +32,7 @@ internal sealed class EqWizardPlot
     private readonly LineAnnotation bandMarker;
     private readonly RectangleAnnotation rangeFill;
     private readonly EqBandHandlesAnnotation handles = new() { YAxisKey = EqGainAxisKey };
+    private readonly EqWindowEdgesAnnotation windowEdges = new();
 
     // Last nominal range armed on the EQ axis, to tell the wizard's range from the user's zoom.
     private (double Lower, double Upper)? eqAxisNominal;
@@ -115,12 +116,17 @@ internal sealed class EqWizardPlot
         };
         Model.Annotations.Add(handles.FaintLayer);
         Model.Annotations.Add(handles);
+        // After the band handles: the controller asks handles in model order, and a band on an edge stays grabbable.
+        Model.Annotations.Add(windowEdges);
     }
 
     public PlotModel Model { get; }
 
     /// <summary>The bank's handles; the panel turns what they report into edits.</summary>
     public EqBandHandlesAnnotation Handles => handles;
+
+    /// <summary>The Auto Tune window's edges as handles; the panel sets the From and To fields from where they go.</summary>
+    public EqWindowEdgesAnnotation WindowEdges => windowEdges;
 
     /// <summary>Marks the Auto Tune window, which also bounds the error metrics.</summary>
     public void ShowWindow(EqWizardSession session)
@@ -130,6 +136,7 @@ internal sealed class EqWizardPlot
         toMarker.X = (double)session.WindowToHz;
         rangeFill.MinimumX = fromMarker.X;
         rangeFill.MaximumX = toMarker.X;
+        windowEdges.Show(fromMarker.X, toMarker.X);
     }
 
     /// <summary>Re-arms the magnitude axis for a newly loaded source; panning stays inside its absolute limits.</summary>

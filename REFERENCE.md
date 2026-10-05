@@ -134,7 +134,9 @@ the exception and takes all of it.)
 | The **+** / **&minus;** buttons on the graph | Zoom the axis they sit against by about two about the middle of the view, click after click, so what is centred stays centred; the bottom pair sits at the right end of its axis and the left pair at the top of its. They appear while the pointer is over the plot, and hovering one names the axis it moves |
 | Double click | Opens the graph limits dialog |
 | Left drag on an EQ Wizard band handle | Moves that band: frequency sideways, gain up and down (see [EQ Wizard](#eq-wizard)) |
+| **Ctrl** + left drag on an EQ Wizard band handle | Changes that band's Q: up narrows, down widens (for a touchpad with no wheel) |
 | Wheel over the selected EQ Wizard band handle | Steps that band's Q instead of zooming |
+| Left drag on an EQ Wizard **From** / **To** line | Moves that edge of the Auto Tune window |
 | **Ctrl+Z** | Steps back through the zoom-to-area, variable-zoom, zoom-button and fit-to-data moves (a wheel notch is its own undo — scroll it back) |
 | **Ctrl+Alt+F** / **Ctrl+Alt+Y** | Fit to data / fit the vertical axis to data |
 | **Home** or `A` | Back to the view's own default scale (also the **Defaults** button in the limits dialog) |
@@ -1747,9 +1749,21 @@ and Q.
   anything else, and with **Alt**, **Shift** or **Ctrl** held even over the
   handle, the wheel zooms as it does on every graph. A first-order all-pass has
   no Q, so its handle leaves the wheel to zoom.
+- **Ctrl + drag** a handle to change its **Q** with no wheel at hand, as on a
+  touchpad: every 10 pixels up is one wheel notch narrower, down is wider, and
+  the band stays where it is. Like a plain drag it selects the band and lands as
+  one undo step when let go. With **Ctrl** held over a handle the pointer turns
+  into an up-and-down arrow (pressing Ctrl while already over it does this once
+  the graph has been clicked, as for every key).
 
 The handles go with the **EQ curve**: they are not drawn when it is off, in the
 **Phase** view, or under **Bypass**.
+
+The two dashed vertical lines mark the Auto Tune window's **From** and **To**, and
+they are handles too, in every view: the pointer near one brightens it and turns
+into a left-and-right arrow, and dragging it sideways moves that edge, its field following in whole hertz as if typed —
+pushed past the other edge, it carries that one along. A band's handle sitting
+on a line is taken before the line.
 
 The selected band is drawn twice. Its own gain is filled down to 0 dB on the EQ
 axis, joining its handle to the bank's curve, and its contribution rides on the

@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Windows.Forms;
 using OxyPlot;
 using OxyPlot.Annotations;
+using OxyPlot.Axes;
 using OxyPlot.WindowsForms;
 using Resonalyze.Dsp;
 using Resonalyze.Ui;
@@ -206,6 +207,128 @@ public sealed class EqWizardPanelWiringTests
 
         live.Click("buttonUndo");
         Assert.Equal(added, live.Session.Bank.Bands[0]);
+    });
+
+    [Fact]
+    public void CtrlDraggingAHandle_StepsItsQ_LeavesItWhereItIs_AndLandsAsOneStep() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+        live.Invoke("AddBand", PeqBandType.Peaking);
+        // Where the 0.1 rounding of single steps drifts: 1.0, 1.1, 1.2 against two notches' 1.3.
+        live.Change(() => live.Strips[0].QInput.Value = 1.0m);
+        live.Invoke("CommitBankChange");
+        live.Invoke("DeselectBand");
+        PeqBand added = live.Session.Bank.Bands[0];
+        Assert.Equal(1.0, added.Q);
+        ScreenPoint start = live.HandleCenter(0);
+
+        // 10 px up is one wheel notch, 25 px two; the sideways travel is ignored. Where the pointer is decides the Q,
+        // however many moves it took.
+        double twoNotches = (double)EqWizardLimits.BandQ.Clamp(added.Q * Math.Pow(2, 2.0 / 6));
+        live.Press(start, OxyModifierKeys.Control);
+        live.Move(new ScreenPoint(start.X + 20, start.Y - 11));
+        live.Move(new ScreenPoint(start.X + 40, start.Y - 25));
+        Assert.Equal(twoNotches, live.Session.Bank.Bands[0].Q);
+        live.Move(new ScreenPoint(start.X + 40, start.Y - 3));
+        Assert.Equal(added.Q, live.Session.Bank.Bands[0].Q);
+        live.Move(new ScreenPoint(start.X + 40, start.Y - 25));
+        live.Release(new ScreenPoint(start.X + 40, start.Y - 25));
+
+        PeqBand tuned = live.Session.Bank.Bands[0];
+        Assert.Equal(0, live.Handles.Selected);
+        Assert.Equal(added with { Q = twoNotches }, tuned);
+        Assert.Equal((decimal)tuned.Q, live.Strips[0].QInput.Value);
+
+        live.Click("buttonUndo");
+        Assert.Equal(added, live.Session.Bank.Bands[0]);
+    });
+
+    [Fact]
+    public void DraggingAWindowEdge_PutsItUnderThePointer_AndItsFieldShowsIt() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+        live.Set<ThemedNumericUpDown>("numericFromHz", box => box.Value = 100m);
+        live.Set<ThemedNumericUpDown>("numericToHz", box => box.Value = 5000m);
+        ScreenPoint start = live.WindowEdge(EqWindowEdgesAnnotation.From);
+        var end = new ScreenPoint(start.X + 60, start.Y + 30);
+
+        live.Press(start);
+        live.Move(end);
+        live.Release(end);
+
+        Assert.True(live.Session.WindowFromHz > 100m);
+        Assert.Equal(5000m, live.Session.WindowToHz);
+        Assert.Equal(live.Session.WindowFromHz, live.Control<ThemedNumericUpDown>("numericFromHz").Value);
+        // Within the field's whole hertz.
+        Assert.Equal(end.X, live.WindowEdge(EqWindowEdgesAnnotation.From).X, 1.5);
+    });
+
+    [Fact]
+    public void TheCursor_ShowsWhichWayADragWouldGo_AndComesBackAfterIt() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+        live.Invoke("AddBand", PeqBandType.Peaking);
+        live.Set<ThemedNumericUpDown>("numericFromHz", box => box.Value = 100m);
+        ScreenPoint band = live.HandleCenter(0);
+
+        live.Hover(band);
+        Assert.Equal(Cursors.Hand, live.Cursor);
+        live.Key(Keys.ControlKey | Keys.Control, down: true);
+        Assert.Equal(Cursors.SizeNS, live.Cursor);
+        live.Key(Keys.ControlKey, down: false);
+        Assert.Equal(Cursors.Hand, live.Cursor);
+
+        live.Press(band, OxyModifierKeys.Control);
+        Assert.Equal(Cursors.SizeNS, live.Cursor);
+        live.Release(band);
+        Assert.Equal(Cursors.Hand, live.Cursor);
+
+        ScreenPoint edge = live.WindowEdge(EqWindowEdgesAnnotation.From);
+        live.Hover(edge);
+        Assert.Equal(Cursors.SizeWE, live.Cursor);
+        live.Press(edge);
+        Assert.Equal(Cursors.SizeWE, live.Cursor);
+        live.Release(edge);
+
+        live.Hover(new ScreenPoint(edge.X + 40, edge.Y + 60));
+        Assert.Equal(Cursors.Default, live.Cursor);
+    });
+
+    [Fact]
+    public void AWindowEdgeZoomedOffTheGraph_CannotBeTakenAtItsBorder() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+        live.Set<ThemedNumericUpDown>("numericFromHz", box => box.Value = 100m);
+        // 100 Hz about 2 px left of the plot: within reach of a press just inside its border.
+        Axis frequency = live.Plot.Axes.Single(axis => axis.Key == PlotModelFactory.FrequencyAxisKey);
+        live.WindowEdge(EqWindowEdgesAnnotation.From);
+        live.Change(() => frequency.Zoom(101, frequency.ActualMaximum));
+        ScreenPoint edge = live.WindowEdge(EqWindowEdgesAnnotation.From);
+        Assert.InRange(live.Plot.PlotArea.Left - edge.X, 0.5, 3);
+        var inside = new ScreenPoint(live.Plot.PlotArea.Left + 1, edge.Y);
+
+        live.Press(inside);
+        live.Move(new ScreenPoint(inside.X + 40, inside.Y));
+        live.Release(new ScreenPoint(inside.X + 40, inside.Y));
+
+        Assert.Equal(100m, live.Session.WindowFromHz);
+    });
+
+    [Fact]
+    public void ABandHandleOnAWindowEdge_IsTakenBeforeTheEdge() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+        live.Invoke("AddBand", PeqBandType.Peaking);
+        decimal edgeHz = (decimal)live.Session.Bank.Bands[0].FrequencyHz;
+        live.Set<ThemedNumericUpDown>("numericFromHz", box => box.Value = edgeHz);
+        ScreenPoint start = live.HandleCenter(0);
+
+        live.Press(start);
+        live.Move(new ScreenPoint(start.X + 40, start.Y));
+        live.Release(new ScreenPoint(start.X + 40, start.Y));
+
+        Assert.Equal(edgeHz, live.Session.WindowFromHz);
+        Assert.True((decimal)live.Session.Bank.Bands[0].FrequencyHz > edgeHz);
     });
 
     [Fact]
@@ -588,10 +711,25 @@ public sealed class EqWizardPanelWiringTests
             return Handles.Center(index);
         }
 
-        public void Press(ScreenPoint at) => Change(() =>
+        // Laid out first, as a paint would.
+        public ScreenPoint WindowEdge(int edge)
+        {
+            using var stream = new MemoryStream();
+            new PngExporter { Width = View.Width, Height = View.Height }.Export(Plot, stream);
+            EqWindowEdgesAnnotation edges = Plot.Annotations.OfType<EqWindowEdgesAnnotation>().Single();
+            return new ScreenPoint(edges.ScreenX(edge), Plot.PlotArea.Center.Y);
+        }
+
+        public void Press(ScreenPoint at, OxyModifierKeys modifiers = OxyModifierKeys.None) => Change(() =>
             View.ActualController.HandleMouseDown(
                 View,
-                new OxyMouseDownEventArgs { ChangedButton = OxyMouseButton.Left, ClickCount = 1, Position = at }));
+                new OxyMouseDownEventArgs
+                {
+                    ChangedButton = OxyMouseButton.Left,
+                    ClickCount = 1,
+                    Position = at,
+                    ModifierKeys = modifiers
+                }));
 
         public void Move(ScreenPoint at) => Change(() =>
             View.ActualController.HandleMouseMove(View, new OxyMouseEventArgs { Position = at }));
@@ -611,6 +749,14 @@ public sealed class EqWizardPanelWiringTests
             Raise("OnMouseUp", args);
             Raise("OnClick", EventArgs.Empty);
         });
+
+        public Cursor Cursor => View.Cursor;
+
+        public void Hover(ScreenPoint at) => Change(() =>
+            Raise("OnMouseMove", new MouseEventArgs(MouseButtons.None, 0, (int)at.X, (int)at.Y, 0)));
+
+        public void Key(Keys keyData, bool down) => Change(() =>
+            Raise(down ? "OnKeyDown" : "OnKeyUp", new KeyEventArgs(keyData)));
 
         private void Raise(string handler, EventArgs args) =>
             typeof(Control).GetMethod(handler, Hidden)!.Invoke(View, [args]);

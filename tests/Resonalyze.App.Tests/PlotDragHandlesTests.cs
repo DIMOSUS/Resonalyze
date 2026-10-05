@@ -25,6 +25,20 @@ public sealed class PlotDragHandlesTests
     }
 
     [Fact]
+    public void ACtrlPressOnAHandle_GrabsItWithCtrl_AndOneBesideItDoesNot()
+    {
+        (PlotView view, FakeHandles handles) = Build();
+        ScreenPoint beside = new(handles.At.X - 100, handles.At.Y);
+
+        Down(view, handles.At, OxyModifierKeys.Control);
+        Up(view, handles.At);
+        Down(view, beside, OxyModifierKeys.Control);
+        Up(view, beside);
+
+        Assert.Equal(["press Control", "release"], handles.Calls);
+    }
+
+    [Fact]
     public void ThePlainWheelOverAHandle_GoesToIt_AndLeavesTheAxesAlone()
     {
         (PlotView view, FakeHandles handles) = Build();
@@ -78,10 +92,16 @@ public sealed class PlotDragHandlesTests
     private static Axis Frequency(PlotView view) =>
         view.Model!.Axes.Single(axis => axis.Key == PlotModelFactory.FrequencyAxisKey);
 
-    private static void Down(PlotView view, ScreenPoint at) =>
+    private static void Down(PlotView view, ScreenPoint at, OxyModifierKeys modifiers = OxyModifierKeys.None) =>
         view.ActualController.HandleMouseDown(
             view,
-            new OxyMouseDownEventArgs { ChangedButton = OxyMouseButton.Left, ClickCount = 1, Position = at });
+            new OxyMouseDownEventArgs
+            {
+                ChangedButton = OxyMouseButton.Left,
+                ClickCount = 1,
+                Position = at,
+                ModifierKeys = modifiers
+            });
 
     private static void Move(PlotView view, ScreenPoint at) =>
         view.ActualController.HandleMouseMove(view, new OxyMouseEventArgs { Position = at });
@@ -107,7 +127,10 @@ public sealed class PlotDragHandlesTests
 
         public bool Hover(int? handle) => false;
 
-        public void Press(int handle, ScreenPoint point) => Calls.Add("press");
+        public CursorType Cursor(int handle, OxyModifierKeys modifiers) => CursorType.Pan;
+
+        public void Press(int handle, ScreenPoint point, OxyModifierKeys modifiers) =>
+            Calls.Add(modifiers == OxyModifierKeys.None ? "press" : $"press {modifiers}");
 
         public void Drag(ScreenPoint point) => Calls.Add($"drag {point.X:0},{point.Y:0}");
 

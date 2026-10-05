@@ -84,7 +84,9 @@ internal sealed class PlotCurveTogglesAnnotation : Annotation, IPlotDragHandles
         return changed;
     }
 
-    public void Press(int handle, ScreenPoint point)
+    public CursorType Cursor(int handle, OxyModifierKeys modifiers) => CursorType.Pan;
+
+    public void Press(int handle, ScreenPoint point, OxyModifierKeys modifiers)
     {
         states[handle] = !states[handle];
         Toggled?.Invoke(handle);

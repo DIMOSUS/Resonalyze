@@ -4,7 +4,7 @@ namespace Resonalyze;
 
 /// <summary>
 /// An annotation whose handles the pointer can grab. <see cref="PlotGestureController"/> asks it before its own left
-/// press, double click and wheel, so a handle wins over the tracker, the limits dialog and zoom.
+/// press (plain or with Ctrl), double click and wheel, so a handle wins over the tracker, the limits dialog and zoom.
 /// See docs/tech/plot-interaction.md#drag-handles.
 /// </summary>
 internal interface IPlotDragHandles
@@ -15,7 +15,12 @@ internal interface IPlotDragHandles
     /// <returns>Whether the highlight changed, so the plot needs a repaint.</returns>
     bool Hover(int? handle);
 
-    void Press(int handle, ScreenPoint point);
+    /// <summary>The cursor over the handle and while it is held: what a drag with these modifiers would do.</summary>
+    /// <returns>Pan shows a hand; ZoomHorizontal and ZoomVertical show the double arrows.</returns>
+    CursorType Cursor(int handle, OxyModifierKeys modifiers);
+
+    /// <param name="modifiers">None or Control: the handle decides what a Ctrl drag does.</param>
+    void Press(int handle, ScreenPoint point, OxyModifierKeys modifiers);
 
     void Drag(ScreenPoint point);
 
@@ -47,8 +52,8 @@ internal sealed class PlotDragHandleManipulator : MouseManipulator
     {
         base.Started(e);
         dragging(true);
-        PlotView.SetCursorType(CursorType.Pan);
-        handles.Press(handle, e.Position);
+        PlotView.SetCursorType(handles.Cursor(handle, e.ModifierKeys));
+        handles.Press(handle, e.Position, e.ModifierKeys);
         PlotView.InvalidatePlot(false);
     }
 
@@ -69,8 +74,9 @@ internal sealed class PlotDragHandleManipulator : MouseManipulator
     {
         base.Completed(e);
         handles.Release();
-        dragging(false);
+        // Before the owner is told: it puts back the cursor of whatever handle the pointer was let go over.
         PlotView.SetCursorType(CursorType.Default);
+        dragging(false);
         PlotView.InvalidatePlot(false);
     }
 }

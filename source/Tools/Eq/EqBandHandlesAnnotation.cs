@@ -19,6 +19,8 @@ internal sealed class EqBandHandlesAnnotation : Annotation, IPlotDragHandles
     private const double DotRadius = 3.5;
     private const double HitSlack = 2;
     private const int WheelNotch = 120;
+    // A Ctrl drag's vertical travel per Q step, the wheel's sixth of an octave.
+    private const double QDragPixelsPerNotch = 10;
     private const double NumberFontSize = 10;
     // Two digits at the full size touch the ring; a bank can run to 32 filters.
     private const double TwoDigitFontSize = 8.5;
@@ -44,6 +46,10 @@ internal sealed class EqBandHandlesAnnotation : Annotation, IPlotDragHandles
     private int? hovered;
     private int? dragged;
     private ScreenVector grabOffset;
+    private ScreenPoint pressedAt;
+    private bool draggingQ;
+    private double pressedQ;
+    private int draggedNotches;
     private int wheelRemainder;
 
     public EqBandHandlesAnnotation()
@@ -65,6 +71,9 @@ internal sealed class EqBandHandlesAnnotation : Annotation, IPlotDragHandles
 
     /// <summary>Wheel notches over the selected handle; positive narrows.</summary>
     public event Action<int, int>? QStepped;
+
+    /// <summary>A Ctrl drag: band index, its Q at the press, and the wheel notches the pointer is above the press.</summary>
+    public event Action<int, double, int>? QDragged;
 
     public IReadOnlyList<PeqBand> Bands => bands;
 
@@ -132,7 +141,12 @@ internal sealed class EqBandHandlesAnnotation : Annotation, IPlotDragHandles
         return true;
     }
 
-    public void Press(int handle, ScreenPoint point)
+    public CursorType Cursor(int handle, OxyModifierKeys modifiers) =>
+        modifiers == OxyModifierKeys.Control && handle < bands.Count && EqBandHandles.HasQ(bands[handle].Type)
+            ? CursorType.ZoomVertical
+            : CursorType.Pan;
+
+    public void Press(int handle, ScreenPoint point, OxyModifierKeys modifiers)
     {
         if (handle >= bands.Count)
         {
@@ -142,6 +156,10 @@ internal sealed class EqBandHandlesAnnotation : Annotation, IPlotDragHandles
         dragged = handle;
         hovered = handle;
         grabOffset = Center(handle) - point;
+        pressedAt = point;
+        draggingQ = modifiers == OxyModifierKeys.Control;
+        pressedQ = bands[handle].Q;
+        draggedNotches = 0;
         Pressed?.Invoke(handle);
     }
 
@@ -150,6 +168,19 @@ internal sealed class EqBandHandlesAnnotation : Annotation, IPlotDragHandles
     {
         if (dragged is not int index || index >= bands.Count)
         {
+            return;
+        }
+
+        if (draggingQ)
+        {
+            // From the press, not the last move: the bank rounds every step, so steps taken one by one would drift.
+            int notches = (int)Math.Truncate((pressedAt.Y - point.Y) / QDragPixelsPerNotch);
+            if (notches != draggedNotches)
+            {
+                draggedNotches = notches;
+                QDragged?.Invoke(index, pressedQ, notches);
+            }
+
             return;
         }
 

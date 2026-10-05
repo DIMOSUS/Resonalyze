@@ -191,10 +191,14 @@ by the incoherent sum of exactly the summed channels.
   meet 18 dB down. For corners an octave or more apart the function scans between them for where the
   two slopes cross. At or above `GapHandoverFloorDb` (−12 dB: two drivers in phase sum 6 dB under the
   passband) that frequency is the junction's (`GetPairCrossoverHz`), for the panel and for Auto
-  delay alike; below it the pair is a hole as before. The slopes are read at the processor's rate,
-  as the device realizes them: second-order corners at 10 and 20 kHz meet 8 dB down on a 96 kHz
-  processor and 14 dB down on a 48 kHz one, whose high-pass the bilinear warp steepens towards
-  Nyquist. On the field case the junction had been absent
+  delay alike; below it the pair is a hole as before. The slopes are read as the chain realizes them:
+  - at the processor's rate. Second-order corners at 10 and 20 kHz meet 8 dB down on a 96 kHz
+    processor and 14 dB down on a 48 kHz one, whose high-pass the bilinear warp steepens towards
+    Nyquist;
+  - from both filtering stages, the IIR sections and the FIR kernel's own response. A FIR's edges
+    do not state its slope: a windowed sinc is a brick wall whatever they are labelled, and a
+    magnitude design may be 96 dB/octave steep, which no IIR section is (read through
+    `CrossoverFilter`, such an edge threw). On the field case the junction had been absent
   from the panel while Auto delay aligned the pair in 1250-5000 Hz, an octave around the lower
   corner where the tweeter is 6 to 29 dB down. Judged where the slopes cross (2062-8246 Hz), that
   alignment read −1.80 / −9.53 dB with a direct coherence of 0.13 on the reference side; aligned

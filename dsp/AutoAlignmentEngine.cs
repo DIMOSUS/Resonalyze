@@ -3060,8 +3060,9 @@ public static class AutoAlignmentEngine
                     static double LinkCenterHz(StereoPairLink item) =>
                         Math.Sqrt(item.BandLowHz * item.BandHighHz);
                     double centerHz = LinkCenterHz(link);
+                    // A low pair's read can pass its certificate and be a millisecond and a half off: it vouches for nothing.
                     foreach (StereoPairLink other in plan.PairLinks
-                        .Where(item => item != link)
+                        .Where(item => item != link && IsSceneLockable(item))
                         .OrderBy(item =>
                             Math.Abs(Math.Log(LinkCenterHz(item) / centerHz))))
                     {

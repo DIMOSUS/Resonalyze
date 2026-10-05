@@ -601,6 +601,24 @@ public sealed class StereoAlignmentTests
         }
 
         [Fact]
+        public void ComputeStereo_AnotherLowPairBesideOneCleanPair_DoesNotVouchForTheCabinsGeometry()
+        {
+            // The mid link is read below the localization edge here, as the woofer's is, and a low pair's read is the
+            // one that fails: it is no donor, and the tweeters alone are not the cabin's geometry.
+            (TestChannel _, TestChannel[] _, TestChannel[] _,
+                Dictionary<IAlignmentChannel, AlignmentOverride> _,
+                StringBuilder log) = RunStereo(
+                    sceneOffsetMs: 0.25,
+                    linkBands: [(80, 175), (150, 300), (2_500, 12_000)],
+                    rightWoofLateCopyMs: 2.5);
+
+            string woofLine = Array.Find(
+                log.ToString().Split('\n'), line => line.StartsWith("Channel R woof:"))!;
+            Assert.NotNull(woofLine);
+            Assert.DoesNotContain($"SCENE-LOCKED ±{0.05:0.00}", woofLine);
+        }
+
+        [Fact]
         public void ComputeStereo_NarrowSharedBandGetsNoLockAndNoPrior()
         {
             // A link band too narrow for arrival analysis yields no target and so no lock.

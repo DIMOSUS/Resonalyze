@@ -102,6 +102,31 @@ public sealed class VirtualCrossoverJunctionsTests
             0);
     }
 
+    private static VirtualCrossoverChannelSettings FirOnly(
+        CrossoverKind kind, double cornerHz, FirCrossoverMethod method, int slope)
+    {
+        var edge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, cornerHz, slope);
+        var design = new FirCrossoverDesign(kind, edge, edge, method, FirWindow.Blackman, 8, 4_095, 48_000);
+        return new VirtualCrossoverChannelSettings { Fir = design.Build(), FirDesign = design };
+    }
+
+    [Theory]
+    // A FIR's slope is its kernel's. A magnitude design 72 dB/octave steep is no IIR section, and a windowed sinc
+    // is a brick wall whatever its edges are labelled: both leave a hole between corners 1.4 octaves apart.
+    [InlineData(FirCrossoverMethod.IirMagnitude, 72, 2_500, 2_500)]
+    [InlineData(FirCrossoverMethod.WindowedSinc, 12, 2_500, 2_500)]
+    // A second-order magnitude over the same corners hands over where the IIR pair does.
+    [InlineData(FirCrossoverMethod.IirMagnitude, 12, 4_100, 4_300)]
+    public void GetPairCrossoverHz_AcrossAGapBetweenFirCrossovers_ReadsTheKernels(
+        FirCrossoverMethod method, int slope, double lowestHz, double highestHz)
+    {
+        VirtualCrossoverChannelSettings lower = FirOnly(CrossoverKind.LowPass, 2_500, method, slope);
+        VirtualCrossoverChannelSettings upper = FirOnly(CrossoverKind.HighPass, 6_800, method, slope);
+
+        Assert.InRange(
+            VirtualCrossoverJunctions.GetPairCrossoverHz(lower, upper, 48_000), lowestHz, highestHz);
+    }
+
     [Fact]
     public void GetPairCrossoverHz_FallsBackToUppersHighPass()
     {

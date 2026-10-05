@@ -1373,8 +1373,10 @@ the two sides can latch onto different modes and fabricate a path (23.5 vs 17.9 
 that dragged the right midbass past the scene onto a junction notch). The cabin's L/R geometry is,
 however, often measurable on other linked pairs.
 
-- **Donors** are pairs where both sides positively read a clean direct arrival: full band and upper
-  half valid, SNR-qualified and Verified. Absence of a proven latch is not proof.
+- **Donors** are scene-lockable pairs where both sides positively read a clean direct arrival: full
+  band and upper half valid, SNR-qualified and Verified. Absence of a proven latch is not proof, and
+  a low pair is no donor at all: its read can pass the certificate and be a millisecond and a half
+  off ([A low pair stands on it](#a-low-pair-stands-on-it)).
 - **Resolution** (`CrossSideLockTier`). Two or more splits mutually within
   `CrossSideDonorAgreementMs` (0.6 ms) are the cabin's L/R offset (v3: mids +1.37 ms, tweeters
   +1.41) and earn a Tight lock: a quarter period above the localization edge, a hold below it (next

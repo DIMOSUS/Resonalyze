@@ -21,42 +21,56 @@ internal static class VirtualCrossoverJunctions
     // Where no processor is named: high enough that the bilinear warp leaves an audio-band slope where its corner puts it.
     private const int UnwarpedRateHz = 192_000;
 
-    /// <summary>Where the slopes of a low-pass and a high-pass set an octave or more apart cross, as the processor
-    /// realizes them; null where the corners stand closer, or the slopes meet below <see cref="GapHandoverFloorDb"/>.</summary>
+    /// <summary>Where the slopes across a gap of an octave or more cross, as the chain realizes them; null for closer corners or a crossing below <see cref="GapHandoverFloorDb"/>.</summary>
     public static double? GapHandoverHz(
         VirtualCrossoverChannelSettings lower,
         VirtualCrossoverChannelSettings upper,
         int? processorSampleRateHz = null)
     {
-        CrossoverSpec lowerSpec = lower.EffectiveCrossover;
-        CrossoverSpec upperSpec = upper.EffectiveCrossover;
         int rateHz = processorSampleRateHz is > 0 ? processorSampleRateHz.Value : UnwarpedRateHz;
-        if (lowerSpec.LowPassHz is not { } lowPassHz ||
-            upperSpec.HighPassHz is not { } highPassHz ||
+        if (lower.EffectiveLowPassHz is not { } lowPassHz ||
+            upper.EffectiveHighPassHz is not { } highPassHz ||
             highPassHz < 2 * lowPassHz ||
             highPassHz >= rateHz / 2.0)
         {
             return null;
         }
 
-        var lowPass = new CrossoverSpec(CrossoverKind.LowPass, LowPassEdge: lowerSpec.LowPassEdge);
-        var highPass = new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: upperSpec.HighPassEdge);
-        double crossingHz = lowPassHz;
-        double crossingLevel = 0;
-        for (int step = 0; step <= GapHandoverSteps; step++)
+        double[] frequencies = Enumerable.Range(0, GapHandoverSteps + 1)
+            .Select(step => lowPassHz * Math.Pow(highPassHz / lowPassHz, (double)step / GapHandoverSteps))
+            .ToArray();
+        double[] lowerLevels = FilterMagnitudes(lower, frequencies, rateHz);
+        double[] upperLevels = FilterMagnitudes(upper, frequencies, rateHz);
+        int crossing = Enumerable.Range(0, frequencies.Length)
+            .MaxBy(index => Math.Min(lowerLevels[index], upperLevels[index]));
+        double crossingLevel = Math.Min(lowerLevels[crossing], upperLevels[crossing]);
+        return 20 * Math.Log10(crossingLevel) >= GapHandoverFloorDb ? frequencies[crossing] : null;
+    }
+
+    // Both filtering stages as the chain runs them: a FIR's slope is its kernel's, not its edges'.
+    private static double[] FilterMagnitudes(
+        VirtualCrossoverChannelSettings settings, double[] frequencies, int rateHz)
+    {
+        double[] magnitudes = Enumerable.Repeat(1.0, frequencies.Length).ToArray();
+        if (settings.CrossoverKind != CrossoverKind.Off)
         {
-            double hz = lowPassHz * Math.Pow(highPassHz / lowPassHz, (double)step / GapHandoverSteps);
-            double level = Math.Min(
-                CrossoverFilter.Response(lowPass, hz, rateHz).Magnitude,
-                CrossoverFilter.Response(highPass, hz, rateHz).Magnitude);
-            if (level > crossingLevel)
+            var iir = new CrossoverSpec(settings.CrossoverKind, settings.LowPassEdge, settings.HighPassEdge);
+            for (int index = 0; index < frequencies.Length; index++)
             {
-                crossingLevel = level;
-                crossingHz = hz;
+                magnitudes[index] *= CrossoverFilter.Response(iir, frequencies[index], rateHz).Magnitude;
             }
         }
 
-        return 20 * Math.Log10(crossingLevel) >= GapHandoverFloorDb ? crossingHz : null;
+        if (settings.Fir is { } kernel)
+        {
+            IReadOnlyList<System.Numerics.Complex> responses = kernel.Responses(frequencies, rateHz);
+            for (int index = 0; index < frequencies.Length; index++)
+            {
+                magnitudes[index] *= responses[index].Magnitude;
+            }
+        }
+
+        return magnitudes;
     }
 
     /// <summary>Where a gap hands over, else lower low-pass, else upper high-pass, else geometric mean of band centres.</summary>

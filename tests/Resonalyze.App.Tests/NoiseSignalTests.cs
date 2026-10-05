@@ -45,6 +45,25 @@ public sealed class NoiseSignalTests
     }
 
     [Fact]
+    public async Task APreparedPeriod_IsTheOneAFillTiles()
+    {
+        const int period = 2048;
+        const int sampleRate = 11_025;
+        await NoiseSignal.PreparePinkPeriodAsync(period, sampleRate);
+
+        Assert.True(NoiseSignal.PreparePinkPeriodAsync(period, sampleRate).IsCompleted);
+        using var signal = new NoiseSignal();
+        signal.FillData(
+            requestedDuration: 2.0 * period / sampleRate,
+            sampleRate: sampleRate,
+            noiseColor: NoiseColor.PinkPeriodic,
+            periodLength: period);
+        Assert.Equal(
+            NoiseSignal.SynthesizePinkPeriod(period, sampleRate).Select(sample => (float)sample),
+            signal.FloatData.Take(period));
+    }
+
+    [Fact]
     [Trait("Category", "Slow")]
     public void PinkPeriod_IsExactlyPinkInsideItsBandAndSilentOutside()
     {

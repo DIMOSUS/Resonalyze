@@ -291,6 +291,55 @@ public sealed class LiveSpectrumSessionTests
         Assert.Null(session.PeakHold.Points);
     }
 
+    [Fact]
+    public void Mmm_RunsItsFrameAtTheConfiguredRate_AndRtaTheStoredLength()
+    {
+        var options = new LiveSpectrumOptions { AnalysisMode = LiveAnalysisMode.Mmm, SequenceLength = 1024 };
+        using LiveSpectrumSession session = Create(options);
+        // A low rate keeps the periodic-pink synthesis cheap: 1.37 s is 5461 samples, nearest 4096.
+        var settings = new MeasurementSettingsFile.SweepMeasurementSettings
+        {
+            SampleRate = 4_000,
+            WaveInputChannelOffset = 0,
+            WaveLoopbackInputChannelOffset = 1
+        };
+
+        session.Configure(settings);
+        Assert.Equal(4096, session.Display.Setup.SequenceLength);
+
+        options.AnalysisMode = LiveAnalysisMode.Rta;
+        session.Configure(settings);
+        Assert.Equal(1024, session.Display.Setup.SequenceLength);
+    }
+
+    [Fact]
+    public async Task APeriodNotSynthesizedYet_IsLeftOutOfInit_AndTheRunPlaysIt()
+    {
+        // A rate no other test uses, so the period is not cached yet.
+        const int sampleRate = 21_000;
+        const int length = 4096;
+        RecordingStreamingSession? streaming = null;
+        using var analyzer = new NoiseMeasurement(new FakeAudioSessionFactory(
+            streamingFactory: _ => streaming = new RecordingStreamingSession(framesToRaise: 1, failAfterFrames: false)));
+        analyzer.Init(
+            sampleRate, 24, 0.5, PlaybackChannel.Mono, sequenceLength: length,
+            waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1, liveSpectrumOptions: new LiveSpectrumOptions());
+
+        Assert.False(analyzer.HasPlaybackSignal);
+
+        Task<bool> running = analyzer.RunAsync();
+        for (int attempt = 0; attempt < 300 && streaming?.LastPlaybackSignal == null; attempt++)
+        {
+            await Task.Delay(10);
+        }
+        await analyzer.AbortAsync();
+
+        Assert.True(await running, analyzer.LastError?.ToString());
+        Assert.Equal(
+            NoiseSignal.SynthesizePinkPeriod(length, sampleRate).Select(sample => (float)sample),
+            streaming!.LastPlaybackSignal!.MonoSamples.Take(length));
+    }
+
     // Everything the plot reads from the analyzer comes through Setup, so it must be what the analyzer runs.
     [Fact]
     public void TheSetupIsWhatTheAnalyzerRuns()

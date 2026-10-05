@@ -8,6 +8,7 @@ namespace Resonalyze.Options;
 internal sealed class LiveSpectrumSettingsSession
 {
     private NoiseColor userSignal = NoiseColor.PinkPeriodic;
+    private int userSequenceLength = LiveSpectrumSettingsChoices.SequenceLengths[0];
     private WindowType userWindow = WindowType.Hann;
     private int userOverlap = 50;
     private bool userInputMagnitude;
@@ -24,6 +25,9 @@ internal sealed class LiveSpectrumSettingsSession
     public NoiseColor Signal { get; set; } = NoiseColor.PinkPeriodic;
 
     public int SampleRateHz { get; private set; }
+
+    /// <summary>The lengths the mode offers: MMM's frame at the rate alone.</summary>
+    public IReadOnlyList<int> SequenceLengths { get; private set; } = [];
 
     public int SequenceLength { get; set; } = LiveSpectrumSettingsChoices.SequenceLengths[0];
 
@@ -79,8 +83,8 @@ internal sealed class LiveSpectrumSettingsSession
     /// the user's.</summary>
     public bool IsRta => IsReferenceFree && !IsMmm;
 
-    /// <summary>MMM pins the excitation, the averaging and the smoothing to the one recipe a spatial average is valid
-    /// under.</summary>
+    /// <summary>MMM pins the excitation, the frame, the averaging and the smoothing to the one recipe a spatial average
+    /// is valid under.</summary>
     public bool RecipeEditable => !IsMmm;
 
     /// <summary>The limit dims the transfer function, which a reference-free mode does not draw.</summary>
@@ -103,7 +107,7 @@ internal sealed class LiveSpectrumSettingsSession
 
         userSignal = options.NoiseColor;
         SampleRateHz = sampleRateHz;
-        SequenceLength = LiveSpectrumSettingsChoices.Floor(
+        userSequenceLength = LiveSpectrumSettingsChoices.Floor(
             LiveSpectrumSettingsChoices.SequenceLengths, options.SequenceLength);
         userOverlap = options.OverlapPercent;
         OverlapPercent = LiveSpectrumSettingsChoices.Floor(
@@ -140,6 +144,16 @@ internal sealed class LiveSpectrumSettingsSession
 
     public void SetCalibration(string? text) => Calibration = text ?? string.Empty;
 
+    /// <summary>The analyzer reconfigured: the labels' durations and MMM's frame follow its rate.</summary>
+    public void SetSampleRate(int sampleRateHz)
+    {
+        SampleRateHz = sampleRateHz;
+        if (IsMmm)
+        {
+            ApplyFrame();
+        }
+    }
+
     /// <summary>A mode picked or forced; the rules run only when it changes.</summary>
     public void SelectMode(LiveAnalysisMode mode)
     {
@@ -166,6 +180,8 @@ internal sealed class LiveSpectrumSettingsSession
         ApplyPeriodicPink();
         TiltApplicable = IsRta && Signal != NoiseColor.Silent;
     }
+
+    public void CommitSequenceLength() => userSequenceLength = SequenceLength;
 
     public void CommitWindow() => userWindow = Window;
 
@@ -212,7 +228,7 @@ internal sealed class LiveSpectrumSettingsSession
                 : LiveAnalysisMode.TransferFunction;
         // MMM offers periodic pink only; the user's real choice is kept.
         options.NoiseColor = IsMmm ? userSignal : Signals.Count > 0 ? Signal : NoiseColor.PinkPeriodic;
-        options.SequenceLength = SequenceLength;
+        options.SequenceLength = IsMmm ? userSequenceLength : SequenceLength;
         options.OverlapPercent = userOverlap;
         options.SmoothingInverseOctaves = userSmoothing;
         options.WindowType = userWindow;
@@ -233,6 +249,7 @@ internal sealed class LiveSpectrumSettingsSession
         // Only Silent can be missing (leaving RTA): fall back like the controller's normalization.
         Signal = Signals.Contains(userSignal) ? userSignal : NoiseColor.PinkPeriodic;
         ApplyPeriodicPink();
+        ApplyFrame();
         Spl = IsMmm || userSpl;
         Tilt = IsMmm || userTilt;
         Averaging = IsMmm
@@ -241,6 +258,14 @@ internal sealed class LiveSpectrumSettingsSession
         SmoothingInverseOctaves = IsMmm ? 0 : userSmoothing;
         TiltApplicable = IsRta && Signal != NoiseColor.Silent;
         InputMagnitude = IsReferenceFree || userInputMagnitude;
+    }
+
+    private void ApplyFrame()
+    {
+        SequenceLengths = IsMmm
+            ? [LiveSequenceLengths.SpatialAverage(SampleRateHz)]
+            : LiveSpectrumSettingsChoices.SequenceLengths;
+        SequenceLength = IsMmm ? SequenceLengths[0] : userSequenceLength;
     }
 
     // Periodic pink is leakage-free with a rectangular window and gains nothing from overlap.

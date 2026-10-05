@@ -831,9 +831,10 @@ moving-microphone measurement is valid under, and it is a mode rather than a
 preset because those settings are not preferences. Selecting it pins, and locks:
 periodic pink noise (its spectrum is exactly 1/√f and, unlike the filter bank
 behind plain `Pink noise`, does not change shape with the sample rate, so the
-slope compensation stays exact); `Infinite` averaging (a spatial average is a
-cumulative mean of frame power over the whole path the microphone walks, and an
-exponential window would weight the end of that walk over its beginning); the
+slope compensation stays exact); a frame of about 1.4 s (see below); `Infinite`
+averaging (a spatial average is a cumulative mean of frame power over the whole
+path the microphone walks, and an exponential window would weight the end of that
+walk over its beginning); the
 banded rendering, on the dB SPL axis once an SPL calibration anchors it; slope
 compensation on; and smoothing off. Your own RTA
 choices are remembered and come back when you leave the mode.
@@ -846,11 +847,16 @@ gets that chain applied a second time: the crossover corner doubles its slope an
 every filter counts twice. Nothing downstream can detect this. The curve stays
 smooth and entirely plausible, which is what makes it worth stating here.
 
-The **Sequence Length** is the one setting MMM leaves open, and the maximum is the
-answer: the excitation is one frame-length period of pink noise, so the longest frame
-holds the most bass and gives the finest grid — 65536 at 48 kHz is a 0.73 Hz bin
-spacing and a 1.4 s frame, against 23.4 Hz at the 2048 default. The sets this was
-developed against were taken there.
+The **Sequence Length** is pinned by duration, not by sample count: about 1.4 s at
+any sample rate — 65536 samples at 44.1 and 48 kHz, 131072 at 88.2 and 96 kHz,
+262144 at 176.4 and 192 kHz — and the list shows only that length while MMM is on.
+The excitation is one frame-length period of pink noise, and a rectangular frame
+resolves 2/T hertz whatever the rate, so every rate reads the same 0.73 Hz bins and
+the 1/12-octave bands stay whole down to 25 Hz. A short frame starves the bass: at
+2048 samples and 48 kHz the curve could not start below 35 Hz. The period is built in
+the background as soon as MMM is selected at a rate — about 1 s at 48 kHz, 4 s at
+192 kHz — and a run started sooner begins playing once it is ready. Your RTA length
+comes back when you leave the mode.
 
 **A capture belongs to the state its run began in.** The protective high-pass and
 the microphone calibration are both frozen on the accumulation when Start is pressed,

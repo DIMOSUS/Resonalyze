@@ -39,9 +39,11 @@ namespace Resonalyze
             mode is LiveAnalysisMode.Mmm;
     }
 
-    /// <summary>Single list for the options panel and settings schema; 32768/65536 exist for MMM resolution.</summary>
+    /// <summary>Single list for the options panel and settings schema; MMM takes <see cref="SpatialAverage"/> instead.</summary>
     public static class LiveSequenceLengths
     {
+        private const double SpatialAverageFrameSeconds = 65_536.0 / 48_000.0;
+
         public static readonly IReadOnlyList<int> Supported =
             [256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536];
 
@@ -58,6 +60,12 @@ namespace Resonalyze
 
             return normalized;
         }
+
+        /// <summary>MMM's frame: the power of two nearest 1.37 s at the rate. See docs/tech/live-spectrum.md#spatial-average-frame.</summary>
+        public static int SpatialAverage(int sampleRateHz) =>
+            sampleRateHz > 0
+                ? 1 << (int)Math.Round(Math.Log2(sampleRateHz * SpatialAverageFrameSeconds))
+                : 65_536;
     }
 
     public sealed class LiveSpectrumOptions
@@ -111,6 +119,12 @@ namespace Resonalyze
             AnalysisMode.IsSpatialAverageCapture()
                 ? AveragingSpeed.Infinite
                 : AveragingSpeed;
+
+        /// <summary>MMM pins its frame by duration; the stored length is the user's RTA pick.</summary>
+        public int EffectiveSequenceLength(int sampleRateHz) =>
+            AnalysisMode.IsSpatialAverageCapture()
+                ? LiveSequenceLengths.SpatialAverage(sampleRateHz)
+                : SequenceLength;
 
         /// <summary>Silent is RTA-only (Transfer needs an excitation), so Transfer falls back to periodic pink. Other signals are valid in both modes.</summary>
         /// <returns>Whether the signal changed.</returns>

@@ -180,7 +180,7 @@ internal sealed class LiveSpectrumSession : IDisposable
             measurementSettings.Bits,
             60,
             measurementSettings.PlaybackChannel,
-            Options.SequenceLength,
+            Options.EffectiveSequenceLength(measurementSettings.SampleRate),
             measurementSettings.OutputDeviceNumber,
             measurementSettings.InputDeviceNumber,
             measurementSettings.AudioBackend,

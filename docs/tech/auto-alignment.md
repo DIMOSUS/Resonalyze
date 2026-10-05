@@ -1162,7 +1162,10 @@ sides, through the panel's own plan builders (`CollectStereoSides`, `PickStereoB
 `StereoBridgeBand`, `ComputeStereoAlignment`) so the battery cannot drift from what the app does.
 A session with no front-chain pair resolved on both sides says so and falls back to one side.
 `RESONALYZE_SESSION_BATTERY_BOTHSIDES` keeps the single-side run but judges each side alone, the far one
-included: a far side on its own is where a lobe witness is weakest.
+included: a far side on its own is where a lobe witness is weakest. A stereo run also prints a `twin`
+line for each pair playing below 600 Hz: how the pair's two sides sum over its own band, saved and
+proposed, and where the far side would have to stand for the most. The summation loss reads one
+side's junctions and cannot see that.
 
 **Bridge gates.** The bridge is the single link between the sides, so its arrivals are gated, not
 trusted:
@@ -1299,7 +1302,8 @@ of its settled left twin. It serves as the right search's prior (a gentle, polar
 breaks lobe near-ties) and as the scene-lock pin.
 
 - **Coarse** targets pin only the lobe.
-- **TightLock** comes only from corroborated donor geometry.
+- **TightLock** comes only from corroborated donor geometry. Below the localization edge it holds the
+  pair ([A low pair stands on it](#a-low-pair-stands-on-it)).
 - **Null** means no trusted target, and the search keeps its own-side anchor.
 
 **Per-band read.** Both sides are read in one band with the upper-half probe. A full-band read far
@@ -1371,7 +1375,8 @@ however, often measurable on other linked pairs.
   half valid, SNR-qualified and Verified. Absence of a proven latch is not proof.
 - **Resolution** (`CrossSideLockTier`). Two or more splits mutually within
   `CrossSideDonorAgreementMs` (0.6 ms) are the cabin's L/R offset (v3: mids +1.37 ms, tweeters
-  +1.41) and earn a Tight (quarter-period) lock. A lone donor carries its own filter/driver asymmetry
+  +1.41) and earn a Tight lock: a quarter period above the localization edge, a hold below it (next
+  section). A lone donor carries its own filter/driver asymmetry
   and earns a Loose (half-period) lock. None, or equally large disagreeing clusters, earn no pin, and
   the free own-side search stands, since a fabricated geometry hard-locked is exactly the
   confidently-wrong pin to avoid.
@@ -1379,6 +1384,52 @@ however, often measurable on other linked pairs.
   is not a cluster even though all sit within 0.6 of the middle), found by a two-pointer sweep over
   sorted splits. The window is contiguous, so [min, max] names its members exactly; a
   distance-to-median test could catch an outlier. The resolver is pure and unit-tested.
+
+### A low pair stands on it
+
+Below the localization edge a pair reads its own L/R split by energy onsets, on the premise that both
+sides run through near-identical chains and the onset's bias cancels
+([Energy onset links](#energy-onset-links)). It does not cancel where the far driver reaches the seat
+through another cabin than the near one does.
+
+- One pair of under-seat woofers, the same drivers in the same car, reads from 0.08 to 2.65 ms apart
+  over the archive's sessions, while that car's midranges read 1.40 to 1.59.
+- In a second cabin with under-seat midbasses the pair read 2.55 ms against 1.02 on the mids and 1.11
+  on the tweeters. The right midbass has a null at 250 Hz at the seat and stands half a turn against
+  the left one above 180 Hz, so its energy arrives late. The read passed its upper-half certificate
+  and pinned the lobe half a period (2 ms) wide, and the far junctions' sum took another 0.83 ms. The
+  right midbass stood 2.3 ms ahead of the cabin's geometry (3.63 ms between the two sides against 1.30
+  on the mids), the sides 110-125° apart from 125 to 180 Hz.
+
+So a pair that is not scene-lockable takes the cabin's geometry over its own read wherever that
+geometry is corroborated (`CrossSideLockTier.Tight`), on a latch or not, and is **held** on it within
+`SceneLockToleranceMs` as a localization pair is. `PolishFarSideJunctions` leaves it there. A lone
+donor or none changes nothing: the own read and its lobe pin stand.
+
+- **The judge is the pair's own sum**: L+R of the two sides over their power sum across the pair's
+  band (+3 dB in phase, 0 unrelated), the battery's `twin` line. The reference car's saved tunes hold
+  it within 0.1-0.3 dB of the most the pair can reach. The second cabin read +0.55 dB of a possible
+  +2.30 before, and +2.25 held. Scored as a junction is, by the dip-penalized loss, the same sum reads
+  −8.6 dB on the reference car's latest session, where the pair stands 0.1 ms from its saved tune, and
+  asks for a 1.3 ms move: a narrow notch where the two sides' levels cross is not what the pair is
+  tuned by.
+- **Why a hold and not a narrower pin.** Three widths were run. A quarter period around the geometry
+  changed no archived side (every earlier pick already lay inside it) and left the second cabin's
+  midbass 1.2 ms on the other side of the geometry, at the far junction's next lobe, the pair's sum at
+  +1.35 dB. An eighth of a period stopped it at the window's edge, 0.6 ms off: a clamp, not an optimum.
+  Held, it stands 0.15 ms from the owner's own estimate for that cabin, and the two measure alike
+  (+2.25 and +2.20 dB).
+- **What it costs.** In that cabin no delay serves both the pair and the far side's handover. Held, the
+  right midbass and mid meet out of phase (direct coherence −0.54) and their junction reads
+  −1.64 / −12.21 dB against −0.81 / −2.76. Both sub junctions gain (dips −1.86 → −0.78 on the left and
+  −1.71 → −0.58 on the right): the mono sub no longer splits the difference between two midbasses
+  2 ms apart. A phase filter on the far driver is the remedy there, not a delay.
+- **Field effect** (23 sessions, 46 sides, stereo run): 30 sides change, the far woofer by up to
+  0.6 ms. Against the sixteen saved tunes of the reference car that serve as references, the woofers'
+  L−R error goes from 0.31 to 0.29 ms on average, unevenly: the tunes that stand on the geometry
+  (1.7-1.8 ms, the latest among them) are met within 0.04-0.16 ms where the lobe pin left 0.1-0.5, and
+  four intermediate saves at 1.0-1.1 ms are missed by 0.6-0.7. Far junction dips mostly move by
+  0.2-0.9 dB either way. A single-side run has no far side and is unchanged.
 
 ## Scene lock
 
@@ -1389,12 +1440,15 @@ A Coarse target pins only the lobe, as for low pairs below.
 - **Localization band.** The target is measured only in the sub-band above
   `SceneLockLocalizationLowHz` (300 Hz), because low soft envelopes carry no localization. At least
   a third of an octave above that edge is required (80-310 Hz is not lockable).
-- **Low pairs** are pinned only to the lobe (half the tightest junction period). Their L/R split is
-  still physical (path difference), and a comb whose lobes differ by a dB must not choose it:
-  unchecked, it put one under-seat midbass at 0 ms and the other at 10.85 ms.
-- **TightLock** targets get ±T/4 instead of ±T/2. Where the pair's own direct arrivals were
-  unmeasurable, modes shape the junction sum too (its optimum sat 0.6 ms past every
-  geometry-consistent point), so multi-donor geometry gets the larger say. A lone donor keeps ±T/2.
+- **Low pairs** standing on their own read are pinned only to the lobe (half the tightest junction
+  period). Their L/R split is still physical (path difference), and a comb whose lobes differ by a dB
+  must not choose it: unchecked, it put one under-seat midbass at 0 ms and the other at 10.85 ms.
+  Where the cabin's geometry is corroborated they are held on it instead
+  ([A low pair stands on it](#a-low-pair-stands-on-it)).
+- **TightLock** targets above the localization edge get ±T/4 instead of ±T/2. Where the pair's own
+  direct arrivals were unmeasurable, modes shape the junction sum too (its optimum sat 0.6 ms past
+  every geometry-consistent point), so multi-donor geometry gets the larger say. A lone donor keeps
+  ±T/2.
 - **No reliable target.** The free joint-junction search remains.
 
 ## Post-descent passes
@@ -1501,6 +1555,9 @@ recover its own far-side junctions, by an eighth of the period of its highest ju
   0.14 dB worse (0.49 on the dip).
 - **The bridge has no reach.** It IS the scene: the far top stands at the user's delta to its twin, and
   the chain below it is what gets polished.
+- **Nor has a channel held on the cabin's geometry**
+  ([A low pair stands on it](#a-low-pair-stands-on-it)): the trim would spend on its own junctions
+  exactly what the hold refused them.
 - **No half-band may lose more than the trim gains**, per (junction, half-band) cell, the rule the
   stereo branch check and the mono co-move already apply. A period-long leash can sell a junction's
   upper half for its lower one: on the Passat's right 250 Hz split a −0.50 ms trim read +0.38 dB over

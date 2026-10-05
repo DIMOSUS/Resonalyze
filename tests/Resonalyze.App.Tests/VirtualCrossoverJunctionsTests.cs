@@ -55,6 +55,28 @@ public sealed class VirtualCrossoverJunctionsTests
         Assert.Equal(1_800, VirtualCrossoverJunctions.GetPairCrossoverHz(lower, upper));
     }
 
+    [Theory]
+    // Second-order corners 1.4 octaves apart are each 9 dB down halfway between them: both drivers still play there.
+    [InlineData(CrossoverFilterFamily.Butterworth, 12, 2_500, 6_800, 4_123)]
+    // The same spread on fourth-order slopes meets 18 dB down: a hole, and the junction stays named by the corner.
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 24, 110, 290, 110)]
+    public void GetPairCrossoverHz_CornersAnOctaveOrMoreApart_HandOverWhereTheSlopesCrossAboveTheFloor(
+        CrossoverFilterFamily family, int slope, double lowPassHz, double highPassHz, double expectedHz)
+    {
+        var lower = new VirtualCrossoverChannelSettings
+        {
+            CrossoverKind = CrossoverKind.LowPass,
+            LowPassEdge = new CrossoverEdge(family, lowPassHz, slope)
+        };
+        var upper = new VirtualCrossoverChannelSettings
+        {
+            CrossoverKind = CrossoverKind.HighPass,
+            HighPassEdge = new CrossoverEdge(family, highPassHz, slope)
+        };
+
+        Assert.Equal(expectedHz, VirtualCrossoverJunctions.GetPairCrossoverHz(lower, upper), 0);
+    }
+
     [Fact]
     public void GetPairCrossoverHz_FallsBackToUppersHighPass()
     {

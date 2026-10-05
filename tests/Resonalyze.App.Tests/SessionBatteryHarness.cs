@@ -151,6 +151,11 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                 project, channels, side, name, report, stereo, log));
         }
 
+        if (stereo != null)
+        {
+            TwinSums(channels, stereo, name, report);
+        }
+
         foreach (string line in log.ToString().Split('\n'))
         {
             if (line.Contains("phase lobe") || line.Contains("promoted") ||
@@ -169,6 +174,103 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
 
         report.AppendLine($"    ({stopwatch.Elapsed.TotalSeconds:0.0} s)");
         return comparisons;
+    }
+
+    /// <summary>How the two sides of each low stereo pair sum over the pair's own band: L+R against their power sum
+    /// (+3 dB in phase, 0 unrelated), saved and proposed, and where the far side would have to stand for the most. The
+    /// summation loss judges one side's junctions and cannot see this. See docs/tech/auto-alignment.md#a-low-pair-stands-on-it.</summary>
+    private static void TwinSums(
+        List<VirtualCrossoverChannel> channels,
+        StereoProposal stereo,
+        string name,
+        StringBuilder report)
+    {
+        const double HighestHz = 600.0;
+        const int Bins = 48;
+
+        List<ProcessedChannel> Side(bool right, bool proposed)
+        {
+            foreach (VirtualCrossoverChannel member in channels)
+            {
+                member.ActiveRight = right;
+            }
+
+            return Process(
+                channels.Where(channel =>
+                    channel.Pair.Enabled && !channel.Pair.Bypass && !channel.Pair.Mono &&
+                    channel.TransferImpulseResponse != null).ToList(),
+                channel => proposed ? stereo.For(channel, right) : null);
+        }
+
+        // A quarter second with a raised-cosine tail, read at the band's own frequencies.
+        static Complex[] Spectrum(ProcessedChannel item, double[] frequencies)
+        {
+            int count = Math.Min(item.ImpulseResponse.Length, item.SampleRate / 4);
+            int fade = count / 4;
+            return Array.ConvertAll(frequencies, hz =>
+            {
+                double step = -2.0 * Math.PI * hz / item.SampleRate;
+                Complex sum = Complex.Zero;
+                for (int i = 0; i < count; i++)
+                {
+                    double window = i < count - fade
+                        ? 1.0
+                        : 0.5 * (1.0 + Math.Cos(Math.PI * (i - (count - fade)) / fade));
+                    sum += item.ImpulseResponse[i].Real * window * Complex.FromPolarCoordinates(1.0, step * i);
+                }
+
+                return sum;
+            });
+        }
+
+        static double GainDb(Complex[] left, Complex[] right, double[] frequencies, double rightLaterMs)
+        {
+            double sum = 0.0;
+            double power = 0.0;
+            for (int bin = 0; bin < frequencies.Length; bin++)
+            {
+                Complex moved = right[bin] * Complex.FromPolarCoordinates(
+                    1.0, -2.0 * Math.PI * frequencies[bin] * rightLaterMs / 1000.0);
+                sum += Math.Pow((left[bin] + moved).Magnitude, 2);
+                power += Math.Pow(left[bin].Magnitude, 2) + Math.Pow(right[bin].Magnitude, 2);
+            }
+
+            return 10.0 * Math.Log10(sum / power);
+        }
+
+        (List<ProcessedChannel> Left, List<ProcessedChannel> Right) saved = (Side(false, false), Side(true, false));
+        (List<ProcessedChannel> Left, List<ProcessedChannel> Right) proposed = (Side(false, true), Side(true, true));
+        foreach (ProcessedChannel savedLeft in saved.Left)
+        {
+            VirtualCrossoverChannel channel = savedLeft.Channel;
+            ProcessedChannel? savedRight = saved.Right.Find(item => item.Channel == channel);
+            ProcessedChannel? proposedLeft = proposed.Left.Find(item => item.Channel == channel);
+            ProcessedChannel? proposedRight = proposed.Right.Find(item => item.Channel == channel);
+            (double lowHz, double highHz) = VirtualCrossoverJunctions.GetChannelBand(savedLeft.Settings);
+            lowHz = Math.Max(lowHz, 30.0);
+            highHz = Math.Min(highHz, HighestHz);
+            if (savedRight == null || proposedLeft == null || proposedRight == null || highHz < lowHz * 1.5)
+            {
+                continue;
+            }
+
+            double[] frequencies = Enumerable.Range(0, Bins)
+                .Select(i => lowHz * Math.Pow(highHz / lowHz, i / (Bins - 1.0)))
+                .ToArray();
+            double savedGain = GainDb(
+                Spectrum(savedLeft, frequencies), Spectrum(savedRight, frequencies), frequencies, 0.0);
+            Complex[] left = Spectrum(proposedLeft, frequencies);
+            Complex[] right = Spectrum(proposedRight, frequencies);
+            double proposedGain = GainDb(left, right, frequencies, 0.0);
+            (double bestGain, double bestMs) = Enumerable.Range(-120, 241)
+                .Select(tick => tick * 0.05)
+                .Select(laterMs => (GainDb(left, right, frequencies, laterMs), laterMs))
+                .Max();
+            report.AppendLine(FormattableString.Invariant(
+                $"    twin {channel.Name} {lowHz:0}-{highHz:0} Hz: L+R over the power sum, saved {savedGain:+0.00;-0.00} dB, proposed {proposedGain:+0.00;-0.00} dB; best {bestGain:+0.00;-0.00} dB with the right side {bestMs:+0.00;-0.00} ms off the proposal"));
+            report.AppendLine(FormattableString.Invariant(
+                $"TWIN\t{name}\t{channel.Name}\t{lowHz:0}\t{highHz:0}\t{savedGain:0.00}\t{proposedGain:0.00}\t{bestGain:0.00}\t{bestMs:0.00}"));
+        }
     }
 
     /// <summary>One side judged: the saved tune against the proposal, by the panel's own metric.</summary>

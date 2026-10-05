@@ -2876,6 +2876,14 @@ that is not in the car. A view whose chain holds no junction at all drops the
 and here there is none to measure. The Sum itself is still drawn — the drivers
 do both play, and their combined output is a real thing to look at.
 
+The slopes decide what a hole is. A midrange low-passed at 2.5 kHz beside a
+tweeter high-passed at 6.8 kHz, both on second-order slopes, are each about
+9 dB down halfway between the corners: they do hand over, and that junction is
+read where the two slopes cross (about 4.1 kHz here), not at either corner —
+in the read-out, in the Correlation list and by Auto delay alike. The rule is
+corners an octave or more apart whose slopes cross no more than 12 dB down.
+Corners closer than an octave keep the junction at the lower driver's low-pass.
+
 The **total** needs more than one junction somewhere: it needs the set to be one
 unbroken chain. Rear + Sub on a car with two subwoofers is the case that
 separates the two — the subwoofers cross each other for real, so their junction
@@ -4145,7 +4153,18 @@ such a read `energy onsets`; it needs 30 dB of SNR on both sides, below which
 the pair is read by first peaks on both. The junction searches and their
 seeds keep the first arrivals: a link compares one driver pair through
 near-identical chains, where the onset's own bias cancels, which the
-front-predicting junction machinery cannot rely on. The **scene
+front-predicting junction machinery cannot rely on. A low pair's own arrival
+is still the cabin's least reliable read: the same under-seat woofers measured
+in one car read anywhere from 0.1 to 2.6 ms apart from session to session,
+where its midranges read 1.4 to 1.6. So where two other pairs of the cabin
+read clean arrivals and agree on how much later the far side arrives, a pair
+below the localization region takes that figure instead of its own and is
+**held** on it, as a pinned pair is; it is not trimmed afterwards. Half a
+period of freedom around a wrong figure had put one cabin's far midbass 2.3 ms
+ahead of its twin, the two sides a third of a turn apart through 125-180 Hz.
+The price can be the far side's own handover: where the far driver's phase is
+turned against its twin's, no delay serves both, the run keeps the two sides
+together, and the junction row shows what that handover pays. The **scene
 offset** is entered as a non-negative magnitude — how far the far side leads —
 so switching LHD/RHD never means re-entering a sign, and the level tilt is
 entered the same way, as a cut on the near side. The gain balance itself is
@@ -4155,7 +4174,8 @@ reaches the localization region are pinned to the scene, because the image
 outranks the handover there; a final scene-preserving pass may then shift both
 sides of a pair by one shared delta to recover what the pin cost, except a pair
 at a junction the phase placed, which stays where the phase put it. Each far-side
-channel below the bridge may also leave its own scene position to buy back its
+channel below the bridge, unless it is held on the cabin's geometry, may also
+leave its own scene position to buy back its
 junctions' summation, by an eighth of the period of its highest crossover: a
 few hundredths of a millisecond for a midrange under a 2 kHz split, half a
 millisecond for a midbass under a 200 Hz one, where the image does not

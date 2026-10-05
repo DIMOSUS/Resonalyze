@@ -13,11 +13,59 @@ internal static class VirtualCrossoverJunctions
         return highHz > lowHz ? (lowHz, highHz) : (20, 20_000);
     }
 
-    /// <summary>Lower low-pass, else upper high-pass, else geometric mean of band centres.</summary>
+    /// <summary>How far down two slopes may cross and still hand over a gap. See docs/tech/virtual-dsp-analysis.md#measured-bands-and-junctions.</summary>
+    public const double GapHandoverFloorDb = -12;
+
+    private const int GapHandoverSteps = 48;
+
+    // High enough that the bilinear warp leaves an audio-band slope where its corner puts it.
+    private const double GapHandoverRateHz = 192_000;
+
+    /// <summary>Where the slopes of a low-pass and a high-pass set an octave or more apart cross; null where the corners stand
+    /// closer, or the slopes meet below <see cref="GapHandoverFloorDb"/>.</summary>
+    public static double? GapHandoverHz(
+        VirtualCrossoverChannelSettings lower,
+        VirtualCrossoverChannelSettings upper)
+    {
+        CrossoverSpec lowerSpec = lower.EffectiveCrossover;
+        CrossoverSpec upperSpec = upper.EffectiveCrossover;
+        if (lowerSpec.LowPassHz is not { } lowPassHz ||
+            upperSpec.HighPassHz is not { } highPassHz ||
+            highPassHz < 2 * lowPassHz)
+        {
+            return null;
+        }
+
+        var lowPass = new CrossoverSpec(CrossoverKind.LowPass, LowPassEdge: lowerSpec.LowPassEdge);
+        var highPass = new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: upperSpec.HighPassEdge);
+        double crossingHz = lowPassHz;
+        double crossingLevel = 0;
+        for (int step = 0; step <= GapHandoverSteps; step++)
+        {
+            double hz = lowPassHz * Math.Pow(highPassHz / lowPassHz, (double)step / GapHandoverSteps);
+            double level = Math.Min(
+                CrossoverFilter.Response(lowPass, hz, GapHandoverRateHz).Magnitude,
+                CrossoverFilter.Response(highPass, hz, GapHandoverRateHz).Magnitude);
+            if (level > crossingLevel)
+            {
+                crossingLevel = level;
+                crossingHz = hz;
+            }
+        }
+
+        return 20 * Math.Log10(crossingLevel) >= GapHandoverFloorDb ? crossingHz : null;
+    }
+
+    /// <summary>Where a gap hands over, else lower low-pass, else upper high-pass, else geometric mean of band centres.</summary>
     public static double GetPairCrossoverHz(
         VirtualCrossoverChannelSettings lower,
         VirtualCrossoverChannelSettings upper)
     {
+        if (GapHandoverHz(lower, upper) is { } gapHz)
+        {
+            return gapHz;
+        }
+
         if (lower.EffectiveLowPassHz is { } lowerLowPass)
         {
             return lowerLowPass;

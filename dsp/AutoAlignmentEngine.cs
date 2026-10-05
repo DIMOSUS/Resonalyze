@@ -3050,14 +3050,10 @@ public static class AutoAlignmentEngine
                     anyLatch = true;
                 }
             }
-            if (measured.Reads is not { } arrivals)
+            // The cabin's L/R geometry from the other cleanly measured pairs. See docs/tech/auto-alignment.md#donor-geometry.
+            ((double PathSplitMs, CrossSideLockTier Tier, int Corroborating,
+                double ClusterLowMs, double ClusterHighMs) Resolved, int Donors, string Names) DonorGeometry()
             {
-                if (!anyLatch)
-                {
-                    return null;
-                }
-
-                // Last rung: donor L/R geometry from other cleanly measured pairs. See docs/tech/auto-alignment.md#donor-geometry.
                 var donorSplits = new List<(double SplitMs, string Names)>();
                 if (plan.PairLinks != null)
                 {
@@ -3134,15 +3130,33 @@ public static class AutoAlignmentEngine
                     ResolveLatchedPathSplit(
                         donorSplits.Select(item => item.SplitMs).ToList(),
                         CrossSideDonorAgreementMs);
+                // Name only donors inside the resolver's winning span (a distance-to-median test can catch outliers).
+                return (resolved, donorSplits.Count, string.Join(", ", donorSplits
+                    .Where(item => item.SplitMs >= resolved.ClusterLowMs &&
+                        item.SplitMs <= resolved.ClusterHighMs)
+                    .Select(item => item.Names)));
+            }
+
+            if (measured.Reads is not { } arrivals)
+            {
+                if (!anyLatch)
+                {
+                    return null;
+                }
+
+                // Last rung: the cabin's geometry stands in for the pair's unreadable arrivals.
+                ((double PathSplitMs, CrossSideLockTier Tier, int Corroborating,
+                    double ClusterLowMs, double ClusterHighMs) resolved, int donors, string donorNames) =
+                    DonorGeometry();
                 if (resolved.Tier == CrossSideLockTier.None)
                 {
                     // No corroborated geometry: withdraw the prior rather than hard-lock to a fabricated one.
                     log.AppendLine(
                         $"  cross-side prior {rightChannel.Name}: withdrawn — " +
                         "direct arrivals unmeasurable and no linked pair gives a " +
-                        (donorSplits.Count == 0
+                        (donors == 0
                             ? "clean L/R geometry reference"
-                            : $"corroborated one ({donorSplits.Count} donor(s) disagree)"));
+                            : $"corroborated one ({donors} donor(s) disagree)"));
                     return null;
                 }
 
@@ -3151,19 +3165,31 @@ public static class AutoAlignmentEngine
                 double latchedTarget =
                     leftDelayMs - resolved.PathSplitMs - plan.SceneOffsetMs;
                 bool tight = resolved.Tier == CrossSideLockTier.Tight;
-                // Name only donors inside the resolver's winning span (a distance-to-median test can catch outliers).
-                string donorNames = string.Join(", ", donorSplits
-                    .Where(item => item.SplitMs >= resolved.ClusterLowMs &&
-                        item.SplitMs <= resolved.ClusterHighMs)
-                    .Select(item => item.Names));
                 log.AppendLine(
                     $"  cross-side prior {rightChannel.Name}: target " +
                     $"{latchedTarget:0.000} ms — settled {link.Left.Name} shifted " +
                     $"by the {(tight ? $"{resolved.Corroborating}-pair corroborated" : "lone")} " +
                     $"L/R arrival split {resolved.PathSplitMs:+0.000;-0.000} ms from " +
                     $"{donorNames} (direct arrivals unmeasurable; " +
-                    $"{(tight ? "quarter" : "half")}-period lock)");
+                    $"{(!tight ? "half-period lock" : IsSceneLockable(link) ? "quarter-period lock" : "held on the geometry")})");
                 return (latchedTarget, true, tight);
+            }
+
+            // A low pair's own arrival is the cabin's least reliable read. See docs/tech/auto-alignment.md#a-low-pair-stands-on-it.
+            if (!IsSceneLockable(link) &&
+                DonorGeometry() is { Resolved.Tier: CrossSideLockTier.Tight } cabin)
+            {
+                double twinDelayMs = alignment.GetValueOrDefault(link.Left).DelayMs;
+                double ownSplitMs = arrivals.Right.FirstArrivalDelayMilliseconds -
+                    (arrivals.Left.FirstArrivalDelayMilliseconds - twinDelayMs);
+                double cabinTarget = twinDelayMs - cabin.Resolved.PathSplitMs - plan.SceneOffsetMs;
+                log.AppendLine(
+                    $"  cross-side prior {rightChannel.Name}: target {cabinTarget:0.000} ms — " +
+                    $"settled {link.Left.Name} shifted by the {cabin.Resolved.Corroborating}-pair corroborated " +
+                    $"L/R arrival split {cabin.Resolved.PathSplitMs:+0.000;-0.000} ms from {cabin.Names} " +
+                    $"(the pair's own {usedLowHz:0}-{usedHighHz:0} Hz read, {ownSplitMs:+0.000;-0.000} ms, " +
+                    "set aside; held on the geometry)");
+                return (cabinTarget, true, true);
             }
 
             // Unverified read: pins only the lobe (Coarse), never the tight tolerance.
@@ -3185,6 +3211,7 @@ public static class AutoAlignmentEngine
             return (target, !measured.Verified, false);
         }
 
+        var geometryHeld = new HashSet<IAlignmentChannel>();
         void AlignRight(int index, int neighborIndex, AlignmentJunction pair)
         {
             IAlignmentChannel channel = rightByBand[index].Channel;
@@ -3223,10 +3250,17 @@ public static class AutoAlignmentEngine
                     pair.BandLowHz,
                     pair.BandHighHz);
             double? crossTarget = cross?.TargetMs;
-            // TightLock gets ±T/4: with direct arrivals unmeasurable, modes shape the sum too. A lone donor keeps ±T/2.
+            // Held on the cabin's corroborated geometry, a low pair's own junction may not buy it off its twin.
+            bool heldOnGeometry = !lockable && cross is { TightLock: true };
+            if (heldOnGeometry)
+            {
+                geometryHeld.Add(channel);
+            }
+
+            // Above the localization edge a TightLock gets ±T/4: with direct arrivals unmeasurable, modes shape the sum too. A lone donor keeps ±T/2.
             double? sceneLock = cross is not { } resolved
                 ? null
-                : lockable && !resolved.Coarse
+                : heldOnGeometry || (lockable && !resolved.Coarse)
                     ? SceneLockToleranceMs
                     : (resolved.TightLock ? 250.0 : 500.0) / Math.Max(
                         pair.CrossoverHz,
@@ -3281,7 +3315,7 @@ public static class AutoAlignmentEngine
             bool followed =
                 PolishFarSideJunctions(
                     plan, rightByBand, allChannels, reprocess, alignment, log,
-                    maxDelayMs, decisions, polishSpentMs) &&
+                    maxDelayMs, decisions, polishSpentMs, geometryHeld) &&
                 ComoveMonoChannels(
                     plan, reprocess, alignment, log, allChannels, maxDelayMs, decisions, afterPolish: true);
             if (!followed)
@@ -3952,7 +3986,8 @@ public static class AutoAlignmentEngine
         StringBuilder log,
         double maxDelayMs,
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions,
-        Dictionary<IAlignmentChannel, double> spentMs)
+        Dictionary<IAlignmentChannel, double> spentMs,
+        IReadOnlySet<IAlignmentChannel>? geometryHeld = null)
     {
         bool moved = false;
         foreach (AlignmentSnapshot entry in rightByBand
@@ -3966,6 +4001,13 @@ public static class AutoAlignmentEngine
             IAlignmentChannel channel = entry.Channel;
             if (plan.MonoChannels.Contains(channel))
             {
+                continue;
+            }
+
+            if (geometryHeld?.Contains(channel) == true)
+            {
+                log.AppendLine(
+                    $"Far-side polish {channel.Name}: none, held on the cabin's geometry");
                 continue;
             }
 

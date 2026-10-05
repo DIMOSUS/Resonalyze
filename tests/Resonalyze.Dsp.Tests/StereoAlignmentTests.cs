@@ -62,7 +62,8 @@ public sealed class StereoAlignmentTests
         StringBuilder Log, int ReprocessCount)>> StereoRuns = new();
 
     /// <summary>Mono sub plus woof/mid/twr per side; the right side arrives 1.5 ms later. <paramref name="rightMidEchoMs"/> adds a stronger
-    /// later lobe (correlation chases it, the scene follows the first); <paramref name="reprocessCount"/>[0] receives the reprocess count.</summary>
+    /// later lobe (correlation chases it, the scene follows the first); <paramref name="rightWoofLateCopyMs"/> puts most of the
+    /// right woofer's energy that far behind its front; <paramref name="reprocessCount"/>[0] receives the reprocess count.</summary>
     private static (TestChannel Sub,
         TestChannel[] Left, TestChannel[] Right,
         Dictionary<IAlignmentChannel, AlignmentOverride> Alignment,
@@ -78,17 +79,18 @@ public sealed class StereoAlignmentTests
             double rightMidAmplitude = 1.0,
             int[]? reprocessCount = null,
             double globalLateMs = 0,
-            bool mirrorPlan = false)
+            bool mirrorPlan = false,
+            double rightWoofLateCopyMs = 0)
     {
         string key = string.Join(";", new object[]
         {
             sceneOffsetMs, rightLateMs, leftTopAmplitude, rightTopAmplitude,
             linkBands == null ? "-" : string.Join(",", linkBands.Select(band => band?.ToString() ?? "null")),
-            rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan
+            rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan, rightWoofLateCopyMs
         });
         var run = StereoRuns.GetOrAdd(key, _ => new(() => RunStereoOnce(
             sceneOffsetMs, rightLateMs, leftTopAmplitude, rightTopAmplitude, linkBands,
-            rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan))).Value;
+            rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan, rightWoofLateCopyMs))).Value;
         if (reprocessCount != null)
         {
             reprocessCount[0] = run.ReprocessCount;
@@ -113,7 +115,8 @@ public sealed class StereoAlignmentTests
             double leftLateMs,
             double rightMidAmplitude,
             double globalLateMs,
-            bool mirrorPlan)
+            bool mirrorPlan,
+            double rightWoofLateCopyMs)
     {
         int reprocessCount = 0;
         var sub = new TestChannel(
@@ -125,7 +128,10 @@ public sealed class StereoAlignmentTests
         var leftTwr = new TestChannel(
             "L twr", ImpulseAtMs(0.0 + leftLateMs + globalLateMs, leftTopAmplitude));
         var rightWoof = new TestChannel(
-            "R woof", ImpulseAtMs(1.0 + rightLateMs + globalLateMs));
+            "R woof",
+            rightWoofLateCopyMs > 0
+                ? ImpulseWithEcho(1.0 + rightLateMs + globalLateMs, 1.0, rightWoofLateCopyMs, 4.0)
+                : ImpulseAtMs(1.0 + rightLateMs + globalLateMs));
         Complex[] rightMidIr = ImpulseAtMs(
             0.4 + rightLateMs + globalLateMs,
             rightMidEchoMs > 0 ? 0.6 : rightMidAmplitude);
@@ -557,12 +563,13 @@ public sealed class StereoAlignmentTests
         [Fact]
         public void ComputeStereo_PureLowBandPairIsLockedToItsArrivalLobe()
         {
-            // The woofer link's band never reaches the localization region: locked to the cross-side lobe, not the tight scene pin.
+            // The woofer link's band never reaches the localization region, and one clean pair beside it is not the
+            // cabin's geometry: locked to the cross-side lobe of its own read, not the tight scene pin.
             (TestChannel _, TestChannel[] _, TestChannel[] _,
                 Dictionary<IAlignmentChannel, AlignmentOverride> _,
                 StringBuilder log) = RunStereo(
                     sceneOffsetMs: 0.25,
-                    linkBands: UserLinkBands);
+                    linkBands: [(80, 175), (400, 2_500), null]);
 
             string[] lines = log.ToString().Split('\n');
             string woofLine = Array.Find(lines,
@@ -570,10 +577,27 @@ public sealed class StereoAlignmentTests
             Assert.NotNull(woofLine);
             Assert.Contains("(cross-side)", woofLine);
             Assert.Contains("SCENE-LOCKED", woofLine);
+            Assert.DoesNotContain($"SCENE-LOCKED ±{0.05:0.00}", woofLine);
             string midLine = Array.Find(lines,
                 line => line.StartsWith("Channel R mid:"))!;
             Assert.NotNull(midLine);
-            Assert.Contains("SCENE-LOCKED", midLine);
+            Assert.Contains($"SCENE-LOCKED ±{0.05:0.00}", midLine);
+        }
+
+        [Fact]
+        public void ComputeStereo_ALowPairWhoseFarSideArrivesLate_StandsOnTheGeometryTheOtherPairsAgreeOn()
+        {
+            // The right woofer's front arrives 1.5 ms after the left one, as the mids and tweeters do, but four fifths
+            // of its energy follows 2.5 ms behind: its own read puts the pair two milliseconds further apart.
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) = RunStereo(
+                    sceneOffsetMs: 0.25,
+                    linkBands: UserLinkBands,
+                    rightWoofLateCopyMs: 2.5);
+
+            double delta =
+                FinalArrivalMs(left[0], 1.0, alignment) - FinalArrivalMs(right[0], 2.5, alignment);
+            Assert.InRange(delta, 0.15, 0.35);
         }
 
         [Fact]
@@ -1445,7 +1469,8 @@ public sealed class StereoAlignmentTests
             int rounds = 1,
             double midOffsetMs = 0.0,
             double? cabinCopyTwrLateMs = null,
-            List<bool>? followed = null)
+            List<bool>? followed = null,
+            bool midHeldOnGeometry = false)
     {
         // The cabin copy follows 5 ms behind the fronts, twice as loud and with a skew of its own: inside the
         // summation's window, past the phase's.
@@ -1496,7 +1521,8 @@ public sealed class StereoAlignmentTests
         {
             bool moved = AutoAlignmentEngine.PolishFarSideJunctions(
                 plan, snapshots, snapshots, Reprocess, alignment, log,
-                AutoAlignmentEngine.DefaultMaxDelayMs, decisions: null, spentMs);
+                AutoAlignmentEngine.DefaultMaxDelayMs, decisions: null, spentMs,
+                midHeldOnGeometry ? new HashSet<IAlignmentChannel> { farMid } : null);
             followed?.Add(moved);
         }
         return (alignment[farMid].DelayMs, alignment[farTwr].DelayMs, log.ToString());
@@ -1553,6 +1579,16 @@ public sealed class StereoAlignmentTests
             $"the junction skew survived the polish ({residualMs:0.000} ms)");
         Assert.Contains("Far-side polish", log);
         Assert.Contains("off the scene position", log);
+    }
+
+    [Fact]
+    public void PolishFarSideJunctions_AChannelHeldOnTheCabinsGeometry_StaysThere()
+    {
+        // The same skew the polish claws back above: the hold refused the junction that move already.
+        (double midDelay, double twrDelay, _) = RunFarSidePolish(0.02, midHeldOnGeometry: true);
+
+        Assert.Equal(1.0, midDelay);
+        Assert.Equal(1.0, twrDelay);
     }
 
     [Fact]

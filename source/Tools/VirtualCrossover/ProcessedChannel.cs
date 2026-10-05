@@ -143,7 +143,7 @@ internal static class ProcessedChannels
             .OrderBy(item => VirtualCrossoverJunctions.BandCenterHz(item.Settings))
             .ToList();
 
-    /// <summary>Band neighbours that really hand over: both channels must play inside the junction's octave-each-way window.</summary>
+    /// <summary>Band neighbours that really hand over: both play inside the junction's octave-each-way window, or their slopes cross a gap above the floor.</summary>
     public static List<AdjacentPair> GetAdjacentPairs(IReadOnlyList<ProcessedChannel> byBand)
     {
         var pairs = new List<AdjacentPair>();
@@ -152,8 +152,10 @@ internal static class ProcessedChannels
             double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
                 byBand[i].Settings, byBand[i + 1].Settings);
             (double bandLowHz, double bandHighHz) = VirtualCrossoverJunctions.OverlapBand(pairHz);
-            if (!PlaysWithin(byBand[i], bandLowHz, bandHighHz) ||
-                !PlaysWithin(byBand[i + 1], bandLowHz, bandHighHz))
+            if ((!PlaysWithin(byBand[i], bandLowHz, bandHighHz) ||
+                    !PlaysWithin(byBand[i + 1], bandLowHz, bandHighHz)) &&
+                VirtualCrossoverJunctions.GapHandoverHz(
+                    byBand[i].Settings, byBand[i + 1].Settings) == null)
             {
                 continue;
             }

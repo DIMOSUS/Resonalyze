@@ -185,6 +185,21 @@ by the incoherent sum of exactly the summed channels.
   at 110 Hz beside a rear fill starting at 290 Hz hands nothing across. A pair is a junction
   only when both channels play inside the octave-each-way window the junction is measured over;
   this reuses the measurement window instead of inventing a gap tolerance.
+- `GapHandoverHz`: slopes decide what a hole is, and that window cannot see them. A midrange to
+  2.5 kHz beside a tweeter from 6.8 kHz, both second-order, are each 9 dB down halfway between the
+  corners and do hand over; fourth-order slopes over the same spread (the sub and rear fill above)
+  meet 18 dB down. For corners an octave or more apart the function scans between them for where the
+  two slopes cross. At or above `GapHandoverFloorDb` (−12 dB: two drivers in phase sum 6 dB under the
+  passband) that frequency is the junction's (`GetPairCrossoverHz`), for the panel and for Auto
+  delay alike; below it the pair is a hole as before. On the field case the junction had been absent
+  from the panel while Auto delay aligned the pair in 1250-5000 Hz, an octave around the lower
+  corner where the tweeter is 6 to 29 dB down. Judged where the slopes cross (2062-8246 Hz), that
+  alignment read −1.69 / −8.77 dB with a direct coherence of 0.15 on the reference side; aligned
+  there it reads −1.02 / −5.95 and 0.71. The far side, scene-locked to the reference one, gives a
+  little back (−1.38 / −4.47 to −1.72 / −4.40).
+- Corners closer than an octave keep the junction at the lower low-pass. Centring every unequal pair
+  between its corners was measured: 22 of 46 archived sides moved, lobes and polarities among them,
+  for junctions whose corners stand less than half an octave apart.
 - `IsContinuousChain`: the reference car's Rear + Sub view has two subwoofers that genuinely
   cross (below 50 Hz into 50–110 Hz) and a rear fill from 290 Hz. Per-junction figures are real;
   a total over the set is not, so no total is reported unless the set is one chain.

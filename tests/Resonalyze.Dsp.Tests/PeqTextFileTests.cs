@@ -133,10 +133,41 @@ public sealed class PeqTextFileTests
         Assert.Equal(6.0, curve.Bands[0].Q, 6);
     }
 
+    // APO turns a width into alpha = sin w0 * sinh(ln2 / 2 * BW * w0 / sin w0) at its own rate (filters/BiQuad.cpp); read at
+    // that rate, the bell is the biquad APO plays, which the analog relation misses by 8.63 against 1.62 at 20 kHz.
+    [Theory]
+    [InlineData(100.0)]
+    [InlineData(5_000.0)]
+    [InlineData(10_000.0)]
+    [InlineData(20_000.0)]
+    public void TryParse_ReadsABellStatedInOctaves_AsTheBiquadApoBuildsAtThatRate(double frequencyHz)
+    {
+        const double rate = 48_000;
+        const double octaves = 0.167;
+        const double gainDb = 6;
+        string line = string.Create(
+            CultureInfo.InvariantCulture, $"Filter: ON PEQ Fc {frequencyHz} Hz Gain {gainDb} dB BW Oct {octaves}\n");
+
+        Assert.True(PeqTextFile.TryParse(line, rate, out EqualizationCurve curve));
+        BiquadCoefficients read = PeqBiquad.Compute(Assert.Single(curve.Bands), rate);
+
+        double w0 = 2 * Math.PI * frequencyHz / rate;
+        double sn = Math.Sin(w0);
+        double cs = Math.Cos(w0);
+        double alpha = sn * Math.Sinh(Math.Log(2) / 2 * octaves * w0 / sn);
+        double a = Math.Pow(10, gainDb / 40);
+        double a0 = 1 + alpha / a;
+        Assert.Equal((1 + alpha * a) / a0, read.B0, 12);
+        Assert.Equal(-2 * cs / a0, read.B1, 12);
+        Assert.Equal((1 - alpha * a) / a0, read.B2, 12);
+        Assert.Equal(2 * cs / a0, read.A1, 12);
+        Assert.Equal(-(1 - alpha / a) / a0, read.A2, 12);
+    }
+
     [Fact]
     public void Parse_ReadsABellWhoseWidthIsStatedInOctaves()
     {
-        // APO's reference example; Q = sqrt(2^n) / (2^n - 1) at n = 0.167 is 8.634.
+        // APO's reference example. Without a rate the width reads by the analog relation, sqrt(2^n) / (2^n - 1).
         EqualizationCurve curve = PeqTextFile.Parse("Filter: ON PEQ Fc 100 Hz Gain 1.0 dB BW Oct 0.167\n");
 
         PeqBand band = Assert.Single(curve.Bands);

@@ -75,7 +75,10 @@ public static class PeqTextFile
             : new EqualizationCurve(Array.Empty<PeqBand>());
 
     /// <summary>True when a Preamp or well-formed Filter line was recognised (a preamp-only file is a valid profile).</summary>
-    public static bool TryParse(string text, out EqualizationCurve curve)
+    public static bool TryParse(string text, out EqualizationCurve curve) =>
+        TryParse(text, double.PositiveInfinity, out curve);
+
+    public static bool TryParse(string text, double sampleRateHz, out EqualizationCurve curve)
     {
         ArgumentNullException.ThrowIfNull(text);
 
@@ -147,7 +150,7 @@ public static class PeqTextFile
 
             // The band limit caps the filters kept, not the file read: a Preamp or Channel line after it still counts.
             if (IsFilterKeyword(tokens[0]) &&
-                TryParseFilter(tokens, out PeqBand band))
+                TryParseFilter(tokens, sampleRateHz, out PeqBand band))
             {
                 if (bands.Count < EqualizationCurve.MaxBandCount)
                 {
@@ -171,7 +174,7 @@ public static class PeqTextFile
     }
 
     // Gain may be absent only on an all-pass; Q only on a shelf (read at DefaultShelfQ) or on a bell stating BW Oct.
-    private static bool TryParseFilter(string[] tokens, out PeqBand band)
+    private static bool TryParseFilter(string[] tokens, double sampleRateHz, out PeqBand band)
     {
         band = default;
 
@@ -196,7 +199,7 @@ public static class PeqTextFile
         {
             if (type == PeqBandType.Peaking && TryReadOctaveBandwidth(tokens, out double octaves))
             {
-                q = QFromOctaves(octaves);
+                q = QFromOctaves(octaves, frequencyHz, sampleRateHz);
             }
             else if (type.IsShelving())
             {
@@ -237,10 +240,12 @@ public static class PeqTextFile
         return false;
     }
 
-    private static double QFromOctaves(double octaves)
+    // APO realizes a width as alpha = sin w0 · sinh(ln2/2 · BW · w0/sin w0) at its own rate; this is the Q with that alpha.
+    private static double QFromOctaves(double octaves, double frequencyHz, double sampleRateHz)
     {
-        double ratio = Math.Pow(2.0, octaves);
-        return Math.Sqrt(ratio) / (ratio - 1.0);
+        double w0 = 2.0 * Math.PI * frequencyHz / sampleRateHz;
+        double warp = w0 == 0 ? 1.0 : w0 / Math.Sin(w0);
+        return 1.0 / (2.0 * Math.Sinh(Math.Log(2.0) / 2.0 * octaves * warp));
     }
 
     // A shelf keyword followed by a number (LS 6dB, LSC 10.8 dB) uses a corner/slope parameterisation and is skipped.

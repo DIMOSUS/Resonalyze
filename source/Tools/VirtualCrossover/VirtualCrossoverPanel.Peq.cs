@@ -222,7 +222,7 @@ public partial class VirtualCrossoverPanel
         try
         {
             // An unrecognised file would silently clear the channel's PEQ below.
-            if (!chosen.TryImport(File.ReadAllText(dialog.FileName), out curve))
+            if (!chosen.TryImport(File.ReadAllText(dialog.FileName), session.ProcessorSampleRateHz, out curve))
             {
                 ShowError(
                     "PEQ could not be imported.",

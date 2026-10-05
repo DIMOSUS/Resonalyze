@@ -21,7 +21,8 @@ public sealed class EqWizardImportExportCoordinatorTests
         EqWizardFileResult<EqualizationCurve> import = coordinator.Import(
             new EqWizardImportRequest(
                 "profile.txt",
-                coordinator.ResolveImportTarget(1)));
+                coordinator.ResolveImportTarget(1),
+                48_000));
 
         Assert.True(export.Success);
         Assert.True(import.Success);
@@ -90,7 +91,8 @@ public sealed class EqWizardImportExportCoordinatorTests
         EqWizardFileResult<EqualizationCurve> result = coordinator.Import(
             new EqWizardImportRequest(
                 "profile.txt",
-                coordinator.ResolveImportTarget(1)));
+                coordinator.ResolveImportTarget(1),
+                48_000));
 
         Assert.False(result.Success);
         Assert.Same(expected, result.Exception);
@@ -138,7 +140,7 @@ public sealed class EqWizardImportExportCoordinatorTests
         EqWizardImportExportCoordinator coordinator = CreateCoordinator(readAllText: _ => text);
 
         EqWizardFileResult<EqualizationCurve> result = coordinator.Import(
-            new EqWizardImportRequest("profile.json", coordinator.ResolveImportTarget(1)));
+            new EqWizardImportRequest("profile.json", coordinator.ResolveImportTarget(1), 48_000));
 
         Assert.False(result.Success);
         Assert.IsType<InvalidDataException>(result.Exception);
@@ -153,7 +155,7 @@ public sealed class EqWizardImportExportCoordinatorTests
         EqWizardImportExportCoordinator coordinator = CreateCoordinator(readAllText: _ => text);
 
         EqWizardFileResult<EqualizationCurve> result = coordinator.Import(
-            new EqWizardImportRequest("profile.txt", coordinator.ResolveImportTarget(1)));
+            new EqWizardImportRequest("profile.txt", coordinator.ResolveImportTarget(1), 48_000));
 
         Assert.True(result.Success, result.Exception?.Message);
         Assert.Empty(result.Value!.Bands);
@@ -167,10 +169,24 @@ public sealed class EqWizardImportExportCoordinatorTests
             readAllText: _ => "Preamp: -3.0 dB\nFilter 1: ON PK Fc 1000 Hz Gain -3.0 dB Q 1.00");
 
         EqWizardFileResult<EqualizationCurve> result = coordinator.Import(
-            new EqWizardImportRequest("profile.txt", coordinator.ResolveImportTarget(1)));
+            new EqWizardImportRequest("profile.txt", coordinator.ResolveImportTarget(1), 48_000));
 
         Assert.True(result.Success, result.Exception?.Message);
         Assert.NotEmpty(result.Value!.Bands);
+    }
+
+    // APO's width in octaves narrows by w0/sin w0 near Nyquist, so the processor's rate reaches the format.
+    [Fact]
+    public void Import_ReadsAWidthInOctavesAtTheRequestsRate()
+    {
+        EqWizardImportExportCoordinator coordinator = CreateCoordinator(
+            readAllText: _ => "Filter 1: ON PK Fc 10000 Hz Gain -3.0 dB BW Oct 0.167");
+
+        EqWizardFileResult<EqualizationCurve> result = coordinator.Import(
+            new EqWizardImportRequest("profile.txt", coordinator.ResolveImportTarget(1), 48_000));
+
+        Assert.True(result.Success, result.Exception?.Message);
+        Assert.Equal(6.37, Assert.Single(result.Value!.Bands).Q, 2);
     }
 
     private static EqWizardImportExportCoordinator CreateCoordinator(

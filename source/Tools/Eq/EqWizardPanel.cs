@@ -728,7 +728,7 @@ public partial class EqWizardPanel : UserControl
 
         EqWizardImportTarget target = importExportCoordinator.ResolveImportTarget(dialog.FilterIndex);
         EqWizardFileResult<EqualizationCurve> result = importExportCoordinator.Import(
-            new EqWizardImportRequest(dialog.FileName, target));
+            new EqWizardImportRequest(dialog.FileName, target, session.ProcessorSampleRateHz));
         if (!result.Success)
         {
             ShowFileError("PEQ could not be imported.", result.Exception!);

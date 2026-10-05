@@ -706,7 +706,9 @@ profile; treating it as a failure once applied an empty curve over the user's tu
 
 Type mapping:
 
-- `PK` — bell with a Q, or with APO's alternative `BW Oct n`, read as Q = √(2ⁿ) / (2ⁿ − 1) (`BW Oct 0.167` is Q 8.63).
+- `PK` — bell with a Q, or with APO's alternative `BW Oct n`. APO realizes a width as α = sin ω₀ · sinh(ln 2 / 2 · n · ω₀ / sin ω₀)
+  at its own rate, so the import reads it at the processor's rate as the Q with that α (`BW Oct 0.167` at 48 kHz is Q 8.63
+  at 100 Hz, 6.37 at 10 kHz); `PeqTextFile.Parse` without a rate uses the analog limit, Q = √(2ⁿ) / (2ⁿ − 1).
 - `LSC`/`HSC` with a Q — the same centre-frequency, half-gain-at-Fc shelf the library realises; shelves are written this
   way. Plain `LS`/`HS` carry no Q and are read at 0.707.
 - `AP` — APO's second-order all-pass: Fc and Q, no gain (Q required, since it is the phase turn).

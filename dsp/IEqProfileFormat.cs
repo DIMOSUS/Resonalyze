@@ -25,6 +25,9 @@ public interface IEqProfileFormat
     /// <summary>Returns whether the text was recognised; an empty curve alone is not a failure (a preamp-only profile is valid).</summary>
     bool TryImport(string text, out EqualizationCurve curve);
 
+    /// <summary>Import into a bank realized at this rate, for widths that depend on it (Equalizer APO's BW Oct).</summary>
+    bool TryImport(string text, double sampleRateHz, out EqualizationCurve curve) => TryImport(text, out curve);
+
     EqualizationCurve Import(string text) =>
         TryImport(text, out EqualizationCurve curve)
             ? curve

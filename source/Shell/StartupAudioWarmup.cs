@@ -1,7 +1,6 @@
 namespace Resonalyze;
 
-/// <summary>Best-effort audio warm-ups that hold the driver while they run: the one-shot startup one, body injected to keep
-/// device and UI concerns out, and the ones Record Settings starts later. A run or a device probe waits for both.</summary>
+/// <summary>Best-effort warm-ups that hold the audio driver, at startup and from Record Settings; a run waits for them.</summary>
 internal sealed class StartupAudioWarmup : IDisposable
 {
     private readonly Func<CancellationToken, Task> warmUp;
@@ -25,10 +24,10 @@ internal sealed class StartupAudioWarmup : IDisposable
         task = warmUp(cancellation.Token);
     }
 
-    /// <summary>A warm-up after startup, which <see cref="WaitAsync"/> waits for too; its fault reaches the caller.</summary>
+    /// <summary>A later warm-up, begun once the one in flight ends; WaitAsync covers it, and its fault reaches the caller.</summary>
     public Task RunAsync(Func<Task> laterWarmUp)
     {
-        Task started = laterWarmUp();
+        Task started = Running() is { } earlier ? RunAfterAsync(earlier, laterWarmUp) : laterWarmUp();
         later = started;
         return started;
     }
@@ -58,6 +57,20 @@ internal sealed class StartupAudioWarmup : IDisposable
     {
         cancellation?.Cancel();
         cancellation?.Dispose();
+    }
+
+    // Two at once would hold one driver twice; the earlier one's fault belongs to its own caller.
+    private static async Task RunAfterAsync(Task earlier, Func<Task> laterWarmUp)
+    {
+        try
+        {
+            await earlier;
+        }
+        catch
+        {
+        }
+
+        await laterWarmUp();
     }
 
     private Task? Running() =>

@@ -63,18 +63,21 @@ public sealed class LiveSpectrumSettingsSessionTests
         {
             options.AnalysisMode = LiveAnalysisMode.Rta;
             options.NoiseColor = NoiseColor.White;
+            options.SequenceLength = 4096;
             options.WindowType = WindowType.BlackmanHarris;
             options.OverlapPercent = 75;
             options.AveragingSpeed = AveragingSpeed.Slow;
             options.SmoothingInverseOctaves = 3;
             options.MagnitudeScale = MagnitudeScale.Relative;
             options.CompensateNoiseTilt = false;
-        });
+        }, rate: 96_000);
 
         session.SelectMode(LiveAnalysisMode.Mmm);
 
         Assert.Equal([NoiseColor.PinkPeriodic], session.Signals);
         Assert.Equal(NoiseColor.PinkPeriodic, session.Signal);
+        Assert.Equal([131_072], session.SequenceLengths);
+        Assert.Equal(131_072, session.SequenceLength);
         Assert.Equal((WindowType.Rectangular, 0), (session.Window, session.OverlapPercent));
         Assert.Equal((AveragingSpeed.Infinite, 0), (session.Averaging, session.SmoothingInverseOctaves));
         Assert.True(session.Spl && session.Tilt && session.InputMagnitude);
@@ -83,17 +86,34 @@ public sealed class LiveSpectrumSettingsSessionTests
         Assert.False(session.SplInteractive || session.TiltInteractive || session.InputMagnitudeInteractive);
         LiveSpectrumOptions pinned = Written(session);
         Assert.Equal(
-            (LiveAnalysisMode.Mmm, NoiseColor.White, WindowType.BlackmanHarris, 75, AveragingSpeed.Slow, 3),
-            (pinned.AnalysisMode, pinned.NoiseColor, pinned.WindowType, pinned.OverlapPercent, pinned.AveragingSpeed,
-                pinned.SmoothingInverseOctaves));
+            (LiveAnalysisMode.Mmm, NoiseColor.White, 4096, WindowType.BlackmanHarris, 75, AveragingSpeed.Slow, 3),
+            (pinned.AnalysisMode, pinned.NoiseColor, pinned.SequenceLength, pinned.WindowType, pinned.OverlapPercent,
+                pinned.AveragingSpeed, pinned.SmoothingInverseOctaves));
         Assert.Equal((MagnitudeScale.Relative, false), (pinned.MagnitudeScale, pinned.CompensateNoiseTilt));
 
         session.SelectMode(LiveAnalysisMode.Rta);
 
         Assert.Equal(NoiseColor.White, session.Signal);
+        Assert.Equal(4096, session.SequenceLength);
+        Assert.Equal(LiveSpectrumSettingsChoices.SequenceLengths, session.SequenceLengths);
         Assert.Equal((WindowType.BlackmanHarris, 75), (session.Window, session.OverlapPercent));
         Assert.Equal((AveragingSpeed.Slow, 3), (session.Averaging, session.SmoothingInverseOctaves));
         Assert.False(session.Spl || session.Tilt);
+    }
+
+    [Fact]
+    public void AnotherRate_MovesMmmsFrame_AndLeavesAnRtaLengthWhereItWas()
+    {
+        LiveSpectrumSettingsSession mmm = Loaded(options => options.AnalysisMode = LiveAnalysisMode.Mmm);
+        mmm.SetSampleRate(192_000);
+        Assert.Equal((192_000, 262_144), (mmm.SampleRateHz, mmm.SequenceLength));
+        Assert.Equal([262_144], mmm.SequenceLengths);
+
+        LiveSpectrumSettingsSession rta = Loaded(options => options.AnalysisMode = LiveAnalysisMode.Rta);
+        rta.SequenceLength = 8192;
+        rta.SetSampleRate(96_000);
+        Assert.Equal(8192, rta.SequenceLength);
+        Assert.Equal(8192, Written(rta).SequenceLength);
     }
 
     [Fact]

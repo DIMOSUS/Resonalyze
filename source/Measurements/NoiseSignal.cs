@@ -124,14 +124,26 @@ public sealed class NoiseSignal : IDisposable
     /// <summary>Just above 20 kHz·√2, the widest per-bin read (1/1-octave smoothing at the top grid point).</summary>
     public const double PeriodicPinkHighHz = 28_300.0;
 
-    // Keyed by period and rate: the phase search is ~0.7 s at 65536 samples, and a run restarts on every option change.
-    private static readonly ConcurrentDictionary<(int Length, int SampleRate), double[]> PinkPeriods = new();
+    // Per period and rate, as the phase search takes seconds at long periods; Lazy, so a preparation and a fill share one.
+    private static readonly ConcurrentDictionary<(int Length, int SampleRate), Lazy<double[]>> PinkPeriods = new();
+
+    /// <summary>Synthesizes the period on the thread pool unless it exists; a fill of it then returns at once.</summary>
+    public static Task PreparePinkPeriodAsync(int periodLength, int sampleRate)
+    {
+        Lazy<double[]> period = PinkPeriod(periodLength, sampleRate);
+        return period.IsValueCreated ? Task.CompletedTask : Task.Run(() => period.Value);
+    }
+
+    private static Lazy<double[]> PinkPeriod(int periodLength, int sampleRate) =>
+        PinkPeriods.GetOrAdd(
+            (Math.Max(2, periodLength), sampleRate),
+            key => new Lazy<double[]>(() => SynthesizePinkPeriod(key.Length, key.SampleRate)));
 
     // One FFT-block period with exact 1/sqrt(f) magnitude in the band, tiled: converges without spectral variance.
     private void FillPinkPeriodic(int periodLength)
     {
-        int n = Math.Max(2, periodLength);
-        double[] period = PinkPeriods.GetOrAdd((n, SampleRate), key => SynthesizePinkPeriod(key.Length, key.SampleRate));
+        double[] period = PinkPeriod(periodLength, SampleRate).Value;
+        int n = period.Length;
         for (int sampleIndex = 0; sampleIndex < Samples; sampleIndex++)
         {
             FloatData[sampleIndex] = (float)period[sampleIndex % n];

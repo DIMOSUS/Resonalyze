@@ -89,6 +89,7 @@ public partial class Form1
             panel => panel.RefreshAvailability(
                 liveSpectrumSession.Display.SplOffsetDb.HasValue,
                 liveSpectrumSession.HasDisplayableCurve,
-                liveSpectrumSession.HasConfiguredLoopback));
+                liveSpectrumSession.HasConfiguredLoopback,
+                liveSpectrumSession.SampleRate));
     }
 }

@@ -368,11 +368,9 @@ explains why.
 
 **With one microphone: the moving-microphone method (MMM).** Switch Live Spectrum to
 **MMM** mode. It pins every setting the average is only valid under — periodic pink
-noise, a rectangular window with no overlap, infinite averaging, band power, **Slope
-compensation** on, smoothing off — and needs no SPL calibration: without one the levels
-are relative, which is all a set needs. Set **Sequence Length** to the **maximum**
-(65536): the longest frame carries the most bass and the finest grid, 0.7 Hz bins at
-48 kHz against 23 Hz at the default. Keep it the same for every capture in a set.
+noise, a rectangular window with no overlap, a frame of about 1.4 s at any sample rate,
+infinite averaging, band power, **Slope compensation** on, smoothing off — and needs no
+SPL calibration: without one the levels are relative, which is all a set needs.
 
 ![Live Spectrum in MMM mode, with a finished capture loaded](assets/images/manual/mmm-capture.png)
 
@@ -403,8 +401,8 @@ take the captures of the set again.
 
 One capture per driver — left and right separately, one for a mono subwoofer — in one
 sitting of the analyzer, without touching the microphone gain or playback level between
-them. Restarting Resonalyze, changing the audio route, format or playback channel in
-Record Settings, or changing **Sequence Length** starts a new analyzer session, and captures from
+them. Restarting Resonalyze, or changing the audio route, format or playback channel in
+Record Settings, starts a new analyzer session, and captures from
 different sessions form a set only if each carries an SPL calibration; changing **HPF**
 alone is safe. Virtual DSP checks the set and tells you when the captures disagree.
 

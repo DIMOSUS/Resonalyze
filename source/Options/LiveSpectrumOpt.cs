@@ -55,13 +55,15 @@ namespace Resonalyze.Options
             Present();
         }
 
-        /// <summary>Recolours dB SPL and Transfer without changing selections; called when calibration or routing changes.</summary>
+        /// <summary>Recolours dB SPL and Transfer and follows the rate; called when calibration or routing changes.</summary>
         public void RefreshAvailability(
             bool isSplAvailable,
             bool hasLiveCurve,
-            bool hasTransferReference)
+            bool hasTransferReference,
+            int sampleRateHz)
         {
             session.SetAvailability(isSplAvailable, hasLiveCurve, hasTransferReference);
+            session.SetSampleRate(sampleRateHz);
             Present();
         }
 
@@ -89,7 +91,7 @@ namespace Resonalyze.Options
             radioModeRta.CheckedChanged += (_, _) => Edit(() => session.SelectMode(CheckedMode()));
             radioModeMmm.CheckedChanged += (_, _) => Edit(() => session.SelectMode(CheckedMode()));
             Bind<NoiseColor>(signalTypeComboBox, value => session.Signal = value, session.CommitSignal);
-            Bind<int>(sequenceLengthComboBox, value => session.SequenceLength = value);
+            Bind<int>(sequenceLengthComboBox, value => session.SequenceLength = value, session.CommitSequenceLength);
             Bind<WindowType>(windowComboBox, value => session.Window = value, session.CommitWindow);
             Bind<int>(overlapComboBox, value => session.OverlapPercent = value, session.CommitOverlap);
             Bind<int>(comboSmoothingInverseOctaves, value => session.SmoothingInverseOctaves = value, session.CommitSmoothing);

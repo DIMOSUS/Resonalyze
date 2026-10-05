@@ -13,8 +13,8 @@ namespace Resonalyze.Options
                 radioModeMmm,
                 "Moving-microphone capture: the same reference-free analyzer, pinned " +
                 "to the one recipe a spatial average is valid under — periodic pink, " +
-                "Infinite averaging, banded dB SPL, slope compensation on, smoothing " +
-                "off. Walk the microphone through the listening volume while it " +
+                "a 1.4 s frame, Infinite averaging, banded dB SPL, slope compensation " +
+                "on, smoothing off. Walk the microphone through the listening volume while it " +
                 "integrates, then Save.\r\n\r\n" +
                 "Measure each driver RAW: bypass EQ, crossovers and delays in your " +
                 "own DSP and leave only the configured protective high-pass. Virtual " +
@@ -30,7 +30,8 @@ namespace Resonalyze.Options
                 "excitation.");
             toolTip.SetToolTip(
                 sequenceLengthComboBox,
-                "Sets the FFT block size. Longer sequences give finer frequency resolution but slower visual updates.");
+                "Sets the FFT block size. Longer sequences give finer frequency resolution but slower visual updates.\r\n" +
+                "MMM pins it to about 1.4 s at any sample rate.");
             toolTip.SetToolTip(
                 overlapComboBox,
                 "Overlaps successive analysis frames by sliding the FFT window a fraction of its size. Higher overlap gives faster, smoother averaging at the cost of more CPU.\r\nForced to Off for periodic pink noise, where overlapped frames are correlated and add no averaging.");

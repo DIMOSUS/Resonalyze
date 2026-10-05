@@ -1074,9 +1074,9 @@ reference on the analysis path.
   `== Mmm`, so a future array mode joins in one place instead of a dozen call sites where a
   miss produces a smooth wrong curve.
 - `LiveSequenceLengths` is one list shared by the options panel and settings schema; separate
-  copies let a length be offered and then silently floored on the next save. 32768 and 65536
-  exist for MMM: band-power resolution is set by frame duration (2/T Hz rectangular, 4/T
-  Hann), so the same resolution costs twice the samples at twice the rate.
+  copies let a length be offered and then silently floored on the next save. MMM does not read
+  it: its frame is a duration, set by the rate (see
+  live-spectrum.md#spatial-average-frame).
 
 **Noise colours and tilt compensation.** `NoiseSignal` uses a fixed seed. Periodic pink is
 one FFT-block period with exact `1/sqrt(f)` magnitude from 10 Hz to 28.3 kHz and phases chosen

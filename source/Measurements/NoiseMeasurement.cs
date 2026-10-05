@@ -45,7 +45,12 @@ namespace Resonalyze
         public event Action<bool>? Completed;
         internal event Action<InputLevelMeterSnapshot>? LevelsAvailable;
 
+        private readonly record struct PlaybackRecipe(
+            double Seconds, int Bits, int SampleRate, NoiseColor Color, int PeriodLength);
+
         private NoiseSignal? signal;
+        private PlaybackRecipe? playback;
+        private Task playbackReady = Task.CompletedTask;
 
         public NoiseMeasurement(IAudioSessionFactory audioSessionFactory)
         {
@@ -227,18 +232,30 @@ namespace Resonalyze
             }
 
             signal?.Dispose();
-            signal = new NoiseSignal();
+            signal = null;
             // Periodic pink loops one FFT period seamlessly; the full duration would allocate ~35 MB LOH at start. Aperiodic noise seams in a short loop.
             double signalDuration =
                 EffectiveNoiseColor is NoiseColor.PinkPeriodic or NoiseColor.Silent
                     ? SequenceLength / (double)SampleRate
                     : playbackDuration;
-            signal.FillData(
-                signalDuration,
-                Bits,
-                SampleRate,
-                EffectiveNoiseColor,
-                SequenceLength);
+            playback = new PlaybackRecipe(signalDuration, Bits, SampleRate, EffectiveNoiseColor, SequenceLength);
+            // A period not synthesized yet is left to the thread pool; the run builds the signal once it is ready.
+            playbackReady = EffectiveNoiseColor == NoiseColor.PinkPeriodic
+                ? NoiseSignal.PreparePinkPeriodAsync(SequenceLength, SampleRate)
+                : Task.CompletedTask;
+            if (playbackReady.IsCompleted)
+            {
+                signal = Build(playback.Value);
+            }
+        }
+
+        internal bool HasPlaybackSignal => signal != null;
+
+        private static NoiseSignal Build(PlaybackRecipe recipe)
+        {
+            var built = new NoiseSignal();
+            built.FillData(recipe.Seconds, recipe.Bits, recipe.SampleRate, recipe.Color, recipe.PeriodLength);
+            return built;
         }
 
         public Task<bool> RunAsync()
@@ -250,7 +267,7 @@ namespace Resonalyze
                 {
                     return measurementTask;
                 }
-                if (signal == null)
+                if (playback == null)
                 {
                     throw new InvalidOperationException("Measurement is not initialized.");
                 }
@@ -453,7 +470,8 @@ namespace Resonalyze
 
         private async Task<bool> RunCoreAsync(CancellationToken cancellationToken)
         {
-            NoiseSignal noiseSignal = signal!;
+            Task ready = playbackReady;
+            PlaybackRecipe recipe = playback!.Value;
             bool success = false;
             var sequenceChannel = Channel.CreateBounded<LiveSequence>(
                 new BoundedChannelOptions(4)
@@ -470,9 +488,10 @@ namespace Resonalyze
             {
                 UpdateAveragingParameters();
             }
-            // Warm FFT/JIT and the run's own frame buffers before the driver starts, or the first callbacks drop out.
+            // Warm FFT/JIT and the run's own frame buffers before the driver starts, or the first callbacks drop out;
+            // on the pool, as the frames run to 524288 samples and Start calls this on the UI thread.
             var buffers = new SpectrumFrameBuffers();
-            WarmUpAnalysisPath(buffers);
+            await Task.Run(() => WarmUpAnalysisPath(buffers)).ConfigureAwait(false);
 
             var reframer = new OverlapReframer(SequenceLength, hopSize);
             Task processingTask = ProcessSequencesAsync(
@@ -484,6 +503,8 @@ namespace Resonalyze
             IAudioStreamingSession? session = null;
             try
             {
+                await ready.WaitAsync(cancellationToken).ConfigureAwait(false);
+                NoiseSignal noiseSignal = signal ??= Build(recipe);
                 AudioSessionRequest request = BuildSessionRequest();
                 AudioPlaybackSignal loopingSignal = new(
                     noiseSignal.FloatData,

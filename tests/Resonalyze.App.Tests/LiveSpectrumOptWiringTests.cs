@@ -78,6 +78,8 @@ public sealed class LiveSpectrumOptWiringTests
             panel.Pick("coherenceLimitComboBox", "Off");
             panel.Click("radioModeTransfer");
             panel.Click("radioModeRta");
+            panel.Click("radioModeMmm");
+            panel.Click("radioModeRta");
         });
     }
 
@@ -101,6 +103,7 @@ public sealed class LiveSpectrumOptWiringTests
             panel.Availability(splAvailable: true, liveCurve: true, loopback: true);
             panel.Availability(splAvailable: false, liveCurve: true, loopback: false);
             panel.Force(LiveAnalysisMode.Mmm);
+            panel.Availability(splAvailable: false, liveCurve: true, loopback: false, rate: 192_000);
             panel.ForceSplOff();
             panel.Force(LiveAnalysisMode.Rta);
             panel.Force(LiveAnalysisMode.Rta);
@@ -230,10 +233,12 @@ public sealed class LiveSpectrumOptWiringTests
             AssertShows();
         }
 
-        public void Availability(bool splAvailable, bool liveCurve, bool loopback)
+        public void Availability(bool splAvailable, bool liveCurve, bool loopback, int? rate = null)
         {
+            int sampleRate = rate ?? Shadow.SampleRateHz;
             Shadow.SetAvailability(splAvailable, liveCurve, loopback);
-            Form.RefreshAvailability(splAvailable, liveCurve, loopback);
+            Shadow.SetSampleRate(sampleRate);
+            Form.RefreshAvailability(splAvailable, liveCurve, loopback, sampleRate);
             AssertShows();
         }
 
@@ -276,10 +281,10 @@ public sealed class LiveSpectrumOptWiringTests
                 Shadow.RecipeEditable);
             AssertList(
                 "sequenceLengthComboBox",
-                LiveSpectrumSettingsChoices.SequenceLengths.Select(length =>
+                Shadow.SequenceLengths.Select(length =>
                     LiveSpectrumSettingsChoices.SequenceLengthLabel(length, Shadow.SampleRateHz)),
                 LiveSpectrumSettingsChoices.SequenceLengthLabel(Shadow.SequenceLength, Shadow.SampleRateHz),
-                true);
+                Shadow.RecipeEditable);
             AssertList(
                 "windowComboBox",
                 LiveSpectrumSettingsChoices.Windows.Select(window => window.Label),
@@ -401,7 +406,7 @@ public sealed class LiveSpectrumOptWiringTests
                     Shadow.Signal = Shadow.Signals.Single(signal => LiveSpectrumSettingsChoices.SignalLabel(signal) == label);
                     break;
                 case "sequenceLengthComboBox":
-                    Shadow.SequenceLength = LiveSpectrumSettingsChoices.SequenceLengths.Single(length =>
+                    Shadow.SequenceLength = Shadow.SequenceLengths.Single(length =>
                         LiveSpectrumSettingsChoices.SequenceLengthLabel(length, Shadow.SampleRateHz) == label);
                     break;
                 case "windowComboBox":
@@ -430,6 +435,9 @@ public sealed class LiveSpectrumOptWiringTests
             {
                 case "signalTypeComboBox":
                     Shadow.CommitSignal();
+                    break;
+                case "sequenceLengthComboBox":
+                    Shadow.CommitSequenceLength();
                     break;
                 case "windowComboBox":
                     Shadow.CommitWindow();

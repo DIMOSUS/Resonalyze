@@ -16,7 +16,8 @@ public sealed class LiveAnalysisModeTests
                 AnalysisMode = mode,
                 // Deliberately wrong, so a pin that failed to fire is visible.
                 NoiseColor = NoiseColor.White,
-                AveragingSpeed = AveragingSpeed.Fast
+                AveragingSpeed = AveragingSpeed.Fast,
+                SequenceLength = 1024
             };
             bool capture = mode.IsSpatialAverageCapture();
 
@@ -26,7 +27,23 @@ public sealed class LiveAnalysisModeTests
             Assert.Equal(
                 capture ? AveragingSpeed.Infinite : AveragingSpeed.Fast,
                 options.EffectiveAveragingSpeed);
+            Assert.Equal(capture ? 65_536 : 1024, options.EffectiveSequenceLength(48_000));
         }
+    }
+
+    [Theory]
+    [InlineData(44_100, 65_536)]
+    [InlineData(48_000, 65_536)]
+    [InlineData(88_200, 131_072)]
+    [InlineData(96_000, 131_072)]
+    [InlineData(176_400, 262_144)]
+    [InlineData(192_000, 262_144)]
+    [InlineData(352_800, 524_288)]
+    [InlineData(384_000, 524_288)]
+    [InlineData(0, 65_536)]
+    public void TheSpatialAverageFrame_IsAFixedDuration(int sampleRateHz, int expected)
+    {
+        Assert.Equal(expected, LiveSequenceLengths.SpatialAverage(sampleRateHz));
     }
 
     [Fact]

@@ -4,8 +4,6 @@ namespace Resonalyze.Options
     {
         private void FillLists()
         {
-            Fill(sequenceLengthComboBox, LiveSpectrumSettingsChoices.SequenceLengths.Select(length =>
-                (length, LiveSpectrumSettingsChoices.SequenceLengthLabel(length, session.SampleRateHz))));
             Fill(overlapComboBox, Percents(LiveSpectrumSettingsChoices.OverlapPercents));
             Fill(windowComboBox, LiveSpectrumSettingsChoices.Windows);
             Fill(averagingComboBox, LiveSpectrumSettingsChoices.Averagings);
@@ -35,7 +33,7 @@ namespace Resonalyze.Options
                 radioModeRta.Checked = session.Mode == LiveAnalysisMode.Rta;
                 radioModeTransfer.Checked = session.Mode == LiveAnalysisMode.TransferFunction;
                 PresentSignals();
-                Show(sequenceLengthComboBox, session.SequenceLength);
+                PresentSequenceLengths();
                 Show(windowComboBox, session.Window);
                 windowComboBox.Enabled = session.WindowEditable;
                 Show(overlapComboBox, session.OverlapPercent);
@@ -74,6 +72,20 @@ namespace Resonalyze.Options
 
             Show(signalTypeComboBox, session.Signal);
             signalTypeComboBox.Enabled = session.RecipeEditable;
+        }
+
+        // A label carries the duration at the rate: compared with the values alone, another rate would keep stale ones.
+        private void PresentSequenceLengths()
+        {
+            List<Choice<int>> lengths = session.SequenceLengths.Select(length =>
+                new Choice<int>(length, LiveSpectrumSettingsChoices.SequenceLengthLabel(length, session.SampleRateHz))).ToList();
+            if (!sequenceLengthComboBox.Items.Cast<Choice<int>>().SequenceEqual(lengths))
+            {
+                Fill(sequenceLengthComboBox, lengths.Select(choice => (choice.Value, choice.Label)));
+            }
+
+            Show(sequenceLengthComboBox, session.SequenceLength);
+            sequenceLengthComboBox.Enabled = session.RecipeEditable;
         }
 
         private static void Show<T>(ThemedComboBox combo, T value)

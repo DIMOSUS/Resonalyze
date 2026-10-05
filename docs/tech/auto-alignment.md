@@ -1192,7 +1192,8 @@ the far side is the one that pays: at that junction it lands anti-correlated (r 
 The information that would settle the branch lives on the side that is never asked.
 
 `RebalanceJunctionBranches` asks it, after both descents. For each junction that has a twin on the far
-side, and that the phase did not place, it probes ONE move: the whole stack ABOVE the junction, on both sides, shifted half a period and
+side, and that the phase did not place, it probes the flip partner (and [a whole period](#a-whole-period),
+below): the whole stack ABOVE the junction, on both sides, shifted half a period and
 flipped. That operation changes the junction and nothing else — every junction above it moves rigidly,
 which is why a lone pair co-move cannot express it (the tweeter has to follow the midrange).
 
@@ -1235,6 +1236,44 @@ pins with a reference junction tied between its lobes and a far tweeter wired in
 A junction the descent stood on a phase lobe is not asked (see [Phase lobe](#phase-lobe)). The question
 is put to the summation, which is what the phase overruled there: on the archive the check flipped the
 stack above the mid/tweeter split of two cabins off the lobe their saved tunes stand on.
+
+### A whole period
+
+The flip partner is not the only lobe the reference side can fail to tell apart. On the October batch of
+the reference car the two sides, each run alone, stand the 240 Hz bass/mid junction a whole period apart:
+the left puts the mid 1.2 ms behind the bass, the right 4.7 ms, and the hand tune is 5.2 ms on both. The
+left decides in a stereo run; its own whitened correlation reads 0.91 there against 0.52 a period later,
+so neither search window ever holds the other lobe, and the scene lock then pins the right side to a
+lobe where its direct sound reads 0.36. The whole mid/tweeter stack lands 4 ms early.
+
+So where the direct sound can be asked (at or above `DirectCoherenceMinCrossoverHz`) the junction is
+offered a second move: the stack above it shifted a **whole period, unflipped** (`StereoJunctionBranch.Read`
+with `wholePeriod`). Both offers are read; the one the far side gains more from is tried first, and one
+move per junction is made.
+
+- **The summation's terms are the flip's**: the far side gains more than `FarGainDb`, the reference side
+  pays no more than `ReferenceLossDb`, on a re-render, inside the delay ceiling.
+- **The half-band veto is not applied.** A period rotates the band's lower half by half a turn to a turn
+  and its upper half by one to two, so it trades one half for the other by construction. On the field
+  case the far side gains 0.61 dB, the reference side loses 0.01, and the reference's 240-480 Hz half
+  loses 0.61: the veto refused the hand tune's lobe at its own margin.
+- **The wavefronts judge instead** (`WavefrontsBack`). The direct sound's whitened coherence at the
+  junction, read as it stands before and after on a re-render (`DirectCoherenceAt`), must on the far
+  side reach `DirectLobeWitness.MinimumR` and rise by more than `LobeAdvantage`, and on the reference
+  side must not fall by more than `LobeAdvantage`: the lobe check's own floor and gulf. The field case
+  reads 0.36 -> 0.76 far and 0.73 -> 0.68 reference. A whole period is a claim about arrival, and a late
+  copy can buy the summation's gain without it:
+  `RebalanceJunctionBranches_OnlyALateCopyWantsThePeriod_TheFrontsKeepTheStack` gains 5 dB on the far
+  side and loses the far fronts' step (1.00 -> 0.42).
+- **Under 120 Hz it is not offered.** The direct sound cannot be asked there, and without it a period
+  at a sub junction (12 ms at 80 Hz) is the mono co-move's hop under another name: offered on the
+  summation alone, one archived session's sub moved 11 ms.
+
+Field effect (23 sessions, 46 sides, stereo run): the three tunes of the October batch change and nothing
+else does. The latest of them now reads within 0.16 ms of the hand tune on all six front channels (right
+tweeter 8.12 ms against 7.96; 3.40 before). The two earlier saves of that batch, which the latest
+supersedes, get the same alignment: half a period and a flip from what they hold. A single-side run has
+no far side to ask and is unchanged: the left alone still stands a period early.
 
 Field effect (10 stereo sessions, 20 sides, 58 junctions, walk anchored on the top channel): five
 moves are adopted. The v6 200 Hz split goes +2.58 ms flipped and lands on the owner's lobe (left

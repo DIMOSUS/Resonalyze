@@ -4084,7 +4084,14 @@ driver by driver — so a junction the near side could barely tell apart decides
 for the far side too, and the far side is the one that pays for it. So every
 junction is offered the **other branch**: the whole stack above it, on both
 sides, moved half a period and flipped (except a junction the phase placed:
-the summation that would judge the offer is what the phase overruled there). It is taken only when the far side
+the summation that would judge the offer is what the phase overruled there).
+From 120 Hz up it is also offered a **whole period, unflipped**. A near side
+can stand a bass/mid handover a full period from where the far side's
+wavefronts meet and read it as the better lobe, and the far side is then
+pinned there by the scene. That move is taken when the far side's summation
+plainly gains, the near side's does not pay, and the far side's direct sound
+comes into step while the near side's stays in it; the halves of the band are
+not consulted, because a whole period always trades one for the other. It is taken only when the far side
 plainly gains, the near side does not pay for it, and no half of either
 junction loses more than the far side gains — and the answer is checked on a
 real re-render, not on an estimate. Where the two sides want different branches

@@ -29,7 +29,8 @@ internal static class StereoJunctionBranch
     public static StereoBranchReading? Read(
         Func<bool, double, bool, double> score,
         double halfPeriodMs,
-        double refineStepMs = 0.1)
+        double refineStepMs = 0.1,
+        bool wholePeriod = false)
     {
         ArgumentNullException.ThrowIfNull(score);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(halfPeriodMs);
@@ -50,21 +51,24 @@ internal static class StereoJunctionBranch
         // never exceeds an eighth of the half period: where the eighth is the step the partner itself is probed,
         // and where the 0.1 ms cap is, the grid is already far finer than the lobe.
         double stepMs = Math.Min(refineStepMs, halfPeriodMs / 8);
-        foreach (double center in new[] { -halfPeriodMs, halfPeriodMs })
+        // A whole period keeps the relation, so it is probed unflipped.
+        bool flip = !wholePeriod;
+        double moveMs = wholePeriod ? 2 * halfPeriodMs : halfPeriodMs;
+        foreach (double center in new[] { -moveMs, moveMs })
         {
             for (double delta = center - halfPeriodMs / 4;
                 delta <= center + halfPeriodMs / 4 + 1e-9;
                 delta += stepMs)
             {
-                double reference = score(false, delta, true);
-                double far = score(true, delta, true);
+                double reference = score(false, delta, flip);
+                double far = score(true, delta, flip);
                 if (!double.IsFinite(reference) || !double.IsFinite(far))
                 {
                     continue;
                 }
 
                 var reading = new StereoBranchReading(
-                    delta, true, reference - referenceBase, far - farBase);
+                    delta, flip, reference - referenceBase, far - farBase);
                 if (best == null || reading.FarGainDb > best.FarGainDb)
                 {
                     best = reading;
@@ -122,6 +126,14 @@ internal static class StereoJunctionBranch
 
         return best ?? reading with { DeltaMs = Math.Round(reading.DeltaMs, 2) };
     }
+
+    /// <summary>What a whole-period move must show in the direct sound's coherence at the junction: the far side
+    /// comes into step, by the lobe check's own floor and gulf, and the reference side does not fall out of it.</summary>
+    public static bool WavefrontsBack(
+        double farBefore, double farAfter, double referenceBefore, double referenceAfter) =>
+        farAfter >= DirectLobeWitness.MinimumR &&
+        farAfter - farBefore > DirectLobeWitness.LobeAdvantage &&
+        referenceBefore - referenceAfter <= DirectLobeWitness.LobeAdvantage;
 
     /// <summary>The far side gains plainly and the reference side is not made to pay for it.</summary>
     public static bool Adopt(StereoBranchReading reading)

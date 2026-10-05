@@ -4162,7 +4162,8 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         IReadOnlyCollection<IAlignmentChannel> above,
         IReadOnlyList<AlignmentSnapshot> shiftScope,
-        double deltaMs)
+        double deltaMs,
+        bool flip = true)
     {
         if (deltaMs >= 0)
         {
@@ -4191,9 +4192,31 @@ public static class AutoAlignmentEngine
             AlignmentOverride over = alignment.GetValueOrDefault(channel);
             alignment[channel] = over with
             {
-                InvertPolarity = !over.InvertPolarity
+                InvertPolarity = over.InvertPolarity ^ flip
             };
         }
+    }
+
+    // The direct sound's whitened coherence of a rendered junction as it stands.
+    private static double DirectCoherenceAt(IReadOnlyList<AlignmentSnapshot> render, AlignmentJunction junction)
+    {
+        AlignmentSnapshot lower = render.First(item => item.Channel == junction.Lower.Channel);
+        AlignmentSnapshot upper = render.First(item => item.Channel == junction.Upper.Channel);
+        int rate = junction.Lower.Channel.SampleRate;
+        List<SignalPoint> curve = VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
+            VirtualCrossoverAnalysis.CutDirectSound(
+                lower.ImpulseResponse, rate, junction.BandLowHz, junction.BandHighHz,
+                junction.CrossoverHz, lower.ValidRange),
+            VirtualCrossoverAnalysis.CutDirectSound(
+                upper.ImpulseResponse, rate, junction.BandLowHz, junction.BandHighHz,
+                junction.CrossoverHz, upper.ValidRange),
+            rate,
+            junction.CrossoverHz,
+            Math.Log2(junction.BandHighHz / junction.BandLowHz),
+            125.0 / junction.CrossoverHz,
+            0.0,
+            phaseTransform: true);
+        return curve.Count == 0 ? double.NaN : curve.MinBy(point => Math.Abs(point.X)).Y;
     }
 
     // A junction the reference side could not tell apart commits the far side too. Moving the whole stack ABOVE the
@@ -4269,111 +4292,141 @@ public static class AutoAlignmentEngine
             double halfPeriodMs = 500.0 / reference.CrossoverHz;
             double BranchScore(bool farSide, double deltaMs, bool flip) =>
                 PenalizedLoss(farSide ? farBand : referenceBand, deltaMs, flip);
-            StereoBranchReading? reading = StereoJunctionBranch.Read(
-                BranchScore, halfPeriodMs);
-            if (reading == null ||
-                reading.FarGainDb <= StereoJunctionBranch.NoteworthyFarGainDb)
-            {
-                continue;
-            }
-
-            // The scan's optimum is moved onto the DSP's 0.01 ms grid here, so the re-render judges, the log names
-            // and the alignment carries the delay the processor will actually play.
-            reading = StereoJunctionBranch.Quantize(reading, BranchScore);
             string junctionName =
                 $"{reference.Lower.Channel.Name}/{reference.Upper.Channel.Name}";
-            string move = FormattableString.Invariant(
-                $"{reading.DeltaMs:+0.00;-0.00} ms flipped");
-            if (!StereoJunctionBranch.Adopt(reading))
+
+            bool TryMove(StereoBranchReading reading)
             {
-                log.AppendLine(
-                    $"  stereo branch declined at {reference.Lower.Channel.Name}/" +
-                    $"{reference.Upper.Channel.Name}: {move} would gain " +
-                    $"{reading.FarGainDb:0.00} dB on the far side but " +
-                    $"{reading.ReferenceGainDb:+0.00;-0.00} dB on the reference side.");
-                continue;
-            }
+                // The scan's optimum is moved onto the DSP's 0.01 ms grid here, so the re-render judges, the log names
+                // and the alignment carries the delay the processor will actually play.
+                reading = StereoJunctionBranch.Quantize(reading, BranchScore);
+                string move = FormattableString.Invariant(
+                    $"{reading.DeltaMs:+0.00;-0.00} ms{(reading.Flip ? " flipped" : ", a whole period,")}");
+                if (!StereoJunctionBranch.Adopt(reading))
+                {
+                    log.AppendLine(
+                        $"  stereo branch declined at {junctionName}: {move} would gain " +
+                        $"{reading.FarGainDb:0.00} dB on the far side but " +
+                        $"{reading.ReferenceGainDb:+0.00;-0.00} dB on the reference side.");
+                    return false;
+                }
 
-            // The scan rotates inside a fixed window; before a branch is adopted the candidate is RE-RENDERED and
-            // measured, because a half period is where that approximation is weakest.
-            var trial = new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment);
-            ApplyBranchMove(trial, above, shiftScope, reading.DeltaMs);
-            IReadOnlyList<AlignmentSnapshot> rendered = reprocess(trial);
-            double? Rendered(AlignmentJunction junction, double lowHz, double highHz) =>
-                JunctionSum(
-                    rendered, junction.Upper.Channel, junction.Lower.Channel, lowHz, highHz) is { } sum
-                    ? PenalizedLoss(sum, 0)
-                    : null;
+                // The scan rotates inside a fixed window; before a branch is adopted the candidate is RE-RENDERED and
+                // measured, because a half period is where that approximation is weakest.
+                var trial = new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment);
+                ApplyBranchMove(trial, above, shiftScope, reading.DeltaMs, reading.Flip);
+                IReadOnlyList<AlignmentSnapshot> rendered = reprocess(trial);
+                double? Rendered(AlignmentJunction junction, double lowHz, double highHz) =>
+                    JunctionSum(
+                        rendered, junction.Upper.Channel, junction.Lower.Channel, lowHz, highHz) is { } sum
+                        ? PenalizedLoss(sum, 0)
+                        : null;
 
-            double GainOf(AlignmentJunction junction, VirtualCrossoverAnalysis.SumLossEvaluator before) =>
-                Rendered(junction, junction.BandLowHz, junction.BandHighHz) is { } after
-                    ? after - PenalizedLoss(before, 0)
-                    : 0;
+                double GainOf(AlignmentJunction junction, VirtualCrossoverAnalysis.SumLossEvaluator before) =>
+                    Rendered(junction, junction.BandLowHz, junction.BandHighHz) is { } after
+                        ? after - PenalizedLoss(before, 0)
+                        : 0;
 
-            var verified = new StereoBranchReading(
-                reading.DeltaMs,
-                true,
-                GainOf(reference, referenceBand),
-                GainOf(far, farBand));
+                var verified = new StereoBranchReading(
+                    reading.DeltaMs,
+                    reading.Flip,
+                    GainOf(reference, referenceBand),
+                    GainOf(far, farBand));
 
-            // The far gain is the whole justification for disturbing a settled junction, so it is what a half may cost.
-            string? refusal = HalfBandRefusal(
-                HalfBandCells([reference], reference.Upper.Channel, current)
-                    .Concat(HalfBandCells([far], far.Upper.Channel, current)),
-                cell => PenalizedLoss(cell.Sum, 0) -
-                    (Rendered(cell.Junction, cell.LowHz, cell.HighHz) ?? PenalizedLoss(cell.Sum, 0)),
-                Math.Max(0.0, verified.FarGainDb));
-            if (refusal != null)
-            {
-                refusal = "it loses " + refusal;
-            }
+                string? refusal;
+                if (reading.Flip)
+                {
+                    // The far gain is the whole justification for disturbing a settled junction, so it is what a half may cost.
+                    refusal = HalfBandRefusal(
+                        HalfBandCells([reference], reference.Upper.Channel, current)
+                            .Concat(HalfBandCells([far], far.Upper.Channel, current)),
+                        cell => PenalizedLoss(cell.Sum, 0) -
+                            (Rendered(cell.Junction, cell.LowHz, cell.HighHz) ?? PenalizedLoss(cell.Sum, 0)),
+                        Math.Max(0.0, verified.FarGainDb));
+                    if (refusal != null)
+                    {
+                        refusal = "it loses " + refusal;
+                    }
+                }
+                else
+                {
+                    // A whole period trades one half of the band for the other by construction, so the wavefronts
+                    // judge it instead. See docs/tech/auto-alignment.md#stereo-branch-check.
+                    double farBefore = DirectCoherenceAt(current, far);
+                    double farAfter = DirectCoherenceAt(rendered, far);
+                    double referenceBefore = DirectCoherenceAt(current, reference);
+                    double referenceAfter = DirectCoherenceAt(rendered, reference);
+                    refusal = StereoJunctionBranch.WavefrontsBack(
+                        farBefore, farAfter, referenceBefore, referenceAfter)
+                        ? null
+                        : FormattableString.Invariant(
+                            $"the direct sound does not back it (far r {farBefore:0.00} -> {farAfter:0.00}, reference {referenceBefore:0.00} -> {referenceAfter:0.00})");
+                }
 
-            // The move is optional, and the field must stay realizable: a span past the ceiling would make the final
-            // feasibility check refuse the whole run for a branch it could simply have kept.
-            if (refusal == null)
-            {
-                List<double> trialDelays = shiftScope
-                    .Select(item => trial.GetValueOrDefault(item.Channel).DelayMs)
-                    .ToList();
-                double spanMs = trialDelays.Max() - trialDelays.Min();
-                if (spanMs > maxDelayMs)
+                // The move is optional, and the field must stay realizable: a span past the ceiling would make the final
+                // feasibility check refuse the whole run for a branch it could simply have kept.
+                if (refusal == null)
+                {
+                    List<double> trialDelays = shiftScope
+                        .Select(item => trial.GetValueOrDefault(item.Channel).DelayMs)
+                        .ToList();
+                    double spanMs = trialDelays.Max() - trialDelays.Min();
+                    if (spanMs > maxDelayMs)
+                    {
+                        refusal = FormattableString.Invariant(
+                            $"the field would span {spanMs:0.00} ms, past the {maxDelayMs:0} ms ceiling");
+                    }
+                }
+
+                if (refusal == null && !StereoJunctionBranch.Adopt(verified))
                 {
                     refusal = FormattableString.Invariant(
-                        $"the field would span {spanMs:0.00} ms, past the {maxDelayMs:0} ms ceiling");
+                        $"re-rendered it gains {verified.FarGainDb:0.00} dB on the far side and {verified.ReferenceGainDb:+0.00;-0.00} dB on the reference one");
                 }
-            }
-
-            if (refusal == null && !StereoJunctionBranch.Adopt(verified))
-            {
-                refusal = FormattableString.Invariant(
-                    $"re-rendered it gains {verified.FarGainDb:0.00} dB on the far side and {verified.ReferenceGainDb:+0.00;-0.00} dB on the reference one");
-            }
-            if (refusal != null)
-            {
-                log.AppendLine(
-                    $"  stereo branch declined at {junctionName}: {move} gains " +
-                    $"{verified.FarGainDb:+0.00;-0.00} dB on the far junction and " +
-                    $"{verified.ReferenceGainDb:+0.00;-0.00} dB on the reference one — {refusal}.");
-                continue;
-            }
-
-            reading = verified;
-            ApplyBranchMove(alignment, above, shiftScope, reading.DeltaMs);
-
-            log.AppendLine(
-                $"  stereo branch moved at {reference.Lower.Channel.Name}/" +
-                $"{reference.Upper.Channel.Name}: the stack above it went {move} on " +
-                $"both sides — the far junction gains {reading.FarGainDb:0.00} dB and " +
-                $"the reference one {reading.ReferenceGainDb:+0.00;-0.00} dB.");
-            if (decisions != null)
-            {
-                foreach (IAlignmentChannel channel in above)
+                if (refusal != null)
                 {
-                    AmendDecision(
-                        decisions,
-                        channel,
-                        FormattableString.Invariant(
-                            $"moved {move} with the stack above {junctionName}: the far side wanted the other branch by {reading.FarGainDb:0.00} dB"));
+                    log.AppendLine(
+                        $"  stereo branch declined at {junctionName}: {move} gains " +
+                        $"{verified.FarGainDb:+0.00;-0.00} dB on the far junction and " +
+                        $"{verified.ReferenceGainDb:+0.00;-0.00} dB on the reference one — {refusal}.");
+                    return false;
+                }
+
+                ApplyBranchMove(alignment, above, shiftScope, verified.DeltaMs, verified.Flip);
+                log.AppendLine(
+                    $"  stereo branch moved at {junctionName}: the stack above it went {move} on " +
+                    $"both sides — the far junction gains {verified.FarGainDb:0.00} dB and " +
+                    $"the reference one {verified.ReferenceGainDb:+0.00;-0.00} dB.");
+                if (decisions != null)
+                {
+                    foreach (IAlignmentChannel channel in above)
+                    {
+                        AmendDecision(
+                            decisions,
+                            channel,
+                            FormattableString.Invariant(
+                                $"moved {move} with the stack above {junctionName}: the far side wanted the other branch by {verified.FarGainDb:0.00} dB"));
+                    }
+                }
+
+                return true;
+            }
+
+            // The flip partner half a period off, and, where the direct sound can be asked, the same relation a whole
+            // period off. The one the far side wants more is tried first; one move per junction.
+            List<StereoBranchReading> offers = new[] { false, true }
+                .Where(wholePeriod => !wholePeriod || reference.CrossoverHz >= DirectCoherenceMinCrossoverHz)
+                .Select(wholePeriod => StereoJunctionBranch.Read(
+                    BranchScore, halfPeriodMs, wholePeriod: wholePeriod))
+                .OfType<StereoBranchReading>()
+                .Where(offer => offer.FarGainDb > StereoJunctionBranch.NoteworthyFarGainDb)
+                .OrderByDescending(offer => offer.FarGainDb)
+                .ToList();
+            foreach (StereoBranchReading offer in offers)
+            {
+                if (TryMove(offer))
+                {
+                    break;
                 }
             }
         }

@@ -825,6 +825,92 @@ public sealed class StereoAlignmentTests
         Assert.False(alignment[leftTwr].InvertPolarity);
     }
 
+    /// <summary>An 800 Hz junction whose reference side ties between two lobes a period (60 samples) apart: its
+    /// lower channel carries an equal copy a period behind the front. On the far side the upper channel's
+    /// <paramref name="farUpperTaps"/> and the lower channel's <paramref name="farLowerTaps"/> say which lobe it wants.</summary>
+    private static (TestChannel[] Lower, TestChannel[] Upper,
+        Dictionary<IAlignmentChannel, AlignmentOverride> Alignment, string Log)
+        RunPeriodBranch((int Samples, double Amplitude)[] farLowerTaps, (int Samples, double Amplitude)[] farUpperTaps)
+    {
+        const int PeriodSamples = 60;
+        static Complex[] Taps((int Samples, double Amplitude)[] taps)
+        {
+            var ir = new Complex[IrLength];
+            foreach ((int samples, double amplitude) in taps)
+            {
+                ir[BasePosition + samples] += amplitude;
+            }
+
+            return ir;
+        }
+
+        var leftLower = new TestChannel("L woof", Taps([(0, 1.0), (PeriodSamples, 1.0)]));
+        var leftUpper = new TestChannel("L mid", Taps([(0, 1.0)]));
+        var rightLower = new TestChannel("R woof", Taps(farLowerTaps));
+        var rightUpper = new TestChannel("R mid", Taps(farUpperTaps));
+        TestChannel[] all = [leftLower, leftUpper, rightLower, rightUpper];
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(channel => Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+
+        // The stack stands a period up so that a move either way stays above zero.
+        var alignment = all.ToDictionary(
+            channel => (IAlignmentChannel)channel, _ => new AlignmentOverride(4.0, false));
+        IReadOnlyList<AlignmentSnapshot> initial = Reprocess(alignment);
+        List<AlignmentSnapshot> left = [initial[0], initial[1]];
+        List<AlignmentSnapshot> right = [initial[2], initial[3]];
+        var plan = new StereoAlignmentPlan(
+            left, [Junction(left[0], left[1], 800)],
+            right, [Junction(right[0], right[1], 800)],
+            new HashSet<IAlignmentChannel>(), leftUpper, rightUpper,
+            BridgeBandLowHz: 800, BridgeBandHighHz: 4_000, SceneOffsetMs: 0,
+            [
+                new StereoPairLink(leftLower, rightLower, 130, 800),
+                new StereoPairLink(leftUpper, rightUpper, 800, 4_000)
+            ]);
+        var log = new StringBuilder();
+
+        AutoAlignmentEngine.RebalanceJunctionBranches(
+            plan, left, right, initial, Reprocess, alignment, log);
+
+        return ([leftLower, rightLower], [leftUpper, rightUpper], alignment, log.ToString());
+    }
+
+    [Fact]
+    public void RebalanceJunctionBranches_TheFarSideAPeriodOut_MovesTheStackAWholePeriodUnflipped()
+    {
+        // The far mid's front arrives a period (1.25 ms) before its woofer's: only the far side can tell the lobes apart.
+        (TestChannel[] lower, TestChannel[] upper,
+            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+            RunPeriodBranch(farLowerTaps: [(0, 1.0)], farUpperTaps: [(-60, 1.0)]);
+
+        foreach (TestChannel mid in upper)
+        {
+            Assert.False(alignment[mid].InvertPolarity, mid.Name);
+            Assert.Equal(5.25, alignment[mid].DelayMs, 9);
+        }
+        foreach (TestChannel woofer in lower)
+        {
+            Assert.Equal(new AlignmentOverride(4.0, false), alignment[woofer]);
+        }
+    }
+
+    [Fact]
+    public void RebalanceJunctionBranches_OnlyALateCopyWantsThePeriod_TheFrontsKeepTheStack()
+    {
+        // The far fronts already meet; louder copies 15 ms behind them would meet a period later. The summation
+        // gains from that move, the direct sound loses its step, and the stack stays.
+        (_, TestChannel[] upper, Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+            RunPeriodBranch(
+                farLowerTaps: [(0, 1.0), (720, 2.0)],
+                farUpperTaps: [(0, 1.0), (720 - 60, 2.0)]);
+
+        foreach (TestChannel mid in upper)
+        {
+            Assert.Equal(new AlignmentOverride(4.0, false), alignment[mid]);
+        }
+    }
+
     [Fact]
     public void RebalanceJunctionBranches_AJunctionThePhasePlaced_KeepsItsLobe()
     {

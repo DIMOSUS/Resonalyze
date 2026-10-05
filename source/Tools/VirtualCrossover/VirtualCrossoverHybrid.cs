@@ -619,10 +619,10 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
     {
         if (mode == StereoSumMode.Blend)
         {
-            return StereoSum(StereoSumMode.Vector, shown, summed, magnitudes, hybrid, opposite) is { } vector &&
-                StereoSum(StereoSumMode.Energy, shown, summed, magnitudes, hybrid, opposite) is { } energy
-                    ? vector with { Points = VirtualCrossoverStereoSum.Blend(vector.Points, energy.Points, blendHz) }
-                    : null;
+            return VirtualCrossoverStereoSum.Blended(
+                StereoSum(StereoSumMode.Vector, shown, summed, magnitudes, hybrid, opposite),
+                StereoSum(StereoSumMode.Energy, shown, summed, magnitudes, hybrid, opposite),
+                blendHz);
         }
 
         bool oppositeRight = !session.ActiveSideRight;

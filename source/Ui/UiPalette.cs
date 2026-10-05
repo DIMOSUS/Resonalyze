@@ -153,7 +153,6 @@ internal static class UiPalette
     public static Color BandLockedHeader => Current.BandLockedHeader;
     public static Color BandLockedHeaderText => Current.BandLockedHeaderText;
     public static Color CursorOutline => Current.CursorOutline;
-    public static Color CurveOverlayDefault => Current.CurveOverlayDefault;
     public static Color CurveTargetDefault => Current.CurveTargetDefault;
     public static Color MarkerFirstArrival => Current.MarkerFirstArrival;
     public static Color MarkerStrongestPeak => Current.MarkerStrongestPeak;

@@ -348,31 +348,22 @@ public partial class VirtualCrossoverPanel
             }
         }
 
-        // No hybrid capture on the other side -> drop the curve: a mixed-method sum reads as a false L/R difference.
         AnalysisCurve? oppositeSum = null;
-        if (oppositeSide != null && view.ShowSum && oppositeSide.ChannelCount >= 2)
+        if (oppositeSide != null && view.ShowSum)
         {
             using (AppProfiler.Zone("VirtualDSP.BuildOppositeSum"))
             {
-                oppositeSum = hybrid == null
-                    ? session.MagnitudeGate.OppositeSum(oppositeSide, session.Calibration.For).Display
-                    : hybridReader.OppositeSum(oppositeSide, hybrid.OffsetDb);
+                oppositeSum = viewBuilder.OppositeSum(oppositeSide, hybrid);
             }
         }
 
-        // Built by the method the Sum is drawn with, as the dashed opposite Sum is.
         AnalysisCurve? stereoSumCurve = null;
         if (drawsStereoSum)
         {
             using (AppProfiler.Zone("VirtualDSP.BuildStereoSum"))
             {
-                stereoSumCurve = hybrid == null
-                    ? VirtualCrossoverStereoSum.Build(
-                        view.StereoSum, frame.Summed, oppositeSide, session.MagnitudeGate, session.Calibration.For,
-                        view.StereoBlendHz)
-                    : hybridReader.StereoSum(
-                        view.StereoSum, frame.Shown, frame.Summed, magnitudes!, hybrid, oppositeSide,
-                        view.StereoBlendHz);
+                stereoSumCurve = viewBuilder.StereoSum(
+                    view.StereoSum, view.StereoBlendHz, frame, oppositeSide, magnitudes, hybrid);
             }
         }
 

@@ -126,7 +126,7 @@ namespace Resonalyze
             signalGeneratorPanel.AudioSessionFactory = audioSessionFactory;
             virtualCrossoverPanel.HistoryService = measurementHistoryService;
             RefreshCalibrationConsumers();
-            virtualCrossoverPanel.OverlayCaptureRequested = analyzerPlot.SaveFrequencyResponseOverlay;
+            virtualCrossoverPanel.OverlaySlots = analyzerPlot;
             // The wizard owns the EQ target; it ignores an equal value, so the write-back cannot loop.
             virtualCrossoverPanel.SetTargetCurve(eqWizardPanel.TargetCurve);
             virtualCrossoverPanel.TargetCurveChanged = eqWizardPanel.ApplyTargetCurve;

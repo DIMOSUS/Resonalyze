@@ -92,10 +92,10 @@ internal static class VirtualCrossoverStereoSum
     {
         if (mode == StereoSumMode.Blend)
         {
-            return Build(StereoSumMode.Vector, shown, opposite, gate, calibrationFor) is { } vector &&
-                Build(StereoSumMode.Energy, shown, opposite, gate, calibrationFor) is { } energy
-                    ? vector with { Points = Blend(vector.Points, energy.Points, blendHz) }
-                    : null;
+            return Blended(
+                Build(StereoSumMode.Vector, shown, opposite, gate, calibrationFor),
+                Build(StereoSumMode.Energy, shown, opposite, gate, calibrationFor),
+                blendHz);
         }
 
         return Parts(mode, shown, opposite, gate) is not { } parts
@@ -103,6 +103,12 @@ internal static class VirtualCrossoverStereoSum
             : gate.MeasuredSum(
                 parts.Channels, parts.AnchorIndex, parts.GateOffsetMs, calibrationFor, parts.Groups).Display;
     }
+
+    /// <summary>The Blend curve from its Vector and Energy curves; null unless both exist.</summary>
+    public static AnalysisCurve? Blended(AnalysisCurve? vector, AnalysisCurve? energy, double blendHz) =>
+        vector != null && energy != null
+            ? vector with { Points = Blend(vector.Points, energy.Points, blendHz) }
+            : null;
 
     /// <summary>Vector below, Energy above, their POWERS weighed across the octave centred on <paramref name="blendHz"/>:
     /// the L/R cross-term fades out, so a null between the sides fills in as coherence goes. Both curves are on one grid.</summary>

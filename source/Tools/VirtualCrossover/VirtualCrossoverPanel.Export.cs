@@ -2,64 +2,67 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>What leaves the tool: the sum as a Captured FR overlay and the tuning sheet.</summary>
+/// <summary>What leaves the tool: a curve of the upper plot as a Captured FR overlay, and the tuning sheet.</summary>
 public partial class VirtualCrossoverPanel
 {
     // Describes the sheet being printed, not the project, so it is session state.
     private PeqQConvention? sheetQConvention;
+    private string? overlayCurveKey;
 
-    private async Task CaptureSumToOverlayAsync()
+    private async Task CaptureToOverlayAsync()
     {
-        VirtualCrossoverGroupView groupView = SelectedGroupView;
-        VirtualCrossoverProcessedRender? render = await ProcessChannelsAsync();
-        if (render == null)
-        {
-            return;
-        }
-        // The Sum as drawn: the group view decides which channels enter it, and a centre never does.
-        var frame = VirtualCrossoverFrame.Of(render.Channels, groupView);
-        int smoothing = session.MagnitudeGate.SmoothingInverseOctaves;
-        (List<GatedMagnitude>? gated, AnalysisCurve? sumCurve, _) =
-            metrics.BuildGatedCurves([.. frame.Shown], smoothing, frame.Summed);
-        if (OverlayCaptureRequested == null || gated == null || sumCurve == null)
+        List<VirtualCrossoverOverlayCurve>? curves = await ReadOverlayCurvesAsync();
+        if (OverlaySlots == null || curves is not { Count: > 0 })
         {
             System.Media.SystemSounds.Beep.Play();
             return;
         }
 
-        List<AnalysisCurve> magnitudes = [.. gated.Select(curve => curve.Display)];
-        IReadOnlyList<SignalPoint>? hybridSum =
-            HybridRequested &&
-            hybridReader.Build(
-                frame.Shown, magnitudes, session.ActiveSideRight, smoothing,
-                [.. gated.Select(curve => curve.Unsmoothed)]) is { } hybrid
-                ? hybridReader.ActiveSum(frame.Shown, frame.Summed, magnitudes, hybrid)
-                : null;
-        string title = "vDSP Sum " + string.Join(
-            "+",
-            frame.Summed.Select(item => item.Channel.Name)) + (hybridSum != null ? " hybrid" : "");
-        OverlayPoint[] points = (hybridSum ?? sumCurve.Points)
-            .Select(point => new OverlayPoint(point.X, point.Y))
-            .ToArray();
+        using var dialog = new VirtualCrossoverOverlayExportDialog(
+            curves, OverlaySlots.ReadFrequencyResponseOverlaySlots(), overlayCurveKey);
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
+            dialog.SelectedCurve is not { } curve ||
+            dialog.SelectedSlot is not { } slot)
+        {
+            return;
+        }
 
-        int? slot = OverlayCaptureRequested(title, points);
-        if (slot.HasValue)
+        try
         {
-            MessageBox.Show(
-                FindForm(),
-                $"The virtual sum was saved as overlay slot {slot.Value} in " +
-                "Frequency Response.",
-                "Virtual DSP",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            OverlaySlots.SaveFrequencyResponseOverlay(
+                slot,
+                curve.Title,
+                [.. curve.Points.Select(point => new OverlayPoint(point.X, point.Y))],
+                curve.SmoothingCode);
+            overlayCurveKey = curve.Key;
         }
-        else
+        catch (Exception exception)
         {
-            ShowError(
-                "No free overlay slot.",
-                "All twelve Frequency Response overlay slots are occupied; " +
-                "clear one and try again.");
+            ShowError("The overlay could not be saved.", exception.Message);
         }
+    }
+
+    // A redraw requested meanwhile (an edit, a FIR headroom read landing) drops the other side's curves from a read; read
+    // again instead of offering a partial list. Null when edits keep coming.
+    private async Task<List<VirtualCrossoverOverlayCurve>?> ReadOverlayCurvesAsync()
+    {
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            VirtualCrossoverViewState view = CaptureViewState();
+            if (await ProcessChannelsAsync() is not { } render)
+            {
+                continue;
+            }
+
+            List<VirtualCrossoverOverlayCurve> curves =
+                await overlayExport.CurvesAsync(render.Channels, render.Revision, view);
+            if (processingCoordinator.IsCurrent(render.Revision))
+            {
+                return curves;
+            }
+        }
+
+        return null;
     }
 
     private async Task ExportTuningSheetAsync()

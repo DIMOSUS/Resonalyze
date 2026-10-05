@@ -15,6 +15,7 @@ slots and files (`OverlayModes.SlotModeFor`); every other plot mode has its own.
 | The series a slot puts on the plot, tagged so it finds its own | `OverlaySeries` |
 | A plot curve or a text file turned into a captured curve; export metadata | `OverlayCapture` |
 | Slot controls, menu, long press, settings dialogs, text files; binding only | `OverlayPanel`, `OverlaySlotView` partials |
+| A slot written from outside the panel (Virtual DSP's capture): the files' occupants, and a replacement that flushes a pending level save first and loads on the next `Prepare` | `OverlaySlotOccupant`, `OverlaySession.ReplaceSlotFile`, `IFrequencyResponseOverlaySlots` |
 
 The session is UI-free and is what the tests build (`OverlaySessionTests`); it takes the folder its files live in, so
 a test never touches the application's slots. The view writes the session from its controls and shows each slot again

@@ -102,6 +102,21 @@ internal static class OverlayCapture
         _ => "derived"
     };
 
+    /// <summary>A Virtual DSP curve as a Frequency Response slot keeps it: a response, so the EQ Wizard takes it, with its
+    /// smoothing in the points and the slot's own off.</summary>
+    public static OverlayFile VirtualDspFile(int slot, string title, OverlayPoint[] points, int smoothingCode) => new()
+    {
+        SavedAtUtc = DateTimeOffset.UtcNow,
+        Mode = Mode.FrequencyResponse,
+        Slot = slot,
+        Kind = OverlayKind.Captured,
+        Title = title,
+        ColorArgb = OverlayModes.SlotDefaultColor(slot).ToArgb(),
+        Points = points,
+        CapturedCurveKind = AnalysisCurveKind.Primary,
+        CapturedSmoothingCode = smoothingCode
+    };
+
     public static string CandidateTitle(LineSeries series) =>
         string.IsNullOrWhiteSpace(series.Title) ? "Untitled curve" : series.Title;
 

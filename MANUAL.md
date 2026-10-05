@@ -1486,8 +1486,10 @@ This time the DSP is *not* in bypass: everything disabled in
 
 Measure each side from the listening position — the complete **Left** system including
 a shared subwoofer, then the complete **Right** — and compare each with its Virtual DSP
-prediction (**Tools... → Capture to overlay** puts the shown side's predicted sum on the
-Frequency Response plot as an overlay); then both sides together as a final check. Small
+prediction; then both sides together as a final check. **Tools... → Capture to overlay…**
+puts a prediction on the Frequency Response plot as an overlay: a side's Sum, L+R for
+both sides, or a single block when you play one alone to find which one strays. A
+calculated `A - B` overlay of the measurement against it shows where the two part. Small
 differences are normal (parameter rounding, microphone repositioning, temperature).
 Large ones are not, so first look for a transfer error:
 

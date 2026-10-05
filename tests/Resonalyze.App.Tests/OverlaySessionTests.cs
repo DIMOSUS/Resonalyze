@@ -69,6 +69,42 @@ public sealed class OverlaySessionTests : IDisposable
     }
 
     [Fact]
+    public void AReplacedSlotFile_IsWhatTheNextPrepareLoads_ThoughTheOldContentHadAnOffsetPending()
+    {
+        session.Capture(Slot(1), AddLiveCurve(AnalysisCurveKind.Primary, "Frequency Response", 0.0));
+        session.SetLevel(Slot(1), 6m);
+
+        session.ReplaceSlotFile(new OverlayFile
+        {
+            Mode = Mode.FrequencyResponse,
+            Slot = 1,
+            Kind = OverlayKind.Captured,
+            Title = "vDSP Sum L",
+            Points = [new OverlayPoint(100, -3), new OverlayPoint(1_000, -3)]
+        });
+        session.Prepare(Mode.FrequencyResponse);
+
+        Assert.Equal("vDSP Sum L", Slot(1).Title);
+        Assert.Equal(0m, Slot(1).State.Offset);
+        Assert.Equal(-3.0, Slot(1).State.Captured!.Points[0].Y);
+    }
+
+    [Fact]
+    public void TheSlotFiles_ReadAsFreeTakenOrUnreadable()
+    {
+        session.Capture(Slot(2), AddLiveCurve(AnalysisCurveKind.Primary, "Frequency Response", 0.0));
+        File.WriteAllText(OverlayFile.GetPath(Mode.FrequencyResponse, 3, root), "{ not json");
+
+        List<OverlaySlotOccupant> slots = session.ReadSlotFiles(Mode.FrequencyResponse);
+
+        Assert.Equal(Enumerable.Range(1, OverlayFile.MaximumSlotCount), slots.Select(slot => slot.Slot));
+        Assert.True(slots[0].IsFree);
+        Assert.Equal(("Overlay 2: Frequency Response", OverlayKind.Captured), (slots[1].Title!, slots[1].Kind!.Value));
+        Assert.False(slots[2].IsFree);
+        Assert.True(slots[2].Unreadable);
+    }
+
+    [Fact]
     public void SwitchingModes_FlushesAPendingOffset_AndReloadsTheSlot()
     {
         session.Capture(Slot(1), AddLiveCurve(AnalysisCurveKind.Primary, "Frequency Response", 0.0));

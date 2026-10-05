@@ -63,6 +63,17 @@ internal sealed class OverlaySession
         }
     }
 
+    public List<OverlaySlotOccupant> ReadSlotFiles(Mode mode) => OverlaySlotOccupant.ReadAll(mode, storageRoot);
+
+    /// <summary>Writes a slot's file from outside the panel, replacing what it held; the slots load it on the next
+    /// <see cref="Prepare(Mode)"/>.</summary>
+    public void ReplaceSlotFile(OverlayFile file)
+    {
+        // A debounced level save of the old content would otherwise land over the new file.
+        FlushPendingSaves();
+        file.Save(storageRoot);
+    }
+
     public void Prepare(Mode mode)
     {
         Mode overlayMode = OverlayModes.SlotModeFor(mode);

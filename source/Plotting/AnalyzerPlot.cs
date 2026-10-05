@@ -13,7 +13,7 @@ namespace Resonalyze;
 /// curves off the UI thread (docs/tech/sweep-measurement.md#plot-builds). Live Spectrum draws its captures into the same
 /// view itself (<see cref="LiveSpectrumController"/>); this class still owns the view's mode, zoom memory and overlays.
 /// </remarks>
-internal sealed class AnalyzerPlot : IModeView
+internal sealed class AnalyzerPlot : IModeView, IFrequencyResponseOverlaySlots
 {
     private const string PeakInfoAnnotationTag = "PeakInfoAnnotation";
 
@@ -255,44 +255,17 @@ internal sealed class AnalyzerPlot : IModeView
         RefreshOverlayButtons();
     }
 
-    /// <summary>Virtual DSP's capture into the first free Frequency Response slot; null when all are taken.</summary>
+    public List<OverlaySlotOccupant> ReadFrequencyResponseOverlaySlots() =>
+        Overlays.ReadSlotFiles(Mode.FrequencyResponse);
+
+    /// <summary>Virtual DSP's capture, replacing what the slot held.</summary>
     /// <remarks>Prepare() loads it on the next frequency-mode switch, already checked.</remarks>
-    public int? SaveFrequencyResponseOverlay(string title, OverlayPoint[] points)
+    public void SaveFrequencyResponseOverlay(int slot, string title, OverlayPoint[] points, int smoothingCode)
     {
-        for (int slot = 1; slot <= OverlayFile.MaximumSlotCount; slot++)
-        {
-            bool occupied;
-            try
-            {
-                occupied = OverlayFile.Load(Mode.FrequencyResponse, slot) != null;
-            }
-            catch (Exception)
-            {
-                occupied = true;
-            }
-            if (occupied)
-            {
-                continue;
-            }
-
-            var file = new OverlayFile
-            {
-                SavedAtUtc = DateTimeOffset.UtcNow,
-                Mode = Mode.FrequencyResponse,
-                Slot = slot,
-                Kind = OverlayKind.Captured,
-                Title = title,
-                ColorArgb = UiPalette.CurveOverlayDefault.ToArgb(),
-                Points = points
-            };
-            file.Save();
-            activeOverlaySlots.MarkActive(Mode.FrequencyResponse, slot);
-            // Written past the session: the slots load again when Frequency Response is next entered.
-            preparedSlotMode = null;
-            return slot;
-        }
-
-        return null;
+        Overlays.ReplaceSlotFile(OverlayCapture.VirtualDspFile(slot, title, points, smoothingCode));
+        activeOverlaySlots.MarkActive(Mode.FrequencyResponse, slot);
+        // Written past the session: the slots load again when Frequency Response is next entered.
+        preparedSlotMode = null;
     }
 
     /// <summary>Phase and group delay show the transfer IR's peak; other modes show nothing.</summary>

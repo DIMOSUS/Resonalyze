@@ -155,9 +155,7 @@ internal sealed class VirtualCrossoverSharedScale(
 
                 if (item.Channel.Pair.ShowProcessedCurve)
                 {
-                    curves.Add(Level(hybrid != null
-                        ? VirtualCrossoverHybrid.ShiftedBy(hybrid.Channels[i], hybrid.OffsetDb)
-                        : magnitudes[i].Points));
+                    curves.Add(Level(AcousticViewBuilder.ProcessedPoints(i, magnitudes, hybrid)));
                 }
             }
 

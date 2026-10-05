@@ -488,9 +488,10 @@ namespace Resonalyze
             {
                 UpdateAveragingParameters();
             }
-            // Warm FFT/JIT and the run's own frame buffers before the driver starts, or the first callbacks drop out.
+            // Warm FFT/JIT and the run's own frame buffers before the driver starts, or the first callbacks drop out;
+            // on the pool, as the frames run to 524288 samples and Start calls this on the UI thread.
             var buffers = new SpectrumFrameBuffers();
-            WarmUpAnalysisPath(buffers);
+            await Task.Run(() => WarmUpAnalysisPath(buffers)).ConfigureAwait(false);
 
             var reframer = new OverlapReframer(SequenceLength, hopSize);
             Task processingTask = ProcessSequencesAsync(

@@ -849,14 +849,15 @@ smooth and entirely plausible, which is what makes it worth stating here.
 
 The **Sequence Length** is pinned by duration, not by sample count: about 1.4 s at
 any sample rate — 65536 samples at 44.1 and 48 kHz, 131072 at 88.2 and 96 kHz,
-262144 at 176.4 and 192 kHz — and the list shows only that length while MMM is on.
-The excitation is one frame-length period of pink noise, and a rectangular frame
-resolves 2/T hertz whatever the rate, so every rate reads the same 0.73 Hz bins and
-the 1/12-octave bands stay whole down to 25 Hz. A short frame starves the bass: at
-2048 samples and 48 kHz the curve could not start below 35 Hz. The period is built in
-the background as soon as MMM is selected at a rate — about 1 s at 48 kHz, 4 s at
-192 kHz — and a run started sooner begins playing once it is ready. Your RTA length
-comes back when you leave the mode.
+262144 at 176.4 and 192 kHz, 524288 at 352.8 and 384 kHz — and the list shows only
+that length while MMM is on. The excitation is one frame-length period of pink
+noise, and a rectangular frame resolves 2/T hertz whatever the rate, so the rates of
+one family read the same bins — 0.73 Hz for 48 kHz and its multiples, 0.67 Hz for
+44.1 kHz and its — and the 1/12-octave bands stay whole down to about 25 Hz. A short
+frame starves the bass: at 2048 samples and 48 kHz the curve could not start below
+35 Hz. The period is built in the background as soon as MMM is selected at a rate —
+about 1 s at 48 kHz, 4 s at 192 kHz, 8 s at 384 kHz — and a run started sooner
+begins playing once it is ready. Your RTA length comes back when you leave the mode.
 
 **A capture belongs to the state its run began in.** The protective high-pass and
 the microphone calibration are both frozen on the accumulation when Start is pressed,

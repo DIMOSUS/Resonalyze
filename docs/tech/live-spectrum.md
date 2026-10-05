@@ -115,8 +115,8 @@ of the same length reads every bin leakage-free.
   1/1-octave smoothing, and a 22.4 kHz edge read that point up to 0.97 dB low (0.38 dB at 24 kHz); at
   28.3 kHz no point moves. At 44.1 and 48 kHz the edge is Nyquist; at 96 and 192 kHz it removes 6% and
   13% of the power, all ultrasonic.
-- **Cost.** The phase search takes about 0.7–1 s at 65536 samples, 2 s at 131072, 3.9 s at 262144 and 90 ms
-  at 2048, so periods are cached per length and rate for the life of the process. A period not cached yet
+- **Cost.** The phase search takes about 0.7–1 s at 65536 samples, 2 s at 131072, 3.9 s at 262144, 7.9 s at
+  524288 and 90 ms at 2048, so periods are cached per length and rate for the life of the process. A period not cached yet
   is synthesized on the thread pool when the analyzer is configured (`NoiseSignal.PreparePinkPeriodAsync`):
   `NoiseMeasurement.Init` returns at once, and a run started before the period exists builds its signal
   once it does, off the UI thread. More passes keep paying (300 reach 1.8 dB at 65536) but lengthen that
@@ -132,18 +132,20 @@ of the same length reads every bin leakage-free.
 
 MMM does not run the stored sequence length, which stays the RTA's pick: `LiveSequenceLengths.SpatialAverage` gives
 the power of two nearest 1.37 s at the rate (65536 at 44.1 and 48 kHz, 131072 at 88.2 and 96, 262144 at 176.4 and
-192), and `LiveSpectrumSession.Configure` hands the analyzer `LiveSpectrumOptions.EffectiveSequenceLength`, so the
-period played, the frames read and the saved recipe all carry it. The settings panel offers that one length in MMM.
+192, 524288 at 352.8 and 384), and `LiveSpectrumSession.Configure` hands the analyzer
+`LiveSpectrumOptions.EffectiveSequenceLength`, so the period played, the frames read and the saved recipe all carry
+it. The settings panel offers that one length in MMM.
 
 - **Duration, not samples.** A rectangular frame resolves 2/T Hz, so a fixed N would halve the resolution at every
-  doubling of the rate. Within a rate family the bins are the same (48000/65536 = 192000/262144 = 0.73 Hz), and
-  nothing above 24 kHz is stored or drawn, so a higher driver rate changes nothing a capture reads. Resampling to
-  48 kHz instead would add a decimation filter's ripple near 20 kHz, and at 44.1 kHz the period would not be a whole
-  number of samples at both rates.
-- **Why 1.37 s.** The 1/12-octave integration band stays wider than the two-bin resolution (1.46 Hz) down to 25 Hz,
-  against 51 Hz at 683 ms and 101 Hz at 341 ms. The reference sets were taken at it. A free length let a set be
-  taken at the 2048 default, whose grid starts at 35 Hz (half a bin plus half the main lobe,
-  `LogarithmicPowerBandResample`) and whose bass is resolved at 47 Hz.
+  doubling of the rate. Within a rate family the bins are the same: 0.732 Hz for 48 kHz and its multiples
+  (48000/65536 = 192000/262144), 0.673 Hz for 44.1 kHz and its (1.49 s frames). Nothing above 24 kHz is stored or
+  drawn, so a higher driver rate changes nothing a capture reads. Resampling to 48 kHz instead would add a
+  decimation filter's ripple near 20 kHz, and at 44.1 kHz the period would not be a whole number of samples at both
+  rates.
+- **Why 1.37 s.** The 1/12-octave integration band stays wider than the two-bin resolution (1.46 Hz) down to
+  25.4 Hz (23.3 Hz in the 44.1 kHz family), against 51 Hz at 683 ms and 101 Hz at 341 ms. The reference sets were
+  taken at it. A free length let a set be taken at the 2048 default, whose grid starts at 35 Hz (half a bin plus
+  half the main lobe, `LogarithmicPowerBandResample`) and whose bass is resolved at 47 Hz.
 - **Cost.** About 22 frames in a 30 s walk, which does not matter: the average is over the path, not the frames.
   The curve updates every 1.4 s, and a run started within seconds of choosing a rate waits for the period's
   synthesis without holding the UI (see Cost above).

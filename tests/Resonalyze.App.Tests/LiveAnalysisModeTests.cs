@@ -38,6 +38,8 @@ public sealed class LiveAnalysisModeTests
     [InlineData(96_000, 131_072)]
     [InlineData(176_400, 262_144)]
     [InlineData(192_000, 262_144)]
+    [InlineData(352_800, 524_288)]
+    [InlineData(384_000, 524_288)]
     [InlineData(0, 65_536)]
     public void TheSpatialAverageFrame_IsAFixedDuration(int sampleRateHz, int expected)
     {

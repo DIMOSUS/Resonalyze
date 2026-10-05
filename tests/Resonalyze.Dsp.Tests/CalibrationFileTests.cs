@@ -4,8 +4,18 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Dsp.Tests;
 
-public sealed class CalibrationFileTests
+public sealed class CalibrationFileTests : IDisposable
 {
+    private readonly List<string> writtenFiles = new();
+
+    public void Dispose()
+    {
+        foreach (string path in writtenFiles)
+        {
+            File.Delete(path);
+        }
+    }
+
     [Fact]
     public void LoadsWhitespaceSeparatedCalibrationWithComments()
     {
@@ -462,11 +472,12 @@ public sealed class CalibrationFileTests
         }
     }
 
-    private static string WriteCalibrationFile(string text)
+    private string WriteCalibrationFile(string text)
     {
         string path = Path.Combine(
             Path.GetTempPath(),
             $"resonalyze-calibration-{Guid.NewGuid():N}.txt");
+        writtenFiles.Add(path);
         File.WriteAllText(path, text);
         return path;
     }

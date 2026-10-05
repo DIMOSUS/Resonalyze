@@ -1149,7 +1149,8 @@ it returns to Virtual DSP with the filters and appears on the tuning sheet.
 Auto Tune is a starting point. Remove a band with **Delete** on its number's right-click
 menu, **Del** on the selected band, or by dragging it out of the bank. Adjust bands on
 their cards, or drag their numbered handles on the graph, where the wheel over the
-selected one sets its Q. Add them from the **+** tile: **PK**, the two shelves, and
+selected one sets its Q (on a touchpad, Ctrl + drag a handle up or down). Add them
+from the **+** tile: **PK**, the two shelves, and
 **AP1 / AP2**, the first- and second-order all-pass bands
 [Section 9](#9-delay-and-phase-alignment) uses to bend phase without touching magnitude.
 

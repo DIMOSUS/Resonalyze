@@ -57,14 +57,20 @@ internal static class PlotGestureHelp
             new PlotGestureHelpEntry("Home, or A", "Back to the view's own default scale"),
             new PlotGestureHelpEntry("Double click", "Opens the graph limits dialog"),
         ]),
-        new PlotGestureHelpSection("EQ Wizard band handles",
+        new PlotGestureHelpSection("EQ Wizard handles",
         [
             new PlotGestureHelpEntry(
                 "Drag a band's handle",
                 "Moves the band: frequency sideways, gain up and down"),
             new PlotGestureHelpEntry(
+                "Ctrl + drag a band's handle",
+                "Changes its Q: up narrows, down widens; the band stays put"),
+            new PlotGestureHelpEntry(
                 "Wheel over the selected handle",
                 "Steps its Q; with Alt, Shift or Ctrl held the wheel zooms"),
+            new PlotGestureHelpEntry(
+                "Drag a dashed From / To line",
+                "Moves that edge of the Auto Tune window"),
         ]),
         new PlotGestureHelpSection("Undo and help",
         [

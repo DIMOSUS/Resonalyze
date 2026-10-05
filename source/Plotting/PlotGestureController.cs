@@ -41,7 +41,8 @@ internal sealed class PlotGestureController : PlotController
 
     // See docs/tech/plot-interaction.md#drag-handles.
     private IPlotDragHandles? hoveredHandles;
-    private bool handleHovered;
+    private int hoveredHandle;
+    private CursorType? handleCursor;
     private bool draggingHandle;
 
     // Undo entries name axes by key, whose meaning varies across builds and re-arms. See docs/tech/plot-interaction.md#undo-stack.
@@ -59,6 +60,9 @@ internal sealed class PlotGestureController : PlotController
             ClearHandleHover();
         };
         view.Disposed += (_, _) => graphTip.Dispose();
+        // A modifier changes what a handle's drag does, and so its cursor, without the pointer moving.
+        view.KeyDown += (_, e) => RefreshHandleCursor(e.Modifiers);
+        view.KeyUp += (_, e) => RefreshHandleCursor(e.Modifiers);
 
         BindWheelGestures();
         BindMouseGestures();
@@ -165,6 +169,24 @@ internal sealed class PlotGestureController : PlotController
                     new TrackerManipulator(target) { Snap = true, PointsOnly = false },
                     args);
             }));
+
+        // Ctrl over a handle grabs it for the handle's alternate drag; elsewhere it keeps OxyPlot's free tracker.
+        this.BindMouseDown(
+            OxyMouseButton.Left,
+            OxyModifierKeys.Control,
+            new DelegatePlotCommand<OxyMouseDownEventArgs>((target, controller, args) =>
+            {
+                if (!TryGrabHandle(target, controller, args))
+                {
+                    PlotCommands.Track.Execute(target, controller, args);
+                }
+            }));
+        this.BindMouseDown(
+            OxyMouseButton.Left,
+            OxyModifierKeys.Control,
+            clickCount: 2,
+            new DelegatePlotCommand<OxyMouseDownEventArgs>((target, controller, args) =>
+                TryGrabHandle(target, controller, args)));
     }
 
     private bool TryClickZoomButton(IPlotView target, ScreenPoint position)
@@ -197,9 +219,20 @@ internal sealed class PlotGestureController : PlotController
 
         controller.AddMouseManipulator(
             target,
-            new PlotDragHandleManipulator(target, handles, handle, held => draggingHandle = held),
+            new PlotDragHandleManipulator(target, handles, handle, HoldHandle),
             args);
         return true;
+    }
+
+    // Let go, the handle under the pointer takes its cursor back from the drag's.
+    private void HoldHandle(bool held)
+    {
+        draggingHandle = held;
+        if (!held && view.ActualModel is PlotModel model)
+        {
+            handleCursor = null;
+            TrackHandleHover(model, pointer, Modifiers(Control.ModifierKeys));
+        }
     }
 
     private static bool TryWheelHandle(IPlotView target, OxyMouseWheelEventArgs args) =>
@@ -231,14 +264,14 @@ internal sealed class PlotGestureController : PlotController
     }
 
     // Frozen while a handle is held: the pointer runs ahead of a handle stopped at its limit.
-    private void TrackHandleHover(PlotModel model, ScreenPoint position)
+    private void TrackHandleHover(PlotModel model, ScreenPoint position, OxyModifierKeys modifiers)
     {
         if (draggingHandle)
         {
             return;
         }
 
-        bool hit = TryHitHandle(model, position, out IPlotDragHandles? handles, out int handle);
+        TryHitHandle(model, position, out IPlotDragHandles? handles, out int handle);
         bool changed = hoveredHandles != null &&
             !ReferenceEquals(hoveredHandles, handles) &&
             hoveredHandles.Hover(null);
@@ -248,7 +281,8 @@ internal sealed class PlotGestureController : PlotController
         }
 
         hoveredHandles = handles;
-        SetHandleHovered(hit);
+        hoveredHandle = handle;
+        SetHandleCursor(handles?.Cursor(handle, modifiers));
         if (changed)
         {
             view.InvalidatePlot(false);
@@ -264,26 +298,46 @@ internal sealed class PlotGestureController : PlotController
 
         bool changed = hoveredHandles.Hover(null);
         hoveredHandles = null;
-        SetHandleHovered(false);
+        SetHandleCursor(null);
         if (changed)
         {
             view.InvalidatePlot(false);
         }
     }
 
-    private void SetHandleHovered(bool hovered)
+    private void RefreshHandleCursor(Keys modifiers)
     {
-        if (hovered == handleHovered)
+        if (!draggingHandle && hoveredHandles != null)
+        {
+            SetHandleCursor(hoveredHandles.Cursor(hoveredHandle, Modifiers(modifiers)));
+        }
+    }
+
+    private void SetHandleCursor(CursorType? cursor)
+    {
+        if (cursor == handleCursor)
         {
             return;
         }
 
-        handleHovered = hovered;
+        handleCursor = cursor;
         UpdateCursor();
     }
 
+    // A hand rather than OxyPlot's own pan cursor, which is kept for the drag itself.
     private void UpdateCursor() =>
-        view.Cursor = zoomBoxHovered || handleHovered ? Cursors.Hand : Cursors.Default;
+        view.Cursor = zoomBoxHovered ? Cursors.Hand : handleCursor switch
+        {
+            null or CursorType.Default => Cursors.Default,
+            CursorType.ZoomHorizontal => Cursors.SizeWE,
+            CursorType.ZoomVertical => Cursors.SizeNS,
+            _ => Cursors.Hand,
+        };
+
+    private static OxyModifierKeys Modifiers(Keys keys) =>
+        ((keys & Keys.Control) != 0 ? OxyModifierKeys.Control : OxyModifierKeys.None) |
+        ((keys & Keys.Shift) != 0 ? OxyModifierKeys.Shift : OxyModifierKeys.None) |
+        ((keys & Keys.Alt) != 0 ? OxyModifierKeys.Alt : OxyModifierKeys.None);
 
     /// <summary>Invalidates only on zoom-button presence/hover transitions, so a plain move does not repaint a waterfall.</summary>
     private void TrackPointer(ScreenPoint position)
@@ -298,7 +352,7 @@ internal sealed class PlotGestureController : PlotController
         DropZoomBoxOfAnotherView(model);
         AttachZoomButtons(model);
         TrackZoomBoxHover(model, position);
-        TrackHandleHover(model, position);
+        TrackHandleHover(model, position, Modifiers(Control.ModifierKeys));
         ScreenPoint? shown = model.PlotArea.Contains(position.X, position.Y)
             ? position
             : null;

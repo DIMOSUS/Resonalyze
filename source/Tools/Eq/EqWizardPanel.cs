@@ -303,8 +303,18 @@ public partial class EqWizardPanel : UserControl
         plot.RefreshEqAxis(session);
         PlotInteraction.Enable(plotWizard);
         WireBandHandles();
+        WireWindowEdges();
 
         plotLabels = new PlotLabelsPanelController(plotWizard, () => Mode.EqWizard);
+    }
+
+    // As if typed into the field, which takes it from there; a press keeps the band selected like a handle's.
+    private void WireWindowEdges()
+    {
+        plot.WindowEdges.Pressed += () => handlePressed = true;
+        plot.WindowEdges.Dragged += (edge, frequencyHz) =>
+            (edge == EqWindowEdgesAnnotation.From ? numericFromHz : numericToHz).Value =
+                EqWizardLimits.WindowFrequency.Clamp(frequencyHz);
     }
 
     private void InitializeToolTips()
@@ -388,11 +398,13 @@ public partial class EqWizardPanel : UserControl
             "on broad trends that hold across the seat, not a peak at one mic spot; " +
             "the strips themselves accept any Q up to 20.");
         SetTip(labelFromHz, numericFromHz,
-            "Lower edge of the Auto Tune frequency window; also bounds the error metrics.");
+            "Lower edge of the Auto Tune frequency window; also bounds the error metrics.\r\n" +
+            "Its dashed line on the plot drags it too.");
         SetTip(labelToHz, numericToHz,
-            "Upper edge of the Auto Tune frequency window; also bounds the error metrics.");
+            "Upper edge of the Auto Tune frequency window; also bounds the error metrics.\r\n" +
+            "Its dashed line on the plot drags it too.");
         SetTip(checkBoxEqCurve,
-            "Draw the bank's own response — the white curve on the right-hand axis, " +
+            "Draw the bank's own response — the violet curve on the right-hand axis, " +
             "in dB here and in degrees in Phase. Turning it off leaves the plot to " +
             "the measurement and the target; the filters keep working either way. " +
             "The right-hand axis goes with it when nothing else is left on it.");

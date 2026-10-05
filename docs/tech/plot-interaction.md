@@ -70,28 +70,39 @@ zooms, why a box is too small) use a plain WinForms `ToolTip` on the control, sh
 ## Drag handles
 
 An annotation that implements `IPlotDragHandles` (`source/Plotting/PlotDragHandles.cs`) offers handles the
-pointer can grab; the EQ Wizard's band handles (`EqBandHandlesAnnotation`) and the curve check boxes
-(`PlotCurveTogglesAnnotation`, see [Curve toggles](#curve-toggles)) are the two today. The controller
+pointer can grab; the EQ Wizard's band handles (`EqBandHandlesAnnotation`) and window edges
+(`EqWindowEdgesAnnotation`), and the curve check boxes (`PlotCurveTogglesAnnotation`, see
+[Curve toggles](#curve-toggles)) are the three today. The controller
 asks every such annotation in the model, so the gestures stay in the one map and the annotation stays free of
 WinForms:
 
 - **Left press** on a handle, after the zoom box and the zoom buttons, starts `PlotDragHandleManipulator`
   instead of the tracker. The double-click binding checks handles too, so a quick second press on a handle is a
   grab and not the limits dialog.
+- **Ctrl + left press** on a handle grabs it the same way and hands the handle the modifier: the EQ Wizard's band
+  handle then turns vertical travel into Q steps (10 px per wheel notch) and leaves the band in place. Off a handle,
+  Ctrl + left keeps OxyPlot's default, the non-snapping tracker.
 - **Drag** is forwarded only once the pointer has travelled 3 px, so the jitter of a click never edits
   anything. The annotation keeps the offset between the press and the handle's centre, so a press off centre
   does not jump the handle.
 - **Plain wheel** goes to the handle under the pointer first; the handle may decline (the EQ Wizard takes it
   only over the selected band, and not for a band without Q), and the wheel then zooms. The modified wheels are
   never offered: Alt, Shift and Ctrl keep their zoom meaning over a handle.
+- **Order.** The controller asks handle annotations in model order and the first hit wins, so the EQ Wizard adds
+  its window edges after the band handles: a band sitting on an edge stays grabbable.
 - **Hover** is tracked from the view's mouse moves, like the zoom buttons: the plot is invalidated only when the
-  highlighted handle changes, and the cursor becomes a hand over a handle or a waiting zoom box. Hover is frozen
-  while a handle is held, because the pointer runs ahead of a handle stopped at its limit.
+  highlighted handle changes. Hover is frozen while a handle is held, because the pointer runs ahead of a handle
+  stopped at its limit.
+- **Cursor.** A handle names its cursor for the modifiers held (`Cursor`): a hand by default, the double arrows
+  where a drag runs one way only (the EQ Wizard's window edges sideways, a band handle up and down with Ctrl).
+  The controller asks again on the view's key down and up, so pressing Ctrl over a handle changes it without a
+  move, but only once the graph has focus; held, the drag shows the same cursor, and let go, the handle under the
+  pointer gets its own back. A waiting zoom box shows a hand.
 
 The annotation reports only what the pointer did (press, where a drag went, wheel notches, release). The owner
 turns that into edits: the EQ Wizard writes the band through `EqWizardBank.Edit`, which rounds it to the
 strip's precision, and lands the drag as one undo step on release. WinForms raises the view's `Click` after any
-press, so the wizard marks a press that took a handle and does not read that click as a click on empty graph.
+press, so the wizard marks a press that took a handle and does not read that click as a click on empty graph. A dragged window edge sets its From or To field as if typed.
 
 ## Curve toggles
 

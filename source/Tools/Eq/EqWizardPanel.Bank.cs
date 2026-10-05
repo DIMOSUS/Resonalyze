@@ -445,8 +445,9 @@ public partial class EqWizardPanel
             EditBandFromPlot(index, EqBandHandles.StepQ(session.Bank.Bands[index], notches));
         // A drag lands as one undo step when let go; wheel notches wait for the idle timer like typing.
         handles.Released += CommitBankChange;
-        // Alt-Tab or a dialog taking the mouse mid-drag raises no release; let go there too, or Del stays refused. Only
-        // a capture the plot took counts as lost: a drag that never held one (the controller driven directly) is not.
+        // Alt-Tab or a dialog taking the mouse mid-drag raises no release; let go there too, or a band stays held and Del
+        // refused. Only a capture the plot took counts as lost: a drag that never held one (the controller driven
+        // directly) is not.
         bool plotCaptured = false;
         plotWizard.MouseCaptureChanged += (_, _) =>
         {
@@ -456,9 +457,10 @@ public partial class EqWizardPanel
                 return;
             }
 
-            if (plotCaptured && handles.Dragging)
+            if (plotCaptured)
             {
                 handles.Release();
+                plot.WindowEdges.Release();
             }
 
             plotCaptured = false;

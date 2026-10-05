@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Windows.Forms;
 using OxyPlot;
 using OxyPlot.Annotations;
+using OxyPlot.Axes;
 using OxyPlot.WindowsForms;
 using Resonalyze.Dsp;
 using Resonalyze.Ui;
@@ -213,20 +214,29 @@ public sealed class EqWizardPanelWiringTests
     {
         using var live = new LivePanel();
         live.Invoke("AddBand", PeqBandType.Peaking);
+        // Where the 0.1 rounding of single steps drifts: 1.0, 1.1, 1.2 against two notches' 1.3.
+        live.Change(() => live.Strips[0].QInput.Value = 1.0m);
+        live.Invoke("CommitBankChange");
         live.Invoke("DeselectBand");
         PeqBand added = live.Session.Bank.Bands[0];
+        Assert.Equal(1.0, added.Q);
         ScreenPoint start = live.HandleCenter(0);
 
-        // 25 px up is two wheel notches' worth; the sideways travel is ignored.
+        // 10 px up is one wheel notch, 25 px two; the sideways travel is ignored. Where the pointer is decides the Q,
+        // however many moves it took.
+        double twoNotches = (double)EqWizardLimits.BandQ.Clamp(added.Q * Math.Pow(2, 2.0 / 6));
         live.Press(start, OxyModifierKeys.Control);
+        live.Move(new ScreenPoint(start.X + 20, start.Y - 11));
+        live.Move(new ScreenPoint(start.X + 40, start.Y - 25));
+        Assert.Equal(twoNotches, live.Session.Bank.Bands[0].Q);
+        live.Move(new ScreenPoint(start.X + 40, start.Y - 3));
+        Assert.Equal(added.Q, live.Session.Bank.Bands[0].Q);
         live.Move(new ScreenPoint(start.X + 40, start.Y - 25));
         live.Release(new ScreenPoint(start.X + 40, start.Y - 25));
 
         PeqBand tuned = live.Session.Bank.Bands[0];
         Assert.Equal(0, live.Handles.Selected);
-        Assert.Equal(
-            added with { Q = (double)EqWizardLimits.BandQ.Clamp(added.Q * Math.Pow(2, 2.0 / 6)) },
-            tuned);
+        Assert.Equal(added with { Q = twoNotches }, tuned);
         Assert.Equal((decimal)tuned.Q, live.Strips[0].QInput.Value);
 
         live.Click("buttonUndo");
@@ -282,6 +292,26 @@ public sealed class EqWizardPanelWiringTests
 
         live.Hover(new ScreenPoint(edge.X + 40, edge.Y + 60));
         Assert.Equal(Cursors.Default, live.Cursor);
+    });
+
+    [Fact]
+    public void AWindowEdgeZoomedOffTheGraph_CannotBeTakenAtItsBorder() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+        live.Set<ThemedNumericUpDown>("numericFromHz", box => box.Value = 100m);
+        // 100 Hz about 2 px left of the plot: within reach of a press just inside its border.
+        Axis frequency = live.Plot.Axes.Single(axis => axis.Key == PlotModelFactory.FrequencyAxisKey);
+        live.WindowEdge(EqWindowEdgesAnnotation.From);
+        live.Change(() => frequency.Zoom(101, frequency.ActualMaximum));
+        ScreenPoint edge = live.WindowEdge(EqWindowEdgesAnnotation.From);
+        Assert.InRange(live.Plot.PlotArea.Left - edge.X, 0.5, 3);
+        var inside = new ScreenPoint(live.Plot.PlotArea.Left + 1, edge.Y);
+
+        live.Press(inside);
+        live.Move(new ScreenPoint(inside.X + 40, inside.Y));
+        live.Release(new ScreenPoint(inside.X + 40, inside.Y));
+
+        Assert.Equal(100m, live.Session.WindowFromHz);
     });
 
     [Fact]

@@ -443,6 +443,8 @@ public partial class EqWizardPanel
             EditBandFromPlot(index, EqBandHandles.MoveTo(session.Bank.Bands[index], frequencyHz, levelDb));
         handles.QStepped += (index, notches) =>
             EditBandFromPlot(index, EqBandHandles.StepQ(session.Bank.Bands[index], notches));
+        handles.QDragged += (index, pressedQ, notches) =>
+            EditBandFromPlot(index, EqBandHandles.StepQ(session.Bank.Bands[index] with { Q = pressedQ }, notches));
         // A drag lands as one undo step when let go; wheel notches wait for the idle timer like typing.
         handles.Released += CommitBankChange;
         // Alt-Tab or a dialog taking the mouse mid-drag raises no release; let go there too, or a band stays held and Del

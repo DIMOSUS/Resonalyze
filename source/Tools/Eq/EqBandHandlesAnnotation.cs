@@ -48,6 +48,7 @@ internal sealed class EqBandHandlesAnnotation : Annotation, IPlotDragHandles
     private ScreenVector grabOffset;
     private ScreenPoint pressedAt;
     private bool draggingQ;
+    private double pressedQ;
     private int draggedNotches;
     private int wheelRemainder;
 
@@ -68,8 +69,11 @@ internal sealed class EqBandHandlesAnnotation : Annotation, IPlotDragHandles
 
     public event Action? Released;
 
-    /// <summary>Wheel notches over the selected handle, or a Ctrl drag's steps up and down; positive narrows.</summary>
+    /// <summary>Wheel notches over the selected handle; positive narrows.</summary>
     public event Action<int, int>? QStepped;
+
+    /// <summary>A Ctrl drag: band index, its Q at the press, and the wheel notches the pointer is above the press.</summary>
+    public event Action<int, double, int>? QDragged;
 
     public IReadOnlyList<PeqBand> Bands => bands;
 
@@ -154,6 +158,7 @@ internal sealed class EqBandHandlesAnnotation : Annotation, IPlotDragHandles
         grabOffset = Center(handle) - point;
         pressedAt = point;
         draggingQ = modifiers == OxyModifierKeys.Control;
+        pressedQ = bands[handle].Q;
         draggedNotches = 0;
         Pressed?.Invoke(handle);
     }
@@ -168,12 +173,12 @@ internal sealed class EqBandHandlesAnnotation : Annotation, IPlotDragHandles
 
         if (draggingQ)
         {
-            // Counted from the press: a slow drag's small moves add up instead of each falling short of a step.
+            // From the press, not the last move: the bank rounds every step, so steps taken one by one would drift.
             int notches = (int)Math.Truncate((pressedAt.Y - point.Y) / QDragPixelsPerNotch);
             if (notches != draggedNotches)
             {
-                QStepped?.Invoke(index, notches - draggedNotches);
                 draggedNotches = notches;
+                QDragged?.Invoke(index, pressedQ, notches);
             }
 
             return;

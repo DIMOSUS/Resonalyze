@@ -55,8 +55,8 @@ internal sealed class EqWindowEdgesAnnotation : Annotation, IPlotDragHandles
 
         double from = ScreenX(From);
         double to = ScreenX(To);
-        bool nearFrom = Math.Abs(point.X - from) <= Reach;
-        bool nearTo = Math.Abs(point.X - to) <= Reach;
+        bool nearFrom = Near(point, from);
+        bool nearTo = Near(point, to);
         if (nearFrom && nearTo)
         {
             // Lines closer than the reach: the side of their middle picks, so they can always be pulled apart.
@@ -113,7 +113,7 @@ internal sealed class EqWindowEdgesAnnotation : Annotation, IPlotDragHandles
 
         OxyRect area = PlotModel.PlotArea;
         double x = ScreenX(edge);
-        if (x < area.Left || x > area.Right)
+        if (!OnGraph(x))
         {
             return;
         }
@@ -156,4 +156,9 @@ internal sealed class EqWindowEdgesAnnotation : Annotation, IPlotDragHandles
             ActualFontSize,
             ActualFontWeight);
     }
+
+    // A line zoomed off the graph is not drawn, so the pointer at the graph's edge must not take it either.
+    private bool Near(ScreenPoint point, double x) => OnGraph(x) && Math.Abs(point.X - x) <= Reach;
+
+    private bool OnGraph(double x) => x >= PlotModel.PlotArea.Left && x <= PlotModel.PlotArea.Right;
 }

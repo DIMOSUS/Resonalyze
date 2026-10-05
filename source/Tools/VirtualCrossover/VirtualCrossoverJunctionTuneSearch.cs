@@ -43,7 +43,8 @@ internal static class VirtualCrossoverJunctionTuneSearch
 
         VirtualCrossoverChannelSettings lower = junctions[index].Lower.Settings;
         VirtualCrossoverChannelSettings upper = junctions[index].Upper.Settings;
-        double currentHz = VirtualCrossoverJunctions.GetPairCrossoverHz(lower, upper);
+        double currentHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
+            lower, upper, ProcessedChannels.ProcessorRateOf(junctions[index].Lower));
         (double minHz, double maxHz) = currentHz > 0
             ? AgentProposalValidator.DefaultJunctionWindow(currentHz)
             : (junctions[index].BandLowHz, junctions[index].BandHighHz);

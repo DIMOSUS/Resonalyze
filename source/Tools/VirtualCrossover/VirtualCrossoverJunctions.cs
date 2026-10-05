@@ -18,20 +18,23 @@ internal static class VirtualCrossoverJunctions
 
     private const int GapHandoverSteps = 48;
 
-    // High enough that the bilinear warp leaves an audio-band slope where its corner puts it.
-    private const double GapHandoverRateHz = 192_000;
+    // Where no processor is named: high enough that the bilinear warp leaves an audio-band slope where its corner puts it.
+    private const int UnwarpedRateHz = 192_000;
 
-    /// <summary>Where the slopes of a low-pass and a high-pass set an octave or more apart cross; null where the corners stand
-    /// closer, or the slopes meet below <see cref="GapHandoverFloorDb"/>.</summary>
+    /// <summary>Where the slopes of a low-pass and a high-pass set an octave or more apart cross, as the processor
+    /// realizes them; null where the corners stand closer, or the slopes meet below <see cref="GapHandoverFloorDb"/>.</summary>
     public static double? GapHandoverHz(
         VirtualCrossoverChannelSettings lower,
-        VirtualCrossoverChannelSettings upper)
+        VirtualCrossoverChannelSettings upper,
+        int? processorSampleRateHz = null)
     {
         CrossoverSpec lowerSpec = lower.EffectiveCrossover;
         CrossoverSpec upperSpec = upper.EffectiveCrossover;
+        int rateHz = processorSampleRateHz is > 0 ? processorSampleRateHz.Value : UnwarpedRateHz;
         if (lowerSpec.LowPassHz is not { } lowPassHz ||
             upperSpec.HighPassHz is not { } highPassHz ||
-            highPassHz < 2 * lowPassHz)
+            highPassHz < 2 * lowPassHz ||
+            highPassHz >= rateHz / 2.0)
         {
             return null;
         }
@@ -44,8 +47,8 @@ internal static class VirtualCrossoverJunctions
         {
             double hz = lowPassHz * Math.Pow(highPassHz / lowPassHz, (double)step / GapHandoverSteps);
             double level = Math.Min(
-                CrossoverFilter.Response(lowPass, hz, GapHandoverRateHz).Magnitude,
-                CrossoverFilter.Response(highPass, hz, GapHandoverRateHz).Magnitude);
+                CrossoverFilter.Response(lowPass, hz, rateHz).Magnitude,
+                CrossoverFilter.Response(highPass, hz, rateHz).Magnitude);
             if (level > crossingLevel)
             {
                 crossingLevel = level;
@@ -59,9 +62,10 @@ internal static class VirtualCrossoverJunctions
     /// <summary>Where a gap hands over, else lower low-pass, else upper high-pass, else geometric mean of band centres.</summary>
     public static double GetPairCrossoverHz(
         VirtualCrossoverChannelSettings lower,
-        VirtualCrossoverChannelSettings upper)
+        VirtualCrossoverChannelSettings upper,
+        int? processorSampleRateHz = null)
     {
-        if (GapHandoverHz(lower, upper) is { } gapHz)
+        if (GapHandoverHz(lower, upper, processorSampleRateHz) is { } gapHz)
         {
             return gapHz;
         }

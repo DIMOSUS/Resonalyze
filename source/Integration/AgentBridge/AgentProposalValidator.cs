@@ -799,7 +799,8 @@ internal static class AgentProposalValidator
                 : $"{lowerFound.Label} and {upperFound.Label} are not neighbours along the spectrum.";
         }
 
-        double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(lowerFound.Settings, upperFound.Settings);
+        double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
+            lowerFound.Settings, upperFound.Settings, session.ProcessorSampleRateHz);
         (double bandLowHz, double bandHighHz) = VirtualCrossoverJunctions.OverlapBand(pairHz);
         if (!PlaysWithin(lowerFound.Settings, bandLowHz, bandHighHz) ||
             !PlaysWithin(upperFound.Settings, bandLowHz, bandHighHz))
@@ -1076,7 +1077,8 @@ internal static class AgentProposalValidator
             return problem;
         }
 
-        double currentHz = VirtualCrossoverJunctions.GetPairCrossoverHz(lower!.Settings, upper!.Settings);
+        double currentHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
+            lower!.Settings, upper!.Settings, session.ProcessorSampleRateHz);
         (double defaultMin, double defaultMax) = DefaultJunctionWindow(currentHz);
         double minHz = junction.MinHz ?? defaultMin;
         double maxHz = junction.MaxHz ?? defaultMax;

@@ -160,7 +160,7 @@ public sealed class ProcessedChannelsTests
     public void GetAdjacentPairs_KeepsDriversSetWideApartOnGentleSlopes()
     {
         // The spread the sub and rear fill above leave a hole across, but on second-order slopes: both drivers are
-        // 9 dB down between the corners, and the junction is read there.
+        // 10 dB down where the slopes cross on this 48 kHz processor, and the junction is read there.
         ProcessedChannel mid = Channel("M", new VirtualCrossoverChannelSettings
         {
             CrossoverKind = CrossoverKind.LowPass,
@@ -175,7 +175,7 @@ public sealed class ProcessedChannelsTests
         AdjacentPair pair = Assert.Single(ProcessedChannels.GetAdjacentPairs(
             ProcessedChannels.OrderByBand([mid, tweeter])));
 
-        Assert.Equal(4_123, pair.CrossoverHz, 0);
+        Assert.Equal(4_210, pair.CrossoverHz, 0);
         Assert.True(pair.BandLowHz < 2_500 && pair.BandHighHz > 6_800);
     }
 

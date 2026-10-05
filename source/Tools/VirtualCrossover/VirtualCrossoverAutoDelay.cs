@@ -638,7 +638,7 @@ internal static class VirtualCrossoverAutoDelay
         for (int i = 0; i < byBand.Count - 1; i++)
         {
             double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
-                SettingsOf(byBand[i]), SettingsOf(byBand[i + 1]));
+                SettingsOf(byBand[i]), SettingsOf(byBand[i + 1]), byBand[i].Channel.ProcessorSampleRate);
             (double lowHz, double highHz) = VirtualCrossoverJunctions.OverlapBand(pairHz);
             junctions.Add(new AlignmentJunction(byBand[i], byBand[i + 1], pairHz, lowHz, highHz));
         }

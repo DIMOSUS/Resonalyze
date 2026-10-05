@@ -77,6 +77,31 @@ public sealed class VirtualCrossoverJunctionsTests
         Assert.Equal(expectedHz, VirtualCrossoverJunctions.GetPairCrossoverHz(lower, upper), 0);
     }
 
+    [Theory]
+    // Second-order corners at 10 and 20 kHz meet 8 dB down on a 96 kHz processor, and 14 dB down on a 48 kHz one,
+    // whose high-pass the bilinear warp steepens towards Nyquist: there the gap is a hole.
+    [InlineData(96_000, 14_348)]
+    [InlineData(48_000, 10_000)]
+    public void GetPairCrossoverHz_AGapNearNyquist_IsReadAsTheProcessorRealizesTheSlopes(
+        int processorSampleRateHz, double expectedHz)
+    {
+        var lower = new VirtualCrossoverChannelSettings
+        {
+            CrossoverKind = CrossoverKind.LowPass,
+            LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 10_000, 12)
+        };
+        var upper = new VirtualCrossoverChannelSettings
+        {
+            CrossoverKind = CrossoverKind.HighPass,
+            HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 20_000, 12)
+        };
+
+        Assert.Equal(
+            expectedHz,
+            VirtualCrossoverJunctions.GetPairCrossoverHz(lower, upper, processorSampleRateHz),
+            0);
+    }
+
     [Fact]
     public void GetPairCrossoverHz_FallsBackToUppersHighPass()
     {

@@ -149,13 +149,14 @@ internal static class ProcessedChannels
         var pairs = new List<AdjacentPair>();
         for (int i = 0; i < byBand.Count - 1; i++)
         {
+            int processorRate = ProcessorRateOf(byBand[i]);
             double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
-                byBand[i].Settings, byBand[i + 1].Settings);
+                byBand[i].Settings, byBand[i + 1].Settings, processorRate);
             (double bandLowHz, double bandHighHz) = VirtualCrossoverJunctions.OverlapBand(pairHz);
             if ((!PlaysWithin(byBand[i], bandLowHz, bandHighHz) ||
                     !PlaysWithin(byBand[i + 1], bandLowHz, bandHighHz)) &&
                 VirtualCrossoverJunctions.GapHandoverHz(
-                    byBand[i].Settings, byBand[i + 1].Settings) == null)
+                    byBand[i].Settings, byBand[i + 1].Settings, processorRate) == null)
             {
                 continue;
             }
@@ -170,6 +171,10 @@ internal static class ProcessedChannels
 
         return pairs;
     }
+
+    /// <summary>The rate the channel's chain is realized at; the snapshot's own while a rebinding channel reads none.</summary>
+    public static int ProcessorRateOf(ProcessedChannel item) =>
+        item.Channel.ProcessorSampleRate is var live and > 0 ? live : item.SampleRate;
 
     public static bool HasJunction(IReadOnlyList<ProcessedChannel> channels) =>
         GetAdjacentPairs(OrderByBand(channels)).Count > 0;

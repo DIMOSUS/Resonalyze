@@ -1160,6 +1160,8 @@ archive coverage at all — the numbers in this file that predate that ran throu
 per session. Setting `RESONALYZE_SESSION_BATTERY_STEREO` runs `ComputeStereo` instead and judges both
 sides, through the panel's own plan builders (`CollectStereoSides`, `PickStereoBridge`,
 `StereoBridgeBand`, `ComputeStereoAlignment`) so the battery cannot drift from what the app does.
+Its channels are bound to the session's processor rate as the panel binds them: a session recorded
+at 48 kHz for a 96 kHz processor had its chains realized at 48.
 A session with no front-chain pair resolved on both sides says so and falls back to one side.
 `RESONALYZE_SESSION_BATTERY_BOTHSIDES` keeps the single-side run but judges each side alone, the far one
 included: a far side on its own is where a lobe witness is weakest. A stereo run also prints a `twin`
@@ -1421,7 +1423,7 @@ donor or none changes nothing: the own read and its lobe pin stand.
   (+2.25 and +2.20 dB).
 - **What it costs.** In that cabin no delay serves both the pair and the far side's handover. Held, the
   right midbass and mid meet out of phase (direct coherence −0.54) and their junction reads
-  −1.64 / −12.21 dB against −0.81 / −2.76. Both sub junctions gain (dips −1.86 → −0.78 on the left and
+  −1.64 / −12.22 dB against −0.81 / −2.76. Both sub junctions gain (dips −1.86 → −0.78 on the left and
   −1.71 → −0.58 on the right): the mono sub no longer splits the difference between two midbasses
   2 ms apart. A phase filter on the far driver is the remedy there, not a delay.
 - **Field effect** (23 sessions, 46 sides, stereo run): 30 sides change, the far woofer by up to

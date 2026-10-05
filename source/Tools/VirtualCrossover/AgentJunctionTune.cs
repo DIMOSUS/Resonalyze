@@ -51,7 +51,7 @@ internal static class AgentJunctionTune
         }
 
         double currentHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
-            lowerSnapshot.Settings, upperSnapshot.Settings);
+            lowerSnapshot.Settings, upperSnapshot.Settings, snapshot.ProcessorSampleRateHz);
         (double defaultMinHz, double defaultMaxHz) = AgentProposalValidator.DefaultJunctionWindow(currentHz);
         var families = new List<CrossoverFilterFamily>();
         foreach (string name in operation.Families ?? [])

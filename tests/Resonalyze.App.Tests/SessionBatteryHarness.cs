@@ -589,7 +589,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         for (int i = 0; i < ordered.Count - 1; i++)
         {
             double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
-                ordered[i].Settings, ordered[i + 1].Settings);
+                ordered[i].Settings, ordered[i + 1].Settings, ordered[i].ProcessorSampleRate);
             (double bandLowHz, double bandHighHz) =
                 VirtualCrossoverJunctions.OverlapBand(pairHz);
             junctions.Add(new AlignmentJunction(
@@ -728,7 +728,9 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
             var channel = new VirtualCrossoverChannel(VirtualCrossoverSheet.ChannelName(i))
             {
                 Pair = project.Pairs[i],
-                ActiveRight = project.ActiveSideRight
+                ActiveRight = project.ActiveSideRight,
+                // As the panel binds it: chains are realized at the session's processor rate, not the record's.
+                ProcessorSampleRateProvider = () => project.DspProcessorSampleRateHz ?? 0
             };
             channels.Add(channel);
             IEnumerable<bool> sides = bothSides && !channel.Pair.Mono

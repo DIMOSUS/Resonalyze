@@ -39,6 +39,11 @@ public partial class Form1
     {
         TryBeginInvokeOnUiThread(() =>
         {
+            if (resourcesDisposed)
+            {
+                return;
+            }
+
             dockedHistoryHost.InvokeIfOpen<MeasurementHistoryWindow>(dialog =>
             {
                 Guid? selectedEntryId = dialog.SelectedEntryId;
@@ -222,6 +227,8 @@ public partial class Form1
             return false;
         }
 
+        // Until the caller marks this entry restored, a persist during the mode switch must not write its view into the entry left.
+        sessionTracker.Reset();
         LiveSpectrumRestartSnapshot liveBefore = LiveSpectrumRestartSnapshot.Capture(viewSettings.LiveSpectrum);
         if (session != null)
         {

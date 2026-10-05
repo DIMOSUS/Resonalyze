@@ -31,4 +31,7 @@ public sealed class RewFilterFormat : IEqProfileFormat
 
     public bool TryImport(string text, out EqualizationCurve curve) =>
         PeqTextFile.TryParse(text, out curve);
+
+    public bool TryImport(string text, double sampleRateHz, out EqualizationCurve curve) =>
+        PeqTextFile.TryParse(text, sampleRateHz, out curve);
 }

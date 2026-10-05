@@ -83,6 +83,27 @@ public sealed class AnalyzerViewSettingsTests
         Assert.Equal([Mode.FrequencyResponse], view.ApplySession(new MeasurementSessionSnapshot(), sampleRate: 48_000));
     }
 
+    [Theory]
+    [InlineData(ImpulseAmplitudeScale.Decibels, ImpulseTimeUnit.Milliseconds, ImpulseTimeOrigin.RecordStart)]
+    [InlineData(ImpulseAmplitudeScale.Linear, ImpulseTimeUnit.Samples, ImpulseTimeOrigin.RecordStart)]
+    [InlineData(ImpulseAmplitudeScale.Linear, ImpulseTimeUnit.Milliseconds, ImpulseTimeOrigin.Peak)]
+    public void ASessionNamesTheImpulseViewWhenItsUnitScaleOrOriginChanged(
+        ImpulseAmplitudeScale scale,
+        ImpulseTimeUnit unit,
+        ImpulseTimeOrigin origin)
+    {
+        var left = new AnalyzerViewSettings();
+        left.ImpulseResponse.AmplitudeScale = scale;
+        left.ImpulseResponse.TimeUnit = unit;
+        left.ImpulseResponse.TimeOrigin = origin;
+        MeasurementSessionSnapshot changed = left.CaptureSession(ModeTab.Impulse, []);
+        var view = new AnalyzerViewSettings();
+
+        Assert.Equal([Mode.ImpulseResponse], view.ApplySession(changed, sampleRate: 48_000));
+        Assert.Empty(view.ApplySession(changed, sampleRate: 48_000));
+        Assert.Equal([Mode.ImpulseResponse], view.ApplySession(new MeasurementSessionSnapshot(), sampleRate: 48_000));
+    }
+
     [Fact]
     public void TheSettingsFileKeepsTheViewAcrossARestart()
     {

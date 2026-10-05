@@ -21,4 +21,8 @@ public sealed class WaterfallGenerateOptions
     public double Periods { get; set; } = 30;
 
     internal WaterfallGenerateOptions Copy() => (WaterfallGenerateOptions)MemberwiseClone();
+
+    /// <summary>Samples the first Fourier slice opens before the anchor; a backward step ends its plateau there.</summary>
+    internal static int FirstSliceLead(int step, int window, int leftTukey, int rightTukey) =>
+        step >= 0 ? leftTukey : window - rightTukey;
 }

@@ -209,6 +209,24 @@ public sealed class ModeSettingsSessionTests
         Assert.Equal((96, 1, 5.0), (written.SliceCount, written.Step, written.Periods));
     }
 
+    // The first slice opens Left before the start, or a backward step's Window - Right before it (WaterfallSeries).
+    [Theory]
+    [InlineData(4, 100 - 20)]
+    [InlineData(-4, 100 - (4_800 - 300))]
+    public void TheWaterfallPreviewOpensWhereTheFirstSliceDoes(int step, int firstSliceStart)
+    {
+        WaterfallSettingsSession waterfall = WaterfallSettingsSession.ForWaterfall();
+        waterfall.Load(new WaterfallGenerateOptions
+        {
+            Step = step, Window = 4_800, LeftTukeyWindow = 20, RightTukeyWindow = 300, Offset = 100
+        });
+
+        SampleWindowPreview preview = waterfall.Preview;
+
+        Assert.Equal(firstSliceStart, preview.Offset - preview.Left);
+        Assert.Equal((4_800, 20, 300), (preview.Window, preview.Left, preview.Right));
+    }
+
     [Fact]
     public void BurstDecayTimesItsWindow_AndWritesItsPeriods()
     {

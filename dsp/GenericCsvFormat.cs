@@ -43,24 +43,19 @@ public sealed class GenericCsvFormat : IEqProfileFormat
     {
         ArgumentNullException.ThrowIfNull(text);
 
+        string[] lines = text.Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => line.Length > 0 && !line.StartsWith('#'))
+            .ToArray();
+        // Excel under a decimal-comma locale separates with semicolons; EqTextNumbers then reads the comma as a decimal.
+        char separator = lines.Any(line => line.Contains(';')) ? ';' : ',';
+
         double preampDb = 0;
         bool recognized = false;
-        var bands = new List<PeqBand>();
-
-        foreach (string rawLine in text.Split('\n'))
+        var rows = new List<string[]>();
+        foreach (string line in lines)
         {
-            if (bands.Count >= EqualizationCurve.MaxBandCount)
-            {
-                break;
-            }
-
-            string line = rawLine.Trim();
-            if (line.Length == 0 || line.StartsWith('#'))
-            {
-                continue;
-            }
-
-            string[] fields = line.Split(',');
+            string[] fields = line.Split(separator);
 
             if (fields.Length >= 2 &&
                 fields[0].Trim().StartsWith("Preamp", StringComparison.OrdinalIgnoreCase))
@@ -78,31 +73,24 @@ public sealed class GenericCsvFormat : IEqProfileFormat
                 continue;
             }
 
-            var numbers = new List<double>();
-            foreach (string field in fields)
+            rows.Add(fields);
+        }
+
+        // The index column is the file's layout, so a blank or junk cell skips its row rather than shifting the columns.
+        int indexed = rows.Count(fields => TryReadNumbers(fields, 1, out _, out _, out _));
+        int unindexed = rows.Count(fields =>
+            !TryReadNumbers(fields, 1, out _, out _, out _) && TryReadNumbers(fields, 0, out _, out _, out _));
+        int first = indexed >= unindexed ? 1 : 0;
+
+        var bands = new List<PeqBand>();
+        foreach (string[] fields in rows)
+        {
+            if (bands.Count >= EqualizationCurve.MaxBandCount)
             {
-                if (EqTextNumbers.TryParse(field, out double value))
-                {
-                    numbers.Add(value);
-                }
+                break;
             }
 
-            double frequencyHz;
-            double gainDb;
-            double q;
-            if (numbers.Count >= 4)
-            {
-                frequencyHz = numbers[1];
-                gainDb = numbers[2];
-                q = numbers[3];
-            }
-            else if (numbers.Count == 3)
-            {
-                frequencyHz = numbers[0];
-                gainDb = numbers[1];
-                q = numbers[2];
-            }
-            else
+            if (!TryReadNumbers(fields, first, out double frequencyHz, out double gainDb, out double q))
             {
                 continue;
             }
@@ -120,6 +108,18 @@ public sealed class GenericCsvFormat : IEqProfileFormat
 
         curve = new EqualizationCurve(bands, preampDb);
         return recognized;
+    }
+
+    private static bool TryReadNumbers(
+        string[] fields, int first, out double frequencyHz, out double gainDb, out double q)
+    {
+        frequencyHz = 0;
+        gainDb = 0;
+        q = 0;
+        return fields.Length >= first + 3 &&
+            EqTextNumbers.TryParse(fields[first], out frequencyHz) &&
+            EqTextNumbers.TryParse(fields[first + 1], out gainDb) &&
+            EqTextNumbers.TryParse(fields[first + 2], out q);
     }
 
     private static string TypeToken(PeqBandType type) => type switch

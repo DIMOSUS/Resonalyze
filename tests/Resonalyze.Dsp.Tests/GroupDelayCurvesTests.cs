@@ -270,6 +270,33 @@ public sealed class GroupDelayCurvesTests
         Assert.Equal(wrapper.Points, set.Measured.Points);
     }
 
+    [Fact]
+    public void BinsOutsideTheMeasuredBand_AreBlanked()
+    {
+        var response = new Complex[TransformLength];
+        response[24] = Complex.One;
+        var measurement = new SyntheticMeasurement(response, SampleRate, maxMagnitudeIndex: 0)
+        {
+            LowestMeasuredFrequencyHz = 1_000,
+            HighestMeasuredFrequencyHz = 10_000
+        };
+
+        GroupDelayCurveSet curves = DataHelper.GetGroupDelayCurves(
+            measurement,
+            gateOffsetMs: 0,
+            leftMs: 0,
+            plateauMs: TransformLength * 1000.0 / SampleRate,
+            rightMs: 0,
+            smoothingInverseOctaves: 96,
+            includeMinimumPhase: true);
+
+        Assert.All(
+            curves.Measured.Points.Zip(curves.Excess!.Points),
+            pair => Assert.Equal(
+                pair.First.X >= 1_000 && pair.First.X <= 10_000,
+                double.IsFinite(pair.First.Y) && double.IsFinite(pair.Second.Y)));
+    }
+
     private static List<int> AnalysisBandIndices(
         AnalysisCurve curve,
         double lowHz,

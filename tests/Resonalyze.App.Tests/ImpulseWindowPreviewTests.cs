@@ -31,6 +31,26 @@ public sealed class ImpulseWindowPreviewTests
         });
     }
 
+    // Fixed magnitude windows, the waterfall and burst decay read zeros past the record; the FDW gate reads around it.
+    [Theory]
+    [InlineData(false, 2)]
+    [InlineData(true, 4)]
+    public void Update_AWindowPastAShortRecord_ReadsItsEndAsTheAnalysisDoes(bool fdw, int arrivalsShown)
+    {
+        StaTest.Run(() =>
+        {
+            using var view = new OxyPlot.WindowsForms.PlotView();
+            MeasurementResult measurement = ModeSettingsWiringTests.Transfer(SampleRate, peak: 100, length: 1_024);
+            IrPreviewSource source = fdw ? IrPreviewSource.PrimaryAtStartCircular : IrPreviewSource.PrimaryAtStart;
+
+            ImpulseWindowPreview.Update(view, measurement, windowLength: 2_048, leftWindow: 64, rightWindow: 0, offset: 0, source);
+
+            LineSeries impulse = view.Model.Series.OfType<LineSeries>().First();
+            Assert.Equal(2_048, impulse.Points.Count);
+            Assert.Equal(arrivalsShown, impulse.Points.Count(point => point.Y != 0.0));
+        });
+    }
+
     [Fact]
     public void AddGatedTraceSeries_NoTraces_AddsNothingAndReturnsNull()
     {

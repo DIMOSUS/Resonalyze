@@ -170,6 +170,21 @@ public sealed class RecordSettingsApplyTests
         Assert.Equal("{capture}", session.PreferredWasapiCaptureEndpointId);
     }
 
+    // A run at a 32 kHz mix rate measured and drew, then could not be saved, reopened or sent to the EQ Wizard.
+    [Fact]
+    public void SharedWasapiRefusesAMixRateBelowWhatAMeasurementIsStoredAt()
+    {
+        var devices = new FakeRecordDevices();
+        devices.Capture[0] = FakeRecordDevices.Endpoint(
+            "{capture}", "Interface in", AudioEndpointDirection.Capture, 32_000, 8, isDefault: true);
+        devices.Render[0] = FakeRecordDevices.Endpoint(
+            "{render}", "Interface out", AudioEndpointDirection.Render, 32_000, 2, isDefault: true);
+        var session = new RecordSettingsSession(devices);
+        session.Load(Settings(AudioBackend.WasapiShared));
+
+        Assert.Contains("32000 Hz", Refusal(session), StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("{other}", new[] { 4, 5 })]
     [InlineData("{capture}", new int[0])]

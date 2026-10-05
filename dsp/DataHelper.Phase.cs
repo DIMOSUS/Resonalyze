@@ -1403,8 +1403,8 @@ namespace Resonalyze.Dsp
                 smoothingInverseOctaves,
                 magnitudeGateDb,
                 includeMinimumPhase,
-                lowestMeasuredFrequencyHz: 0.0,
-                highestMeasuredFrequencyHz: double.PositiveInfinity,
+                measurement.LowestMeasuredFrequencyHz,
+                measurement.HighestMeasuredFrequencyHz,
                 cancellationToken);
         }
 

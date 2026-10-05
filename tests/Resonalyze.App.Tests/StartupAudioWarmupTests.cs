@@ -41,6 +41,47 @@ public sealed class StartupAudioWarmupTests
         await warmup.WaitAsync();
     }
 
+    // Record Settings' Apply warms up on any backend, so also where no startup warm-up ran.
+    [Fact]
+    public async Task WaitAsync_WaitsForALaterWarmUp()
+    {
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var warmup = new StartupAudioWarmup(_ => Task.CompletedTask);
+        Task later = warmup.RunAsync(() => release.Task);
+
+        Task waiting = warmup.WaitAsync();
+        Assert.False(waiting.IsCompleted);
+
+        release.SetResult();
+        await waiting;
+        await later;
+    }
+
+    // A short second warm-up ending first hid the first one, still holding the driver, from a run.
+    [Fact]
+    public async Task ALaterWarmUp_BeginsAfterTheOneInFlight_AndWaitAsyncCoversBoth()
+    {
+        var first = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        bool secondBegan = false;
+        using var warmup = new StartupAudioWarmup(_ => Task.CompletedTask);
+        Task a = warmup.RunAsync(() => first.Task);
+        Task b = warmup.RunAsync(() =>
+        {
+            secondBegan = true;
+            return Task.CompletedTask;
+        });
+
+        Task waiting = warmup.WaitAsync();
+        Assert.False(secondBegan);
+        Assert.False(waiting.IsCompleted);
+
+        first.SetResult();
+        await waiting;
+        Assert.True(secondBegan);
+        await a;
+        await b;
+    }
+
     [Fact]
     public async Task Cancel_SignalsTheWarmUpToken()
     {

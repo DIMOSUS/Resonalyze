@@ -443,6 +443,34 @@ public sealed class AgentImportRunnerTests : IDisposable
     }
 
     [Fact]
+    [Trait("Category", "Slow")]
+    public async Task AutoDelay_ForASessionLoadedDuringTheRun_WritesNothing_AndTheRestIsSkipped()
+    {
+        (VirtualCrossoverChannel lower, _) = import.MeasuredJunction();
+        AgentSessionSnapshot snapshot = Runner.Snapshot();
+        AgentOperationVerdict tune = Row(
+            new AutoTunePeqOperation("op-2", "A:left", "", null, null, null, null, null, null, null), "Auto-tune")
+            with
+            {
+                Channel = snapshot.Channels.First(
+                    item => ReferenceEquals(item.Settings, lower.SideSettings(lower.ActiveRight)))
+            };
+        double scene = Project.StereoSceneOffsetMagnitudeMs;
+        import.WhenIdle = () => import.Session.NextProjectGeneration();
+        var summary = new List<string>();
+
+        bool ran = await Runner.EnginesAsync(
+            [Row(new RunAutoDelayOperation("op-1", "", 0.3, null, null, null, null), "Auto delay"), tune], summary);
+
+        Assert.False(ran);
+        Assert.Equal(2, summary.Count);
+        Assert.StartsWith("Auto delay: skipped", summary[0]);
+        Assert.Equal(["busy, disabled", "idle"], import.Calls);
+        Assert.Equal(scene, Project.StereoSceneOffsetMagnitudeMs);
+        Assert.Empty(lower.SideSettings(lower.ActiveRight).PeqBands);
+    }
+
+    [Fact]
     public async Task Probe_ReadsEveryVariantOntoTheClipboard_AndChangesNothing()
     {
         (VirtualCrossoverChannel lower, VirtualCrossoverChannel upper) = import.MeasuredJunction();

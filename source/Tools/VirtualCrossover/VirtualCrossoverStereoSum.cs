@@ -46,7 +46,7 @@ internal sealed record StereoSumParts(
 internal static class VirtualCrossoverStereoSum
 {
     /// <param name="shown">The shown side's summing channels.</param>
-    /// <returns>Null when off, when the other side lacks its own blocks, or when the sides' rates differ.</returns>
+    /// <returns>Null when off, when only one side has blocks of its own, or when the sides' rates differ.</returns>
     public static StereoSumParts? Parts(
         StereoSumMode mode,
         IReadOnlyList<ProcessedChannel> shown,
@@ -61,8 +61,8 @@ internal static class VirtualCrossoverStereoSum
             return null;
         }
 
-        // Nothing of the other side's own is half an L+R, unless every block is mono and so plays for both.
-        if (opposite.Channels.All(item => item.Channel.Pair.Mono) && shown.Any(item => !item.Channel.Pair.Mono))
+        // Half an L+R when only one side has blocks of its own; mono blocks alone play for both sides.
+        if (shown.Any(item => !item.Channel.Pair.Mono) != opposite.Channels.Any(item => !item.Channel.Pair.Mono))
         {
             return null;
         }

@@ -66,7 +66,8 @@ internal sealed class CompareSelection
             // Its own K: loopback levels differ unless both share a session.
             selection.Result.SplOffsetDb,
             selection.Result.TimingReference,
-            selection.Result.MeasuredBand);
+            selection.Result.MeasuredBand,
+            selection.Result.MicrophoneCalibration);
     }
 
     // A result without absolute time cannot join Time Alignment: its arrival is not the tract's delay.
@@ -93,4 +94,5 @@ public readonly record struct CompareAnalysisSource(
     double[]? TransferCoherence = null,
     double? SplOffsetDb = null,
     TimingReference TimingReference = TimingReference.SynchronizedLoopback,
-    MeasuredBand Band = default);
+    MeasuredBand Band = default,
+    VirtualCrossoverCalibrationSettings? MicrophoneCalibration = null);

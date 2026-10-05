@@ -175,6 +175,30 @@ public sealed class MeasurementHistoryServiceTests : IDisposable
         }
     }
 
+    // An antivirus or sync client holding the store: the list in memory stays the truth and reaches disk later.
+    [Fact]
+    public async Task AStoreHeldOpenElsewhere_StillTakesAFileAndADelete()
+    {
+        string storePath = Path.Combine(directory, "measurement-history.json");
+        MeasurementHistoryService service = CreateService();
+        Guid first = await AddLoadedAsync(service, await CreateImpulseResponseFileAsync("a.json"));
+        string secondPath = await CreateImpulseResponseFileAsync("b.json");
+        int changes = 0;
+        service.Changed += () => changes++;
+
+        Guid second;
+        using (new FileStream(storePath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            second = await AddLoadedAsync(service, secondPath);
+            Assert.True(service.Delete(first));
+        }
+
+        Assert.Equal(2, changes);
+        Assert.Equal(second, Assert.Single(service.Entries).Id);
+        service.UpdateSession(second, new MeasurementSessionSnapshot());
+        Assert.Equal(secondPath, Assert.Single(new MeasurementHistoryPersistence(storePath).Load()).SourceFilePath);
+    }
+
     private List<MeasurementHistoryEntry> OverDepthEntries()
     {
         var stored = new List<MeasurementHistoryEntry>();

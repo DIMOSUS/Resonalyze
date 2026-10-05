@@ -334,6 +334,7 @@ internal sealed partial class MeasurementSettingsFile
         using (FileStream stream = File.Create(tempPath))
         {
             JsonSerializer.Serialize(stream, this, SerializerOptions);
+            stream.Flush(flushToDisk: true);
         }
 
         File.Move(tempPath, pathOnDisk, overwrite: true);

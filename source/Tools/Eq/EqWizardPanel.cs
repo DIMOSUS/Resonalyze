@@ -726,18 +726,27 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
+        EqWizardImportTarget target = importExportCoordinator.ResolveImportTarget(dialog.FilterIndex);
         EqWizardFileResult<EqualizationCurve> result = importExportCoordinator.Import(
-            new EqWizardImportRequest(
-                dialog.FileName,
-                importExportCoordinator.ResolveImportTarget(dialog.FilterIndex)));
+            new EqWizardImportRequest(dialog.FileName, target, session.ProcessorSampleRateHz));
         if (!result.Success)
         {
             ShowFileError("PEQ could not be imported.", result.Exception!);
             return;
         }
 
+        string? preampNotice = EqExportWarnings.PreampNotImported(target.Format, session.Bank.Curve.PreampDb);
         checkBoxBypass.Checked = false;
         ApplyEqualizationCurve(result.Value!);
+        if (preampNotice != null)
+        {
+            MessageBox.Show(
+                FindForm(),
+                preampNotice,
+                "EQ Wizard",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
     }
 
     private void ShowFileError(string message, Exception exception)

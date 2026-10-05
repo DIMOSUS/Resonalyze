@@ -128,13 +128,16 @@ public sealed class VirtualCrossoverStereoSumTests
     {
         ProcessedChannel sub = Channel(Driver("Sub", VirtualCrossoverZone.Sub, mono: true), 0.5);
         ProcessedChannel frontLeft = Channel(Driver("Front L", VirtualCrossoverZone.Front), 1.0);
+        ProcessedChannel frontRight = Channel(Driver("Front R", VirtualCrossoverZone.Front), 1.0);
         var onlySub = new VirtualCrossoverSideSum([], Arrival, SampleRate, [sub]);
+        var frontRightAndSub = new VirtualCrossoverSideSum([], Arrival, SampleRate, [frontRight, sub]);
 
         AnalysisCurve? vector = VirtualCrossoverStereoSum.Build(StereoSumMode.Vector, [sub], onlySub, Gate, _ => null);
         AnalysisCurve? energy = VirtualCrossoverStereoSum.Build(StereoSumMode.Energy, [sub], onlySub, Gate, _ => null);
         Assert.Equal(0.0, At1kHz(vector!) - OneDriverDb(), 2);
         Assert.Equal(-3.01, At1kHz(energy!) - OneDriverDb(), 2);
         Assert.Null(VirtualCrossoverStereoSum.Build(StereoSumMode.Vector, [frontLeft, sub], onlySub, Gate, _ => null));
+        Assert.Null(VirtualCrossoverStereoSum.Build(StereoSumMode.Vector, [sub], frontRightAndSub, Gate, _ => null));
     }
 
     [Theory]

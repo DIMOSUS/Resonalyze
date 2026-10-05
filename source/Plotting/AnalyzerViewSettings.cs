@@ -49,6 +49,10 @@ internal sealed class AnalyzerViewSettings
 
     public TimeAlignmentOptions TimeAlignment { get; init; } = new();
 
+    /// <summary>The Impulse Response settings that rescale or re-origin its axes, whose zoom keys do not tell them apart.</summary>
+    public (ImpulseAmplitudeScale, ImpulseTimeUnit, ImpulseTimeOrigin) ImpulseAxisMeaning =>
+        (ImpulseResponse.AmplitudeScale, ImpulseResponse.TimeUnit, ImpulseResponse.TimeOrigin);
+
     /// <summary>What a history entry keeps of the view, with the mode and overlay slots it was left in.</summary>
     public MeasurementSessionSnapshot CaptureSession(ModeTab activeMode, List<int> activeOverlaySlots) =>
         new()
@@ -72,13 +76,14 @@ internal sealed class AnalyzerViewSettings
         };
 
     /// <param name="sampleRate">The rate Time Alignment's ASIO channels are checked against.</param>
-    /// <returns>The modes whose magnitude axis now means something else (dB against dB SPL): a zoom kept there would
-    /// frame the other axis's numbers.</returns>
+    /// <returns>The modes whose axes now mean something else (dB against dB SPL, an impulse unit or origin): a zoom
+    /// kept there would frame the other axis's numbers.</returns>
     public IReadOnlyList<Mode> ApplySession(MeasurementSessionSnapshot session, int sampleRate)
     {
         ArgumentNullException.ThrowIfNull(session);
         MagnitudeScale frequencyScale = FrequencyResponse.MagnitudeScale;
         MagnitudeScale liveScale = LiveSpectrum.MagnitudeScale;
+        (ImpulseAmplitudeScale, ImpulseTimeUnit, ImpulseTimeOrigin) impulseAxes = ImpulseAxisMeaning;
         session.FrequencyResponse.ApplyTo(FrequencyResponse, FrequencyResponseVisibility);
         session.PhaseResponse.ApplyTo(PhaseResponse, PhaseResponseVisibility);
         session.GroupDelay.ApplyTo(GroupDelay, GroupDelayVisibility);
@@ -99,6 +104,10 @@ internal sealed class AnalyzerViewSettings
         if (LiveSpectrum.MagnitudeScale != liveScale)
         {
             rescaled.Add(Mode.LiveSpectrum);
+        }
+        if (ImpulseAxisMeaning != impulseAxes)
+        {
+            rescaled.Add(Mode.ImpulseResponse);
         }
 
         return rescaled;

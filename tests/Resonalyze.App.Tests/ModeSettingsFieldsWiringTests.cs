@@ -66,7 +66,7 @@ public sealed class ModeSettingsFieldsWiringTests
                 Words(FrequencyResponseSplChoice.ToolTip(new ModeSettingsMeasurement(analyzer.Result, 48_000))),
                 Words(docked.Panel.ToolTips.GetToolTip(docked.Find<RadioButton>("radioMagnitudeSpl"))));
             AssertPreview(docked, view =>
-                ImpulseWindowPreview.Update(view, analyzer.Result, 2000, 300, 400, 0, IrPreviewSource.PrimaryAtStart));
+                ImpulseWindowPreview.Update(view, analyzer.Result, 2000, 300, 400, 0, IrPreviewSource.PrimaryAtStartCircular));
         });
     }
 

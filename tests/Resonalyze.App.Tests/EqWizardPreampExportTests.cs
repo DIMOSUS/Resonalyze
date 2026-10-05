@@ -40,6 +40,17 @@ public sealed class EqWizardPreampExportTests
     }
 
     [Fact]
+    public void AnImportWithoutAPreamp_SaysWhichPreampItSetTo0dB()
+    {
+        string? notice = EqExportWarnings.PreampNotImported(new AudiotecFischerFormat(), -6.5);
+
+        Assert.NotNull(notice);
+        Assert.Contains("-6.5 dB", notice);
+        Assert.Null(EqExportWarnings.PreampNotImported(new EqualizerApoFormat(), -6.5));
+        Assert.Null(EqExportWarnings.PreampNotImported(new AudiotecFischerFormat(), 0));
+    }
+
+    [Fact]
     public void TheTuningSheetCarriesThePreampAndTheShelves()
     {
         EqWizardExportTarget sheet = EqWizardExportTarget.TuningSheet();

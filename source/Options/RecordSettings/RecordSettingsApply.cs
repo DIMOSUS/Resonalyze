@@ -86,6 +86,12 @@ internal static class RecordSettingsApply
             if (audioBackend == AudioBackend.WasapiShared)
             {
                 sampleRate = captureEndpoint.PreferredFormat.SampleRate;
+                if (sampleRate < SampleRateCatalog.MinimumSampleRate)
+                {
+                    throw new InvalidOperationException(
+                        $"Windows mixes the selected WASAPI endpoints at {sampleRate} Hz; a measurement needs " +
+                        "44.1 kHz or more. Raise their Default Format in the Windows sound settings.");
+                }
             }
             else if (audioBackend == AudioBackend.WasapiExclusive)
             {

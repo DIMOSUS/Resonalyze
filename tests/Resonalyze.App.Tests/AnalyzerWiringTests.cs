@@ -487,6 +487,72 @@ public sealed class AnalyzerWiringTests : IDisposable
         });
     }
 
+    // A newer compare choice began before the load failed: the failure is the replaced load's, dropped like its result.
+    [Fact]
+    public void AReplacedCompareLoadThatFails_EndsQuietly()
+    {
+        string path = WriteMeasurement("reference.json", peak: 480);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Open(path);
+            Guid entry = Assert.Single(analyzer.History.Entries).Id;
+            var compare = analyzer.Field<CompareSelection>("compareSelection");
+            compare.Changed += () =>
+            {
+                compare.BeginLoad();
+                throw new InvalidOperationException("The landing failed.");
+            };
+
+            analyzer.Await("LoadCompareFileAsync", path);
+            analyzer.Await("SelectCompareHistoryEntryAsync", entry);
+        });
+    }
+
+    // Queued behind the close, which freed the panels before the run's completion and the history refresh could run.
+    [Fact]
+    public void ARunEndingAfterTheCloseFreedTheWindow_IsDropped()
+    {
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.StartRun();
+            analyzer.Invoke("DisposeAppResources");
+
+            analyzer.CompleteRun(Measurement(peak: 240));
+            analyzer.Invoke("HandleHistoryChanged");
+            analyzer.Pump();
+        });
+    }
+
+    // A switch in flight (one waiting for a live capture to stop) parks the restore after it applied the entry's view.
+    [Fact]
+    public void AnEntryBeingRestored_DoesNotLendItsViewToTheEntryLeft()
+    {
+        string second = WriteMeasurement("second.json", peak: 480);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.StartRun();
+            analyzer.CompleteRun(Measurement(peak: 240));
+            MeasurementHistoryEntry restored = Assert.Single(analyzer.History.Entries);
+            analyzer.Open(second);
+            Guid left = analyzer.Field<MeasurementSessionTracker>("sessionTracker").CurrentEntryId!.Value;
+            restored.Session!.ImpulseResponse.Invert = true;
+            var switchInFlight = new TaskCompletionSource();
+            typeof(ModeController).GetField("selectChain", Hidden)!
+                .SetValue(analyzer.Field<ModeController>("modeController"), switchInFlight.Task);
+
+            Task restore = analyzer.Start("ActivateHistoryEntryAsync", restored.Id, analyzer.Document.TryBegin()!);
+            Assert.False(restore.IsCompleted);
+            analyzer.Field<MeasurementSessionTracker>("sessionTracker").PersistCurrentSessionState();
+            switchInFlight.SetResult();
+            analyzer.Settle(restore);
+
+            Assert.False(analyzer.History.FindById(left)!.Session!.ImpulseResponse.Invert);
+        });
+    }
+
     private static bool IsCompareCurve(OxyPlot.Series.Series series) =>
         series.Tag is CurveTag { Source: CurveSource.Compare };
 
@@ -607,6 +673,9 @@ public sealed class AnalyzerWiringTests : IDisposable
         }
 
         public void Await(string method, params object[] arguments) => Settle(Start(method, arguments));
+
+        public void Invoke(string method, params object[] arguments) =>
+            typeof(Form1).GetMethod(method, Hidden)!.Invoke(Form, arguments);
 
         /// <summary>Runs <paramref name="method"/> to its first await; the rest runs as the test pumps.</summary>
         public Task Start(string method, params object[] arguments)

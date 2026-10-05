@@ -1,11 +1,13 @@
 namespace Resonalyze;
 
-/// <summary>One-shot best-effort audio warm-up; body injected to keep device and UI concerns out.</summary>
+/// <summary>Best-effort audio warm-ups that hold the driver while they run: the one-shot startup one, body injected to keep
+/// device and UI concerns out, and the ones Record Settings starts later. A run or a device probe waits for both.</summary>
 internal sealed class StartupAudioWarmup : IDisposable
 {
     private readonly Func<CancellationToken, Task> warmUp;
     private CancellationTokenSource? cancellation;
     private Task? task;
+    private Task? later;
 
     public StartupAudioWarmup(Func<CancellationToken, Task> warmUp)
     {
@@ -23,21 +25,26 @@ internal sealed class StartupAudioWarmup : IDisposable
         task = warmUp(cancellation.Token);
     }
 
-    /// <summary>Completes immediately when never started; faults are swallowed (non-fatal).</summary>
+    /// <summary>A warm-up after startup, which <see cref="WaitAsync"/> waits for too; its fault reaches the caller.</summary>
+    public Task RunAsync(Func<Task> laterWarmUp)
+    {
+        Task started = laterWarmUp();
+        later = started;
+        return started;
+    }
+
+    /// <summary>Completes once none runs, one started meanwhile included; faults are swallowed (non-fatal).</summary>
     public async Task WaitAsync()
     {
-        Task? started = task;
-        if (started == null || started.IsCompleted)
+        while (Running() is { } running)
         {
-            return;
-        }
-
-        try
-        {
-            await started;
-        }
-        catch
-        {
+            try
+            {
+                await running;
+            }
+            catch
+            {
+            }
         }
     }
 
@@ -52,4 +59,7 @@ internal sealed class StartupAudioWarmup : IDisposable
         cancellation?.Cancel();
         cancellation?.Dispose();
     }
+
+    private Task? Running() =>
+        task is { IsCompleted: false } ? task : later is { IsCompleted: false } ? later : null;
 }

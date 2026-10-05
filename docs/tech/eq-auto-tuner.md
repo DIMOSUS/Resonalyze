@@ -706,7 +706,7 @@ profile; treating it as a failure once applied an empty curve over the user's tu
 
 Type mapping:
 
-- `PK` — bell (Q required).
+- `PK` — bell with a Q, or with APO's alternative `BW Oct n`, read as Q = √(2ⁿ) / (2ⁿ − 1) (`BW Oct 0.167` is Q 8.63).
 - `LSC`/`HSC` with a Q — the same centre-frequency, half-gain-at-Fc shelf the library realises; shelves are written this
   way. Plain `LS`/`HS` carry no Q and are read at 0.707.
 - `AP` — APO's second-order all-pass: Fc and Q, no gain (Q required, since it is the phase turn).

@@ -170,7 +170,7 @@ public static class PeqTextFile
             name.AsSpan("Filter".Length).IndexOfAnyExceptInRange('0', '9') < 0;
     }
 
-    // Gain may be absent only on an all-pass; Q only on a shelf (read at DefaultShelfQ).
+    // Gain may be absent only on an all-pass; Q only on a shelf (read at DefaultShelfQ) or on a bell stating BW Oct.
     private static bool TryParseFilter(string[] tokens, out PeqBand band)
     {
         band = default;
@@ -194,12 +194,18 @@ public static class PeqTextFile
 
         if (!EqTextNumbers.TryParse(TokenAfter(tokens, "Q"), out double q))
         {
-            if (!type.IsShelving())
+            if (type == PeqBandType.Peaking && TryReadOctaveBandwidth(tokens, out double octaves))
+            {
+                q = QFromOctaves(octaves);
+            }
+            else if (type.IsShelving())
+            {
+                q = DefaultShelfQ;
+            }
+            else
             {
                 return false;
             }
-
-            q = DefaultShelfQ;
         }
 
         if (!double.IsFinite(frequencyHz) || frequencyHz <= 0 ||
@@ -215,6 +221,27 @@ public static class PeqTextFile
 
     /// <summary>Q for a shelf stated without one: the steepest monotonic knee.</summary>
     internal const double DefaultShelfQ = 0.7071067811865476;
+
+    private static bool TryReadOctaveBandwidth(string[] tokens, out double octaves)
+    {
+        for (int i = 0; i < tokens.Length - 2; i++)
+        {
+            if (tokens[i].Equals("BW", StringComparison.OrdinalIgnoreCase) &&
+                tokens[i + 1].Equals("Oct", StringComparison.OrdinalIgnoreCase))
+            {
+                return EqTextNumbers.TryParse(tokens[i + 2], out octaves);
+            }
+        }
+
+        octaves = 0;
+        return false;
+    }
+
+    private static double QFromOctaves(double octaves)
+    {
+        double ratio = Math.Pow(2.0, octaves);
+        return Math.Sqrt(ratio) / (ratio - 1.0);
+    }
 
     // A shelf keyword followed by a number (LS 6dB, LSC 10.8 dB) uses a corner/slope parameterisation and is skipped.
     private static bool TryReadType(string[] tokens, out PeqBandType type)

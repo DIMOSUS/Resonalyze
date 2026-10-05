@@ -35,8 +35,21 @@ internal sealed class MeasurementSessionTracker
     }
 
     /// <summary>Creates a file-backed entry when nothing was current (e.g. the entry was deleted).</summary>
-    public void MarkSavedFile(string filePath, ImpulseResponseFile file, MeasurementResult result)
+    /// <param name="savedEntryId">Current when the save began: a measurement opened since keeps its own entry and name.</param>
+    /// <returns>Whether <paramref name="result"/> is still the open measurement, so it now goes by the file's name.</returns>
+    public bool MarkSavedFile(
+        Guid? savedEntryId, string filePath, ImpulseResponseFile file, MeasurementResult result)
     {
+        if (CurrentEntryId != savedEntryId || !ReferenceEquals(document.Result, result))
+        {
+            if (savedEntryId is { } entryId)
+            {
+                history.MarkSaved(entryId, filePath, file, result);
+            }
+
+            return false;
+        }
+
         if (CurrentEntryId.HasValue)
         {
             history.MarkSaved(
@@ -54,6 +67,8 @@ internal sealed class MeasurementSessionTracker
                 result,
                 captureSession());
         }
+
+        return true;
     }
 
     public void MarkRestored(Guid entryId)

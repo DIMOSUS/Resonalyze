@@ -128,6 +128,12 @@ internal sealed class PlotModelFactory
     private CalibrationFile? GetCalibration(FrequencyResponseOptions options) =>
         getCalibration(options.CalibrationId);
 
+    /// <summary>Own is each record's own curve, so Compare reads its own (none for an import), not the open one's.</summary>
+    private CalibrationFile? FrequencyResponseCalibrationOf(CurveSource source) =>
+        source == CurveSource.Compare && MicrophoneCalibrationIds.IsOwn(frequencyResponseOptions.CalibrationId)
+            ? getCompareSource?.Invoke()?.MicrophoneCalibration?.ToCalibrationFile()
+            : GetCalibration(frequencyResponseOptions);
+
     /// <summary>Raw samples plus smoothing code for the overlay layer; only the primary FR magnitude has a raw form, others return null (drawn-curve fallback).</summary>
     public RawCurveCapture? BuildRawCurve(CurveTag tag)
     {
@@ -136,18 +142,16 @@ internal sealed class PlotModelFactory
             return null;
         }
 
+        CalibrationFile? calibration = FrequencyResponseCalibrationOf(tag.Source);
         // SPL adds an absolute offset the stored spectrum lacks, so keep the drawn-curve fallback (but record the rate).
         if (EffectiveFrequencyResponseScale != MagnitudeScale.Relative)
         {
             return DescribeWithoutRawForm(
                 (int)Math.Round(frequencyResponseOptions.SmoothingInverseOctaves),
                 AnalysisSampleRate,
-                frequencyResponseOptions.UseCalibration
-                    ? GetCalibration(frequencyResponseOptions)
-                    : null);
+                frequencyResponseOptions.UseCalibration ? calibration : null);
         }
 
-        CalibrationFile? calibration = GetCalibration(frequencyResponseOptions);
         IReadOnlyList<SignalPoint>? spectrum = tag.Source == CurveSource.Compare
             ? TryCreateCompareMeasurement() is { } compare
                 ? MeasurementPlotContext.BuildRawPrimarySpectrum(
@@ -403,7 +407,7 @@ internal sealed class PlotModelFactory
         IReadOnlyList<AnalysisCurve> compareCurves = DataHelper.GetSpectrum(
             compare.Measurement,
             frequencyResponseOptions,
-            GetCalibration(frequencyResponseOptions),
+            FrequencyResponseCalibrationOf(CurveSource.Compare),
             frequencyResponseVisibility.ToSpectrumCurves() & SpectrumCurves.Primary);
         if (compareOffset is { } offsetDb)
         {
@@ -806,6 +810,9 @@ internal sealed class PlotModelFactory
         {
             msAxis.Minimum = minimum - 2;
             msAxis.Maximum = maximum + 2;
+            // Counted from the record start, a late arrival or processing latency passes the default bounds.
+            msAxis.AbsoluteMinimum = Math.Min(msAxis.AbsoluteMinimum, msAxis.Minimum);
+            msAxis.AbsoluteMaximum = Math.Max(msAxis.AbsoluteMaximum, msAxis.Maximum);
         }
         PlotModelStyle.InsertAxis(model, 0, msAxis);
         return model;

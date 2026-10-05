@@ -49,6 +49,24 @@ public sealed class VirtualCrossoverPanelSideWiringTests
     }
 
     [Fact]
+    public void TheGateVerdict_FollowsTheShownSide_InAGroupViewShowingNoBlock()
+    {
+        StaTest.Run(() =>
+        {
+            using var live = new LivePanel();
+            var host = (IAgentImportHost)live.Panel;
+            live.Session.Project.PhaseGateRight.OffsetMs = 300;
+            live.Set<ThemedComboBox>(
+                "comboBoxGroupView", box => box.SelectedItem = VirtualCrossoverGroupView.RearAndSub);
+            Assert.False(host.GatePlacement is { CutsChannels: true });
+
+            live.ShowRight();
+
+            Assert.True(host.GatePlacement is { CutsChannels: true });
+        });
+    }
+
+    [Fact]
     public void OwnCalibration_ReadsTheShownSidesOwnFile()
     {
         StaTest.Run(() =>

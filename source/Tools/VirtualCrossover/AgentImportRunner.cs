@@ -229,6 +229,8 @@ internal sealed class AgentImportRunner(
         AgentProgressDialog? progress = null)
     {
         bool ran = false;
+        // Nothing stops a session load while the import runs; its engines must not tune the loaded session.
+        long generation = session.ProjectGeneration;
         // One target level for every fit of this import: the stated one (the review made them agree), else the project's.
         double importTargetLevelDb = AgentEngineRequests.TargetLevelDb(toApply, session.Project.TargetLevelDb);
         EqAutoTunePolicy policy = host.AutoTunePolicy();
@@ -238,6 +240,12 @@ internal sealed class AgentImportRunner(
             .Where(verdict => verdict.Operation is not AgentSettingsOperation)
             .OrderBy(verdict => AgentEngineRequests.Order(verdict.Operation!)))
         {
+            if (session.ProjectGeneration != generation)
+            {
+                summary.Add("The rest of the import was skipped: a session was loaded while it ran.");
+                break;
+            }
+
             AgentOperation operation = verdict.Operation!;
             if (operation is not ProbeOperation)
             {
@@ -271,7 +279,7 @@ internal sealed class AgentImportRunner(
                     break;
 
                 case RunAutoDelayOperation delay:
-                    ran |= await AutoDelayAsync(delay, summary);
+                    ran |= await AutoDelayAsync(delay, generation, summary);
                     break;
 
                 case AutoTunePeqOperation tune:
@@ -305,7 +313,7 @@ internal sealed class AgentImportRunner(
 
     // The button's checks (headless), the dialog's compute and its Apply commit. The panel is disabled during compute: the
     // dialog's modality is what kept the chain still.
-    private async Task<bool> AutoDelayAsync(RunAutoDelayOperation operation, List<string> summary)
+    private async Task<bool> AutoDelayAsync(RunAutoDelayOperation operation, long generation, List<string> summary)
     {
         (AutoDelayPlan? launch, AutoDelayRefusal? refusal) = VirtualCrossoverAutoDelay.Prepare(
             session, host.GatePlacement, consentToBroadWindow: null);
@@ -323,6 +331,11 @@ internal sealed class AgentImportRunner(
         }
         if (host.IsGone)
         {
+            return false;
+        }
+        if (session.ProjectGeneration != generation)
+        {
+            summary.Add("Auto delay: skipped (a session was loaded while it ran; nothing was written).");
             return false;
         }
 

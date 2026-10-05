@@ -387,7 +387,8 @@ public partial class Form1
 
         try
         {
-            await audioSessionFactory.WarmUpAsync(request, CancellationToken.None);
+            await startupAudioWarmup.RunAsync(
+                () => audioSessionFactory.WarmUpAsync(request, CancellationToken.None));
         }
         catch
         {
@@ -433,13 +434,13 @@ public partial class Form1
                     if (!liveSpectrumSession.InProgress &&
                         !expSweepMeasurement.InProgress)
                     {
-                        await audioSessionFactory.WarmUpAsync(
-                            CreateAudioWarmupRequest(measurementSettings.Measurement),
-                            CancellationToken.None);
+                        // Through the gate Record waits at: the panel is modeless, and a run would open the driver this holds.
+                        AudioSessionRequest request = CreateAudioWarmupRequest(measurementSettings.Measurement);
+                        await startupAudioWarmup.RunAsync(
+                            () => audioSessionFactory.WarmUpAsync(request, CancellationToken.None));
 
-                        // Refresh the panel's device snapshot after reconfigure. Only in this branch: while the live spectrum owns the driver,
-                        // probing would open a second AsioOut and get a short rate list. Stopping the capture refreshes it later.
-                        dialog.RefreshAudioDeviceView();
+                        // Re-checks: probing a driver a run took as the warm-up ended would get a short rate list.
+                        RefreshOpenMeasurementSettingsDevice();
                     }
                 }
                 catch (InvalidOperationException exception)

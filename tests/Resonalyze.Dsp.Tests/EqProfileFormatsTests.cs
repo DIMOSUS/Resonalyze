@@ -410,6 +410,8 @@ public sealed class EqProfileFormatsTests
             "1,600,6,4\n" +
             "2,junk,here,now\n" +
             "3,2000,5,0\n" +          // Q = 0 -> skipped
+            "2,600,junk,4\n" +        // a junk or blank cell skips the row rather than shifting the columns
+            "1,600,,4,PK\n" +
             "4,4000,-3,2\n";
 
         EqualizationCurve curve = Import(new GenericCsvFormat(), text);
@@ -417,6 +419,19 @@ public sealed class EqProfileFormatsTests
         Assert.Equal(2, curve.Bands.Count);
         Assert.Equal(600, curve.Bands[0].FrequencyHz, 4);
         Assert.Equal(4000, curve.Bands[1].FrequencyHz, 4);
+    }
+
+    [Fact]
+    public void Csv_ReadsSemicolonsBetweenFieldsAndDecimalCommas()
+    {
+        // Excel's CSV under a ru/de locale.
+        EqualizationCurve curve = Import(new GenericCsvFormat(), "Preamp (dB);-6,5\n1;600;6;4;PK\n");
+
+        Assert.Equal(-6.5, curve.PreampDb, 4);
+        PeqBand band = Assert.Single(curve.Bands);
+        Assert.Equal(600, band.FrequencyHz, 4);
+        Assert.Equal(6, band.GainDb, 4);
+        Assert.Equal(4, band.Q, 4);
     }
 
     // Import is a default interface member, reachable only through the interface.

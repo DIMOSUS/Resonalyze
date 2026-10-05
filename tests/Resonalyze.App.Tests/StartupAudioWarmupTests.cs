@@ -41,6 +41,22 @@ public sealed class StartupAudioWarmupTests
         await warmup.WaitAsync();
     }
 
+    // Record Settings' Apply warms up on any backend, so also where no startup warm-up ran.
+    [Fact]
+    public async Task WaitAsync_WaitsForALaterWarmUp()
+    {
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var warmup = new StartupAudioWarmup(_ => Task.CompletedTask);
+        Task later = warmup.RunAsync(() => release.Task);
+
+        Task waiting = warmup.WaitAsync();
+        Assert.False(waiting.IsCompleted);
+
+        release.SetResult();
+        await waiting;
+        await later;
+    }
+
     [Fact]
     public async Task Cancel_SignalsTheWarmUpToken()
     {

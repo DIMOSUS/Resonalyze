@@ -15,6 +15,8 @@ internal enum IrPreviewSource
     Primary,
     // Referenced at the estimated start, where magnitude extraction opens its window (DataHelper MagnitudeAnchorIndex).
     PrimaryAtStart,
+    // The same, read past the record's end from its start, as the FDW magnitude gate reads it.
+    PrimaryAtStartCircular,
     TransferFromStart
 }
 
@@ -566,7 +568,8 @@ internal static class ImpulseWindowPreview
             start,
             windowLength,
             null,
-            wrap: irSource.Wrap);
+            wrap: irSource.Wrap,
+            wrapPreRoll: irSource.WrapPreRoll);
 
         double maxMagnitude = impulse.Length == 0
             ? 0
@@ -611,7 +614,7 @@ internal static class ImpulseWindowPreview
                     : SelectImpulseResponse(
                         measurement,
                         IrPreviewSource.SweepDeconvolution),
-            IrPreviewSource.PrimaryAtStart =>
+            IrPreviewSource.PrimaryAtStart or IrPreviewSource.PrimaryAtStartCircular =>
                 measurement.Transfer is { ImpulseResponse.Length: > 0 } startTransferResult
                     ? new IrSource(
                         startTransferResult.ImpulseResponse,
@@ -619,9 +622,10 @@ internal static class ImpulseWindowPreview
                             startTransferResult.ImpulseResponse,
                             measurement.SampleRate,
                             startTransferResult.PeakIndex),
-                        // The magnitude window reads the circular pre-roll, so the preview does too.
-                        true,
-                        "Transfer IR Window")
+                        // Magnitude windows read the circular pre-roll; only the FDW gate reads past the end too.
+                        source == IrPreviewSource.PrimaryAtStartCircular,
+                        "Transfer IR Window",
+                        WrapPreRoll: true)
                     : SelectImpulseResponse(
                         measurement,
                         IrPreviewSource.SweepDeconvolution),
@@ -681,7 +685,8 @@ internal static class ImpulseWindowPreview
         Complex[] Samples,
         int ReferenceIndex,
         bool Wrap,
-        string Title);
+        string Title,
+        bool WrapPreRoll = false);
 
     private sealed record WindowedImpulse(
         string Title,

@@ -134,6 +134,19 @@ public sealed class PeqTextFileTests
     }
 
     [Fact]
+    public void Parse_ReadsABellWhoseWidthIsStatedInOctaves()
+    {
+        // APO's reference example; Q = sqrt(2^n) / (2^n - 1) at n = 0.167 is 8.634.
+        EqualizationCurve curve = PeqTextFile.Parse("Filter: ON PEQ Fc 100 Hz Gain 1.0 dB BW Oct 0.167\n");
+
+        PeqBand band = Assert.Single(curve.Bands);
+        Assert.Equal(PeqBandType.Peaking, band.Type);
+        Assert.Equal(100, band.FrequencyHz, 6);
+        Assert.Equal(1.0, band.GainDb, 6);
+        Assert.Equal(8.634, band.Q, 3);
+    }
+
+    [Fact]
     public void Parse_DoesNotTakeAWordThatOnlyStartsWithFilterForAFilterLine()
     {
         Assert.False(PeqTextFile.TryParse("Filters: ON PK Fc 600 Hz Gain 6.0 dB Q 4.0", out _));

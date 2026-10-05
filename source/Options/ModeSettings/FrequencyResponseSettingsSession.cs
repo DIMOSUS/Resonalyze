@@ -24,7 +24,15 @@ internal sealed class FrequencyResponseSettingsSession
     public ModeSettingsMeasurement Measurement { get; private set; } = new(null, 0);
 
     public SampleWindowPreview Preview =>
-        new(Measurement.Result, Fades.Window, Fades.Left, Fades.Right, 0, IrPreviewSource.PrimaryAtStart);
+        new(
+            Measurement.Result,
+            Fades.Window,
+            Fades.Left,
+            Fades.Right,
+            0,
+            WindowMode.Mode == PhaseWindowMode.FrequencyDependent
+                ? IrPreviewSource.PrimaryAtStartCircular
+                : IrPreviewSource.PrimaryAtStart);
 
     public void Load(
         FrequencyResponseOptions options,

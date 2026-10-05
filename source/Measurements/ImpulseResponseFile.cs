@@ -230,6 +230,8 @@ public sealed class ImpulseResponseFile
                     this,
                     SerializerOptions,
                     cancellationToken);
+                await stream.FlushAsync(cancellationToken);
+                stream.Flush(flushToDisk: true);
             }
 
             File.Move(tempPath, path, overwrite: true);
@@ -401,7 +403,7 @@ public sealed class ImpulseResponseFile
             throw new InvalidDataException(
                 $"Unsupported impulse response version {Version}.");
         }
-        if (SampleRate is < 44_100 or > 768_000)
+        if (SampleRate is < SampleRateCatalog.MinimumSampleRate or > 768_000)
         {
             throw new InvalidDataException("The sample rate is outside the supported range.");
         }

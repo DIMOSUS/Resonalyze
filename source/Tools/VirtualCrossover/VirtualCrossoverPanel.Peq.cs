@@ -237,6 +237,7 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
+        string? preampNotice = EqExportWarnings.PreampNotImported(chosen, channel.Settings.PeqPreampDb);
         channel.Settings.PeqBands = curve.Bands
             .Take(EqualizationCurve.MaxBandCount)
             .ToList();
@@ -244,6 +245,10 @@ public partial class VirtualCrossoverPanel
         channel.Settings.PeqSourceName = Path.GetFileName(dialog.FileName);
         UpdatePeqReadouts(channel);
         SaveAndRedraw();
+        if (preampNotice != null)
+        {
+            ShowMessage(preampNotice, "Virtual DSP", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
     }
 
     private void ClearPeq(VirtualCrossoverChannel channel)

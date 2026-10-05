@@ -368,6 +368,23 @@ public sealed class PlotModelFactoryTests
     }
 
     [Fact]
+    public void GroupDelay_AxisAutoFit_ReachesAnArrivalPastTheDefaultBounds()
+    {
+        const int sampleRate = 44_100;
+        const int peakSample = 1_764;
+        var impulse = new Complex[8_192];
+        impulse[peakSample] = Complex.One;
+        using var measurement = CreateTransferMeasurement(impulse, peakSample, sampleRate);
+        PlotModel model = CreateFactory(measurement).CreateGroupDelay(includeCurves: true);
+        OxyPlot.Axes.Axis axis = model.Axes.First(candidate => candidate.Key == PlotModelFactory.GroupDelayAxisKey);
+
+        ((IPlotModel)model).Update(true);
+
+        double arrivalMs = peakSample * 1000.0 / sampleRate;
+        Assert.InRange(arrivalMs, axis.ActualMinimum + 0.5, axis.ActualMaximum - 0.5);
+    }
+
+    [Fact]
     public void GroupDelay_CompareSource_GetsMinimumAndExcessCurvesToo()
     {
         using var measurement = CreateTransferMeasurement();
@@ -834,6 +851,61 @@ public sealed class PlotModelFactoryTests
         {
             Assert.Equal(displayed.Points[i].X, overlay[i].X);
             Assert.Equal(displayed.Points[i].Y, overlay[i].Y, tolerance: 1e-12);
+        }
+    }
+
+    // Own is each record's own curve: the one a named calibration with that curve would apply, or none.
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void CompareFrequencyResponse_UnderOwn_IsReadThroughTheComparesOwnCurve(
+        bool mainCarriesCurve,
+        bool compareCarriesCurve)
+    {
+        VirtualCrossoverCalibrationSettings sixDb = VirtualCrossoverCalibrationSettings.From(
+            CalibrationFile.FromPoints([new CalibrationPoint(20, 6.0), new CalibrationPoint(20_000, 6.0)]),
+            "mic",
+            null);
+        using TestAnalyzer measurement = CreateTransferMeasurement();
+        if (mainCarriesCurve)
+        {
+            measurement.Open(measurement.Result with { MicrophoneCalibration = sixDb });
+        }
+        var compareImpulse = new Complex[2048];
+        compareImpulse[64] = Complex.One;
+        compareImpulse[77] = new Complex(0.35, 0.0);
+        var compare = new CompareAnalysisSource(
+            "Reference", 44_100, compareImpulse, 64, MicrophoneCalibration: compareCarriesCurve ? sixDb : null);
+
+        (PlotModelFactory Factory, LineSeries Curve) CompareUnder(string? calibrationId)
+        {
+            PlotModelFactory factory = CreateFactory(
+                measurement,
+                frequencyResponseOptions: new FrequencyResponseOptions { CalibrationId = calibrationId },
+                calibrationsById: id => MicrophoneCalibrationIds.IsOwn(id)
+                    ? measurement.Result.MicrophoneCalibration?.ToCalibrationFile()
+                    : id == "mic" ? sixDb.ToCalibrationFile() : null);
+            factory.SetCompareSourceProvider(() => compare);
+            LineSeries curve = factory.CreateFrequencyResponse(includeCurves: true).Series
+                .OfType<LineSeries>()
+                .Single(series => series.Tag is CurveTag { Kind: AnalysisCurveKind.Primary, Source: CurveSource.Compare });
+            return (factory, curve);
+        }
+
+        (PlotModelFactory factory, LineSeries own) = CompareUnder(MicrophoneCalibrationIds.Own);
+        LineSeries expected = CompareUnder(compareCarriesCurve ? "mic" : null).Curve;
+        RawCurveCapture capture = factory.BuildRawCurve((CurveTag)own.Tag!)!.Value;
+        List<SignalPoint> overlay = RawCurveRenderer.Render(
+            capture.Spectrum,
+            capture.CalibrationCorrectionDb,
+            (int)Math.Round(new FrequencyResponseOptions().SmoothingInverseOctaves));
+
+        Assert.Equal(expected.Points.Count, own.Points.Count);
+        Assert.Equal(expected.Points.Count, overlay.Count);
+        for (int i = 0; i < expected.Points.Count; i++)
+        {
+            Assert.Equal(expected.Points[i].Y, own.Points[i].Y, tolerance: 1e-9);
+            Assert.Equal(expected.Points[i].Y, overlay[i].Y, tolerance: 1e-9);
         }
     }
 

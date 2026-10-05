@@ -457,6 +457,26 @@ public sealed class EqWizardPanelWiringTests
         Assert.Equal(before, live.Session.Bank.State);
     });
 
+    [Theory]
+    [InlineData("buttonReturnToDsp", true)]
+    [InlineData("buttonBackToDsp", false)]
+    public void EndingTheHandoffDuringAFit_DropsTheFit(string button, bool sends) => StaTest.Run(() =>
+    {
+        using var live = FitReady();
+        PeqBankState before = live.Session.Bank.State;
+        List<PeqBand> onScreen = [.. live.Session.Bank.Curve.Bands];
+        List<PeqBand>? returned = null;
+        live.Panel.ReturnPeqRequested = (_, bank, _) => returned = [.. bank.Bands];
+
+        live.Control<Button>("buttonAutoTune").PerformClick();
+        // The fit lands through the message loop, so this click comes before it.
+        live.Click(button);
+        live.SettleFit();
+
+        Assert.Equal(before, live.Session.Bank.State);
+        Assert.Equal(sends ? onScreen : null, returned);
+    });
+
     // A gated handoff with the target a little under the source, so the fit has cuts to make and asks nothing.
     private static LivePanel FitReady()
     {

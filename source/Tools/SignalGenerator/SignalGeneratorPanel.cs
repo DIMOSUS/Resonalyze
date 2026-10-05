@@ -92,7 +92,7 @@ public partial class SignalGeneratorPanel : UserControl
             }
 
             int durationSeconds = (int)numericDuration.Value;
-            float[] monoSamples = CreateMonoSamples(
+            float[] monoSamples = SignalGeneratorSamples.CreateMono(
                 settings.SampleRate,
                 durationSeconds,
                 SelectedSignalType,
@@ -258,42 +258,6 @@ public partial class SignalGeneratorPanel : UserControl
         return PlaybackSettingsProvider();
     }
 
-    private float[] CreateMonoSamples(
-        int sampleRate,
-        int durationSeconds,
-        SignalGeneratorType signalType,
-        double frequencyHz,
-        double level)
-    {
-        int samples = checked(sampleRate * durationSeconds);
-        var result = new float[samples];
-        level = Math.Clamp(level, 0.0, 1.0);
-
-        if (signalType != SignalGeneratorType.Sine)
-        {
-            using var signal = new NoiseSignal();
-            signal.FillData(
-                durationSeconds,
-                24,
-                sampleRate,
-                ToNoiseColor(signalType));
-            for (int i = 0; i < result.Length; i++)
-            {
-                result[i] = (float)Math.Clamp(signal.FloatData[i] * level * 2.0, -1.0, 1.0);
-            }
-
-            return result;
-        }
-
-        double angularStep = 2.0 * Math.PI * frequencyHz / sampleRate;
-        for (int sampleIndex = 0; sampleIndex < result.Length; sampleIndex++)
-        {
-            result[sampleIndex] = (float)(Math.Sin(sampleIndex * angularStep) * level);
-        }
-
-        return result;
-    }
-
     internal void RefreshAudioSettings()
     {
         try
@@ -342,24 +306,6 @@ public partial class SignalGeneratorPanel : UserControl
         return channel == null
             ? settings.AsioDriverName ?? "ASIO driver"
             : $"{settings.AsioDriverName}: {channel.Name}";
-    }
-
-    private static NoiseColor ToNoiseColor(SignalGeneratorType type) =>
-        type switch
-        {
-            SignalGeneratorType.PinkNoise => NoiseColor.Pink,
-            SignalGeneratorType.BrownNoise => NoiseColor.Brown,
-            SignalGeneratorType.WhiteNoise => NoiseColor.White,
-            _ => NoiseColor.PinkPeriodic
-        };
-
-    private enum SignalGeneratorType
-    {
-        PinkPeriodicNoise,
-        PinkNoise,
-        BrownNoise,
-        WhiteNoise,
-        Sine
     }
 
     private sealed class SignalTypeOption

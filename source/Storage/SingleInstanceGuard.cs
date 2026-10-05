@@ -18,7 +18,18 @@ internal sealed class SingleInstanceGuard : IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(dataDirectory);
 
         // Global\ so a second logon session of the same user (RDP, fast switching) is covered.
-        var mutex = new Mutex(initiallyOwned: true, NameFor(dataDirectory), out bool createdNew);
+        Mutex mutex;
+        bool createdNew;
+        try
+        {
+            mutex = new Mutex(initiallyOwned: true, NameFor(dataDirectory), out createdNew);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Held by an instance this account may not open: another user on a shared portable folder, or an elevated one.
+            return null;
+        }
+
         if (createdNew)
         {
             return new SingleInstanceGuard(mutex);
@@ -48,7 +59,7 @@ internal sealed class SingleInstanceGuard : IDisposable
         mutex.Dispose();
     }
 
-    private static string NameFor(string dataDirectory)
+    internal static string NameFor(string dataDirectory)
     {
         // Hashed: backslashes are kernel namespace separators, and paths can exceed the 260-char name limit.
         byte[] hash = SHA256.HashData(

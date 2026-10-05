@@ -114,7 +114,8 @@ public partial class Form1
 
     private void FlushMeasurementSettingsIfClosed(DockedModeSettingsHost host)
     {
-        if (!host.IsOpen)
+        // The exit flushed and reported a failure once; a panel closing with the window must not throw it again.
+        if (!host.IsOpen && !closingInProgress && !closingPrepared)
         {
             FlushMeasurementSettings();
         }
@@ -248,6 +249,12 @@ public partial class Form1
     {
         TryBeginInvokeOnUiThread(() =>
         {
+            // A run ending as the window closes can be queued behind the close, which already freed the panels.
+            if (resourcesDisposed)
+            {
+                return;
+            }
+
             AnalyzerDocument.Request? run = runRequest;
             runRequest = null;
             // New session aborts a run, but one finishing meanwhile still completes: it is dropped like an aborted one.

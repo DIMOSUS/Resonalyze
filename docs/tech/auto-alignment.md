@@ -1020,18 +1020,29 @@ own delay.
 It stands down where the direct lobe check does: under a lock, a forced polarity or a joint search. A
 scene-locked far side is placed by its cross-side target and trimmed by the polish below.
 
-**The passes behind the descent** score the summation, and on a high junction each of them undid the
-above: the pair co-move walked the reference car's tweeter pair a quarter period (0.15 ms), and the
-stereo branch check flipped the stack above the mid/tweeter split on two cabins. So, at or above
-`DirectSeedMinCrossoverHz`:
+**The passes behind the descent** score the summation, and on a junction the phase had placed each of
+them undid the above: the pair co-move walked the reference car's tweeter pair a quarter period
+(0.15 ms), and the stereo branch check flipped the stack above the mid/tweeter split on two cabins. The
+descent therefore records the reference-side junctions it stood on a phase lobe, and:
 
-- a linked pair bordering such a junction is not co-moved;
-- the stereo branch check does not ask such a junction;
-- the far-side polish trims a channel whose highest junction is such a one by that junction's phase
-  score: the same ticks inside the same reach, taken where the score gains `TrimMinimumGain` (0.02).
-  A trim is bounded, so it needs no floor. It reports a move to the polish/mono round only where the
-  channel borders a mono channel: on one cabin a 0.04 ms trim of the far mid re-ran the sub's co-move,
-  which hopped 6.16 ms and flipped, to the lobe its first pass had vetoed.
+- a linked pair bordering a recorded junction is not co-moved;
+- the stereo branch check does not ask a recorded junction;
+- the far-side polish trims a channel whose highest junction is at or above `DirectSeedMinCrossoverHz`
+  by that junction's phase score: the same ticks inside the same reach, taken where the score gains
+  `TrimMinimumGain` (0.02). It reports a move to the polish/mono round only where the channel borders
+  a mono channel: on one cabin a 0.04 ms trim of the far mid re-ran the sub's co-move, which hopped
+  6.16 ms and flipped, to the lobe its first pass had vetoed.
+
+A junction the phase did not place (no lobe named, or a search that stood down) is left to those passes
+exactly as before. Gating them on the crossover frequency alone was the first version; on the archive
+the two read the same, and the record is the narrower claim.
+
+The trim has no floor, unlike the descent. It is bounded to an eighth of a period, so it cannot cost a
+lobe, and handing a far junction that scores under `MinimumScore` back to the summation's trim was
+measured: on one cabin (far score 0.54) the summation moved the far mid 0.08 ms for 0.02 dB, the direct
+sound's coherence at that junction fell from 0.91 to 0.25, and the move re-ran the sub's co-move into
+the lobe hop above. Of the three far sides of the archive trimmed under the floor, two gain direct
+coherence and one stays as incoherent as its inherited polarity leaves it.
 
 **Field effect** (23 archived sessions, 46 sides; the top junction of each side at or above 1 kHz against
 the saved tune, counted on the tune's lobe when the polarity matches and the gap is within 0.10 ms): 29
@@ -1173,8 +1184,8 @@ r 0.75 against 0.81 for its flip partner, 0.04 dB on the panel metric — commit
 the far side is the one that pays: at that junction it lands anti-correlated (r -0.97) and 0.45 dB down.
 The information that would settle the branch lives on the side that is never asked.
 
-`RebalanceJunctionBranches` asks it, after both descents. For each junction under
-`DirectSeedMinCrossoverHz` that has a twin on the far side it probes ONE move: the whole stack ABOVE the junction, on both sides, shifted half a period and
+`RebalanceJunctionBranches` asks it, after both descents. For each junction that has a twin on the far
+side, and that the phase did not place, it probes ONE move: the whole stack ABOVE the junction, on both sides, shifted half a period and
 flipped. That operation changes the junction and nothing else — every junction above it moves rigidly,
 which is why a lone pair co-move cannot express it (the tweeter has to follow the midrange).
 
@@ -1212,12 +1223,11 @@ which is why a lone pair co-move cannot express it (the tweeter has to follow th
 
 The trial and the adopted move go through the same `ApplyBranchMove`: a delay without the flip is the
 worst of both branches, which `RebalanceJunctionBranches_AdoptedMove_DelaysAndFlipsTheStackAbove`
-pins with a reference junction tied between its lobes and a far upper driver wired inverted on the alias.
+pins with a reference junction tied between its lobes and a far tweeter wired inverted on the alias.
 
-A junction at or above `DirectSeedMinCrossoverHz` is not asked. The question is put to the summation,
-which cannot tell such a junction's lobes apart, and the lobe there is the phase's to name (see
-[Phase lobe](#phase-lobe)): on the archive the check flipped the stack above the mid/tweeter split of
-two cabins off the lobe their saved tunes stand on.
+A junction the descent stood on a phase lobe is not asked (see [Phase lobe](#phase-lobe)). The question
+is put to the summation, which is what the phase overruled there: on the archive the check flipped the
+stack above the mid/tweeter split of two cabins off the lobe their saved tunes stand on.
 
 Field effect (10 stereo sessions, 20 sides, 58 junctions, walk anchored on the top channel): five
 moves are adopted. The v6 200 Hz split goes +2.58 ms flipped and lands on the owner's lobe (left
@@ -1394,9 +1404,8 @@ quality the scene mandate cost without touching the image.
   offset co-move identically.
 - **Mono neighbours.** Pairs bordering the mono channel are not co-moved, because the mono is timed
   by the left pass alone (the sub/left-woofer relation must match a left-only run).
-- **High junctions.** Nor are pairs bordering a junction at or above `DirectSeedMinCrossoverHz`: the
-  descent stood it on its phase peak, and this sum would re-time it by the cabin (see
-  [Phase lobe](#phase-lobe)).
+- **Phase-placed junctions.** Nor are pairs bordering a reference-side junction the descent stood on
+  its phase peak: this sum would re-time it by the cabin (see [Phase lobe](#phase-lobe)).
 
 **Mono co-move** (`ComoveMonoChannels`). The mono channel's lobe was chosen by the left junction
 alone. Moving or flipping one mono channel cannot change any pair's L−R timing, so it is swept across

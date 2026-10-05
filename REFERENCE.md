@@ -4082,10 +4082,9 @@ One more question is asked once both sides are settled. The side you are tuning
 for decides each handover alone, and the far side then copies its polarity
 driver by driver — so a junction the near side could barely tell apart decides
 for the far side too, and the far side is the one that pays for it. So every
-junction under 1 kHz is offered the **other branch**: the whole stack above it,
-on both sides, moved half a period and flipped (higher up the summation that
-would judge the offer cannot tell the lobes apart, and the phase has already
-named one). It is taken only when the far side
+junction is offered the **other branch**: the whole stack above it, on both
+sides, moved half a period and flipped (except a junction the phase placed:
+the summation that would judge the offer is what the phase overruled there). It is taken only when the far side
 plainly gains, the near side does not pay for it, and no half of either
 junction loses more than the far side gains — and the answer is checked on a
 real re-render, not on an estimate. Where the two sides want different branches
@@ -4121,7 +4120,7 @@ alone until you tick **Balance channel gains (cut-only)**. Pairs whose shared ba
 reaches the localization region are pinned to the scene, because the image
 outranks the handover there; a final scene-preserving pass may then shift both
 sides of a pair by one shared delta to recover what the pin cost, except a pair
-at a crossover above 1 kHz, which stays where the phase put it. Each far-side
+at a junction the phase placed, which stays where the phase put it. Each far-side
 channel below the bridge may also leave its own scene position to buy back its
 junctions' summation, by an eighth of the period of its highest crossover: a
 few hundredths of a millisecond for a midrange under a 2 kHz split, half a

@@ -648,7 +648,8 @@ public static class AutoAlignmentEngine
         StringBuilder log,
         Dictionary<AlignmentJunction, OnsetLockState>? onsetLocks,
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
-        IReadOnlyCollection<IAlignmentChannel>? monoChannels = null)
+        IReadOnlyCollection<IAlignmentChannel>? monoChannels = null,
+        HashSet<AlignmentJunction>? phasePlaced = null)
     {
         ArgumentNullException.ThrowIfNull(channelsByBand);
         ArgumentNullException.ThrowIfNull(pairs);
@@ -702,7 +703,8 @@ public static class AutoAlignmentEngine
                 seedPartnerDistanceMs: seedPartnerReach,
                 onsetLocks: onsetLocks,
                 decisions: decisions,
-                monoChannels: monoChannels);
+                monoChannels: monoChannels,
+                phasePlaced: phasePlaced);
         }
     }
 
@@ -1505,7 +1507,8 @@ public static class AutoAlignmentEngine
         Dictionary<AlignmentJunction, OnsetLockState>? onsetLocks = null,
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
         IReadOnlyCollection<IAlignmentChannel>? monoChannels = null,
-        IReadOnlyDictionary<AlignmentJunction, double>? seedPartnerDistanceMs = null)
+        IReadOnlyDictionary<AlignmentJunction, double>? seedPartnerDistanceMs = null,
+        HashSet<AlignmentJunction>? phasePlaced = null)
     {
         // Untrusted seed across this junction (or its secondary): the base may be a half period off.
         bool wideSeed = untrustedSeedJunctions != null &&
@@ -2274,6 +2277,7 @@ public static class AutoAlignmentEngine
 
                         // The sum's own figures stay with the optimum they were read at; only the delay moves.
                         chosen = phase.Pick with { DelayMs = phase.PeakDelayMs };
+                        phasePlaced?.Add(pair);
                     }
                 }
             }
@@ -2668,9 +2672,12 @@ public static class AutoAlignmentEngine
         var onsetLocks = new Dictionary<AlignmentJunction, OnsetLockState>(
             ReferenceEqualityComparer.Instance);
 
+        // Reference-side junctions the phase stood on a lobe: the summing passes below leave them where they are.
+        var phasePlaced = new HashSet<AlignmentJunction>(ReferenceEqualityComparer.Instance);
+
         Compute(
             plan.LeftChannelsByBand, plan.LeftPairs, reprocess, alignment, log,
-            onsetLocks, decisions, plan.MonoChannels);
+            onsetLocks, decisions, plan.MonoChannels, phasePlaced);
 
         // Scope of every uniform shift from here on: one side alone would break the bridge's offset.
         var allChannels = new List<AlignmentSnapshot>(plan.LeftChannelsByBand);
@@ -3247,12 +3254,12 @@ public static class AutoAlignmentEngine
 
         // Shared per-pair delta keeps the scene while trading junction loss between sides.
         RebalancePairsKeepingScene(
-            plan, reprocess, alignment, log, onsetLocks, maxDelayMs, decisions);
+            plan, reprocess, alignment, log, onsetLocks, phasePlaced, maxDelayMs, decisions);
 
         // Both sides read the same junction before one side’s near-tie stands for both.
         RebalanceJunctionBranches(
             plan, plan.LeftChannelsByBand, rightByBand, allChannels,
-            reprocess, alignment, log, maxDelayMs, decisions);
+            reprocess, alignment, log, maxDelayMs, decisions, phasePlaced);
 
         // Mono channels are scene-invariant: this is the first pass where their right junction votes.
         ComoveMonoChannels(
@@ -3691,6 +3698,7 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
         IReadOnlyDictionary<AlignmentJunction, OnsetLockState> onsetLocks,
+        IReadOnlySet<AlignmentJunction> phasePlaced,
         double maxDelayMs,
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
@@ -3731,12 +3739,12 @@ public static class AutoAlignmentEngine
                 continue;
             }
 
-            // So do pairs at a high junction, which the phase placed (docs/tech/auto-alignment.md#phase-lobe).
-            if (adjacent.Max(junction => junction.CrossoverHz) is double highestHz &&
-                highestHz >= DirectSeedMinCrossoverHz)
+            // So do pairs at a junction the phase placed: this sum would re-time it by the cabin.
+            // See docs/tech/auto-alignment.md#phase-lobe.
+            if (referenceAdjacent.FirstOrDefault(phasePlaced.Contains) is { } placed)
             {
                 log.AppendLine(FormattableString.Invariant(
-                    $"Co-move {link.Left.Name}+{link.Right.Name}: none, the {highestHz:0} Hz junction is the phase's to place"));
+                    $"Co-move {link.Left.Name}+{link.Right.Name}: none, the phase placed the {placed.CrossoverHz:0} Hz junction"));
                 continue;
             }
 
@@ -4197,7 +4205,8 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
         double maxDelayMs = DefaultMaxDelayMs,
-        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
+        IReadOnlySet<AlignmentJunction>? phasePlaced = null)
     {
         if (plan.LeftPairs.Count != plan.RightPairs.Count)
         {
@@ -4221,12 +4230,12 @@ public static class AutoAlignmentEngine
                 continue;
             }
 
-            // The phase names a high junction's lobe; this sum cannot (docs/tech/auto-alignment.md#phase-lobe).
-            if (reference.CrossoverHz >= DirectSeedMinCrossoverHz)
+            // The phase named this junction's lobe; this sum cannot (docs/tech/auto-alignment.md#phase-lobe).
+            if (phasePlaced?.Contains(reference) == true)
             {
                 log.AppendLine(
                     $"  stereo branch not asked at {reference.Lower.Channel.Name}/{reference.Upper.Channel.Name}: " +
-                    "the phase places a high junction.");
+                    "the phase placed it.");
                 continue;
             }
 

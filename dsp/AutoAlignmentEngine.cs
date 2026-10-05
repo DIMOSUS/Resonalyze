@@ -1532,6 +1532,7 @@ public static class AutoAlignmentEngine
 
         // Matched split at or above DirectSeedMinCrossoverHz, no wide seed, no joint search: the filters force polarity (inverted or in phase); a caller polarity outranks it.
         // See docs/tech/auto-alignment.md#expected-polarity.
+        bool polarityHandedDown = forcedPolarity != null;
         bool? filterPolarity = SettledRelativeInversion(pair);
         bool expectsInversion = filterPolarity == true;
         if (forcedPolarity == null && filterPolarity is bool expectedInversion &&
@@ -2243,8 +2244,10 @@ public static class AutoAlignmentEngine
 
             // Phase lobe (see docs/tech/auto-alignment.md#phase-lobe): at a high junction the summation follows the
             // cabin, so the read-out's own phase score names the delay lobe and the delay inside it.
+            // A polarity the filters settled leaves the lobe open, so it is asked there too.
             string? phaseLobeDetail = null;
-            if (directLobeSkip == null && pair.CrossoverHz >= DirectSeedMinCrossoverHz)
+            if (secondaryNeighbor == null && sceneLockToleranceMs == null && onsetAnchorMs == null &&
+                !polarityHandedDown && pair.CrossoverHz >= DirectSeedMinCrossoverHz)
             {
                 List<AlignmentCandidate> lobes = [.. fineOptima, .. wideOptima, .. retriedOptima];
                 List<SignalPoint>? curve = JunctionPhaseLobe.Curve(

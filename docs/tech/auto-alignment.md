@@ -1017,8 +1017,12 @@ own delay.
   stay with the optimum they were read at, so the decision's margin is still the summation's; the
   detail says when the phase moved the pick.
 
-It stands down where the direct lobe check does: under a lock, a forced polarity or a joint search. A
-scene-locked far side is placed by its cross-side target and trimmed by the polish below.
+It stands down under a lock or a joint search, and under a polarity the caller handed down (a far side
+inheriting its twin's): such a channel is placed by its cross-side target and trimmed by the polish
+below. A polarity the junction's own matched filters settled (`#expected-polarity`) is another matter.
+It fixes the relation and leaves the lobe open, so the phase is asked there, among candidates of that
+one polarity. Standing down with the direct lobe check was the first version, and behind a matched LR24
+or LR36 split a cabin copy a period off took the junction with it.
 
 **The passes behind the descent** score the summation, and on a junction the phase had placed each of
 them undid the above: the pair co-move walked the reference car's tweeter pair a quarter period
@@ -1046,11 +1050,14 @@ coherence and one stays as incoherent as its inherited polarity leaves it.
 
 **Field effect** (23 archived sessions, 46 sides; the top junction of each side at or above 1 kHz against
 the saved tune, counted on the tune's lobe when the polarity matches and the gap is within 0.10 ms): 29
-of 42 before, 39 of 42 after in the stereo run, 35 of 42 in single-side runs. In the stereo run every
+of 42 before, 39 of 42 after in the stereo run, 36 of 42 in single-side runs. In the stereo run every
 side that changes lobe moves onto the saved tune's. The read-out's score at the proposal goes from 0.73
-to 0.83 on average (the saved tunes read 0.73). No junction under 1 kHz changes lobe; they move by up to
+to 0.84 on average (the saved tunes read 0.73). No junction under 1 kHz changes lobe; they move by up to
 0.12 ms where the far mid above them is trimmed. Still off, as before: one far side most of a period
-out, one cabin whose saved tune is not a reference, and in single-side runs four more far sides.
+out, one cabin whose saved tune is not a reference, and in single-side runs three more far sides. The
+archive holds one matched split above 1 kHz (4 kHz): alone, its far side stood a period out and now
+stands on the tune's lobe; its near side moves 0.03 ms to the phase peak, off the direct sound's own
+peak the tune sits on (read-out 0.67 to 0.83, direct coherence 0.96 to 0.55 at that 0.25 ms period).
 
 The session battery prints the read-out's score and fix at the saved tune and at the proposal
 (`phase saved`, `phase proposed`); at a high junction that line and the direct sound's `zero r` are the

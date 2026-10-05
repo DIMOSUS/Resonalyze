@@ -840,6 +840,28 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Theory]
+    [InlineData(24, false)]
+    [InlineData(36, true)]
+    public void Compute_ACabinCopySkewedBehindAMatchedSplit_TheFiltersKeepThePolarityAndThePhaseNamesTheLobe(
+        int slopeDbPerOctave, bool expectInverted)
+    {
+        // The filters settle the relation, not the lobe: a copy twice as loud, 5.4 ms behind the fronts, meets a
+        // whole period off.
+        (Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+            IAlignmentChannel lower,
+            IAlignmentChannel upper) = RunFilteredJunction(
+                CrossoverFilterFamily.LinkwitzRiley, slopeDbPerOctave, upperCornerHz: 2_000,
+                log: new StringBuilder(),
+                lowerTail: (260, 2.0),
+                upperTail: (284, 2.0));
+
+        AlignmentOverride low = alignment.GetValueOrDefault(lower);
+        AlignmentOverride high = alignment.GetValueOrDefault(upper);
+        Assert.Equal(expectInverted, low.InvertPolarity != high.InvertPolarity);
+        Assert.InRange(high.DelayMs - low.DelayMs, -0.03, 0.03);
+    }
+
+    [Theory]
     // Offsets of the record's and the cut's extremum from the arrival anchor and the chain skew, ms.
     [InlineData(-0.763, -0.130, 0.519, false)] // v2
     [InlineData(-0.799, -0.184, 0.746, false)] // v4

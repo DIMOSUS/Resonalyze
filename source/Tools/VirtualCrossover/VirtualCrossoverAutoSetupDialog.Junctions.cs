@@ -132,11 +132,11 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog
         toolTip.SetToolTip(
             row.MinHz,
             "Lowest crossover the search may pick here. A value the drivers " +
-            "cannot take is raised, and the row says why.");
+            "cannot safely take is raised, and the row says why.");
         toolTip.SetToolTip(
             row.MaxHz,
             "Highest crossover the search may pick here. A value the drivers " +
-            "cannot take is lowered, and the row says why.");
+            "cannot safely take is lowered, and the row says why.");
         toolTip.SetToolTip(
             row.MinSlope,
             "Gentlest slope the search may use here. 24 dB/oct always stays " +

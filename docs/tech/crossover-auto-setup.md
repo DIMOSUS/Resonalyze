@@ -256,8 +256,8 @@ subwoofer.
 
 `ResolveJunctionWindow` is the one function that resolves a window, used by both the search and the
 dialog, so the row a user reads is the window the search runs on. It returns the effective bounds plus
-a **note for every bound that moved** — the tweeter's Fs floor, the distortion knee, a class bound,
-the measured band, the system limit. A window that collapses to one frequency says so too. The old
+a **note for every bound that moved** — the tweeter's Fs floor, the distortion knee, the breakup onset,
+the system limit, the end of a measurement. A window that collapses to one frequency says so too. The old
 code clamped silently, which is most of why the wizard read as wilful.
 
 A `JunctionWindowNote` carries two strings, and the split is the point. `Summary` is the FACT, short
@@ -266,11 +266,13 @@ enough to sit beside the row — `Estimated tweeter Fs 1.2 kHz`, `1500 → 2100 
 number should be is unreadable, which is what `712–736 → 1649–4663 Hz: the tweeter's Fs floor sits
 above the lower driver's breakup onset` proved in the field.
 
-The user may narrow, never widen; where safety disagrees, safety wins and prints why. Neighbour
-separation is NOT part of the window: it moves as the descent moves the junctions either side, so
+A user's bound replaces the wizard's own on its side; where safety disagrees, safety wins and prints why.
+A bound set on one side only that lands past the wizard's other one opens the window from it by
+`SafetyOverrideSpanOctaves`, as a safety bound would, rather than pinning the junction to the typed number.
+Neighbour separation is NOT part of the window: it moves as the descent moves the junctions either side, so
 `JunctionSearchBounds` applies it on top.
 
-### Three strengths
+### Four strengths
 
 The bounds that shape a window are not equal, and treating them as one number is what produced two field
 reports at once. Weakest first:
@@ -279,8 +281,15 @@ reports at once. Weakest first:
    class bound that empties the window is dropped rather than obeyed, silently: a preference losing to a
    measurement is not news. A midbass capped at 500 Hz under a driver that only starts at 702 Hz keeps the
    measured 702-741 Hz overlap.
-2. **Measured bands** are what the drivers actually produce, and they bound the window unless safety disagrees.
-3. **Safety** — the tweeter Fs floor and the distortion knee — always applies, including where the class bounds
+2. **Measured bands** are what the drivers actually produce, and they bound the window unless the user or
+   safety says otherwise.
+3. **The user's window** replaces both. The band read is a heuristic — 8 dB under the curve's 85th-percentile
+   level on an in-car FDW curve — and a cabin dip reads as the driver's edge: a Fiesta door woofer 20 dB down
+   at 300–400 Hz and back by 700 Hz measured to 214 Hz, and a typed 300–500 Hz was refused. Inside the window
+   the search reads the real curves, so a handover the drivers cannot make shows in the sum, not as a refusal.
+   What the user cannot pass is where there is no data: past the system limit, or past where a driver's
+   measurement ends (a band-limited sweep), the search would score `InterpolateDb`'s clamped skirt.
+4. **Safety** — the tweeter Fs floor and the distortion knee — always applies, including where the class bounds
    had to be dropped. It used to be bundled into the same variable as the class bound and went out with it: a
    midbass measuring to 736 Hz under a tweeter measuring from 712 Hz produced a 712-736 Hz window, inside the
    dome's own resonance.
@@ -292,7 +301,7 @@ bounds are swapped and the row says so. Treating it as a safety conflict is what
 above a lower driver that stopped playing well below it, and `InterpolateDb` clamps its ends, so the search would
 read a flat invented skirt rather than refuse.
 
-Where safety and the drivers disagree, the floor is the one bound that protects hardware rather than quality —
+Where safety and the window disagree, the floor is the one bound that protects hardware rather than quality —
 a tweeter crossed under its resonance overexcurts, while a lower driver asked to reach past its breakup merely
 sounds worse — so the floor stands and the overlap gives way. The window then opens UPWARD from the floor by
 `SafetyOverrideSpanOctaves` = 1.5 rather than collapsing onto it. A breakup CAP is one-sided the other way, so

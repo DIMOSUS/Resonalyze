@@ -995,6 +995,69 @@ public sealed class CrossoverAutoSetupTests
     }
 
     [Fact]
+    public void JunctionWindow_TakesTheUsersWindowPastTheMeasuredBandAndTheClasses()
+    {
+        // Field case: a door woofer reading to about 250 Hz under a midrange, and 300-500 Hz typed for the handover.
+        var woofer = new AutoSetupSource(BandCurve(42, 200, 0), DriverType.Woofer);
+        var midrange = new AutoSetupSource(BandCurve(96, 4_600, 0), DriverType.Midrange);
+        AutoSetupSource[] channels = [woofer, midrange];
+        Assert.True(CrossoverAutoSetup.ResolveJunctionWindow(channels, 0, Options()).HighHz < 300);
+
+        JunctionWindowResolution window = CrossoverAutoSetup.ResolveJunctionWindow(
+            channels, 0, Options() with { JunctionWindows = [new JunctionSearchWindow(300, 500)] });
+
+        Assert.Equal((300.0, 500.0), (window.LowHz, window.HighHz));
+        Assert.Empty(window.Notes);
+    }
+
+    [Fact]
+    public void JunctionWindow_OneUserBoundPastTheWizardsOther_OpensTheWindowRatherThanPinningIt()
+    {
+        var woofer = new AutoSetupSource(BandCurve(42, 200, 0), DriverType.Woofer);
+        var midrange = new AutoSetupSource(BandCurve(96, 4_600, 0), DriverType.Midrange);
+
+        JunctionWindowResolution window = CrossoverAutoSetup.ResolveJunctionWindow(
+            [woofer, midrange], 0, Options() with { JunctionWindows = [new JunctionSearchWindow(MinHz: 300)] });
+
+        Assert.Equal(300, window.LowHz);
+        Assert.True(window.HighHz > 300, $"The window is pinned to {window.LowHz:0} Hz.");
+        Assert.Empty(window.Notes);
+    }
+
+    [Fact]
+    public void JunctionWindow_UserBoundPastWhereTheMeasurementEnds_StopsThere()
+    {
+        // A band-limited sweep: the woofer's curve holds no data above 1 kHz.
+        List<SignalPoint> swept = BandCurve(42, 200, 0)
+            .Select(point => point.X > 1_000 ? new SignalPoint(point.X, double.NaN) : point)
+            .ToList();
+        var woofer = new AutoSetupSource(swept, DriverType.Woofer);
+        var midrange = new AutoSetupSource(BandCurve(96, 4_600, 0), DriverType.Midrange);
+
+        JunctionWindowResolution window = CrossoverAutoSetup.ResolveJunctionWindow(
+            [woofer, midrange], 0, Options() with { JunctionWindows = [new JunctionSearchWindow(300, 2_000)] });
+
+        Assert.Equal((300.0, swept.Last(point => double.IsFinite(point.Y)).X), (window.LowHz, window.HighHz));
+        Assert.StartsWith("2 kHz → ", Assert.Single(window.Notes).Summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void JunctionWindow_UserBoundUnderTheTweeterFloor_MovesToTheFloorAndNamesIt()
+    {
+        var midrange = new AutoSetupSource(BandCurve(200, 6_000, 0), DriverType.Midrange);
+        var tweeter = new AutoSetupSource(BandCurve(1_500, 20_000, 0), DriverType.Tweeter);
+
+        JunctionWindowResolution window = CrossoverAutoSetup.ResolveJunctionWindow(
+            [midrange, tweeter], 0, Options() with { JunctionWindows = [new JunctionSearchWindow(1_000, 4_000)] });
+
+        double floor = CrossoverAutoSetup.TweeterMinCrossoverHz(
+            CrossoverAutoSetup.TweeterResonanceHz(CrossoverAutoSetup.EstimateBand(tweeter.MagnitudeDb).LowHz), 48);
+        Assert.Equal((floor, 4_000.0), (window.LowHz, window.HighHz));
+        JunctionWindowNote moved = Assert.Single(window.Notes);
+        Assert.Equal($"1 kHz → {floor / 1_000:0.##} kHz", moved.Summary);
+    }
+
+    [Fact]
     public void Propose_FiveWayWithTwoSubwoofers_OrdersEveryHandover()
     {
         var sources = new List<AutoSetupSource>

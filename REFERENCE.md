@@ -3560,19 +3560,24 @@ rather than given a second crossover on top of the first; clear the kernel, or
 tune that channel by hand. An imported correction FIR is not a crossover and stays
 under what the wizard writes.
 
-#### Narrowing a junction
+#### A junction's own window
 
 Each junction gets a row of its own: the frequency window the search may use, the
 slope window, and whether it may **split** its corners. The fields are not blank —
 they show the window the wizard itself arrived at, so a row always states what is
 about to happen, and a field is only yours once you change it.
 
-You may narrow a window; you cannot widen one past what the measurement and the
-driver's safety allow. Where a number of yours cannot be honoured — a tweeter's
-resonance floor, the frequency its distortion says it stops being clean, a class
-bound, the measured band — the row says so under it, with the value it moved to,
-and the note's tooltip gives the reason. A window that comes out as a single
-frequency says that too.
+Your numbers replace the wizard's own, including outside the band it read for a
+driver: that read stops where the curve falls 8 dB under its typical level, and a
+cabin dip can end it early. The search then reads the real curves there, so a
+handover the drivers cannot make shows in the sum rather than as a refusal. Only
+the drivers' safety and the data still move a number of yours — a tweeter's
+resonance floor, the frequency its distortion says it stops being clean, the
+lower driver's breakup, the system band limit, the end of a band-limited
+measurement — and the row then says so under it, with the value it moved to, and
+the note's tooltip gives the reason. Set one bound past the wizard's other one and
+that one opens 1.5 octaves from yours rather than pinning the junction. A window
+that comes out as a single frequency says that too.
 
 The slope window always keeps 24 dB/oct inside it, widening if you exclude it.
 The score is anchored on the car-audio standard and so is the baseline candidate

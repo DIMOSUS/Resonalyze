@@ -26,14 +26,15 @@ public partial class VirtualCrossoverPanel
                 "Listen through HEADPHONES only."
         });
         toolsMenu.Items.Add(new ToolStripMenuItem(
-            "Capture to overlay",
+            "Capture to overlay…",
             null,
-            async (_, _) => await CaptureSumToOverlayAsync().ConfigureAwait(true))
+            async (_, _) => await CaptureToOverlayAsync().ConfigureAwait(true))
         {
             ToolTipText =
-                "Keep the current sum as an overlay curve, so a later tune can\r\n" +
-                "be compared against this one on the same plot."
+                "Save a block, a side's Sum or L+R as drawn into a Frequency\r\n" +
+                "Response overlay slot, to compare with a measurement of the\r\n" +
+                "real system or with a later tune."
         });
-        DropDownMenu.ShowUnder(buttonTools, toolsMenu);
+        ShowMenu(buttonTools, toolsMenu);
     }
 }

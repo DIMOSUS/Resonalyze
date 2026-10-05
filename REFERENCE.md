@@ -1551,8 +1551,10 @@ It is available in the magnitude views (Frequency Response and Live Spectrum),
 where dB per octave means something.
 In **Phase Response** the difference operations are phase-aware: a wrapped
 operand makes the difference take the shortest angular distance so it never jumps
-by ±360°. Overlay JSON always stores the unsmoothed source points, so changing
-smoothing is lossless, and operations are applied to the displayed Y values after
+by ±360°. A capture stores the unsmoothed source points wherever the plot has
+them, so changing smoothing is lossless; a curve without that raw form — a Virtual
+DSP capture among them — is stored as drawn, its smoothing in it, and its slot's
+smoothing starts at None. Operations are applied to the displayed Y values after
 source offsets — so addition and averaging on a decibel plot are arithmetic on dB
 coordinates, not physical summation of acoustic power.
 
@@ -4220,11 +4222,26 @@ The remaining buttons in the column beside the plots. The two used occasionally
 rather than while tuning live under **Tools...**, so the column stays the sequence a
 tune is actually built in:
 
-- **Tools... → Capture to overlay** saves the predicted sum as a Captured overlay in
-  Frequency Response — compare it against real measurements and target curves, or
-  feed it onward to the EQ Wizard. It is the **Sum** the plot draws for the shown
-  side and group view: the same channels enter it (a centre never does), through
-  the same window, and with **Hybrid** on it is the hybrid Sum.
+- **Tools... → Capture to overlay…** saves one curve of the magnitude view as a
+  Captured overlay in Frequency Response — compare it against a measurement of the
+  real system or a later tune, or feed it onward to the EQ Wizard. A dialog asks
+  which curve and which slot. The curves are those the magnitude view draws for the
+  shown side and group view, whether their toggles are on or not: each block's
+  processed response, the shown side's **Sum**, the other side's Sum and **L+R** as
+  Vector, Energy and Blend (Front + Sub only); under **Groups**, one curve per zone.
+  Each is the plot's own curve — the same channels in a Sum (a centre never), the
+  same window, and with **Hybrid** on the hybrid one — and its name says which blocks
+  it adds. The slot list shows what every slot holds. A free slot is offered first;
+  with none free, the slot holding this curve's earlier capture is offered, so a
+  retuned prediction replaces it and a calculated overlay reading that slot follows.
+  Any other slot can be picked, and the dialog names the curve it replaces. The curve
+  is saved as drawn, in the slot's own colour and with the plot's smoothing in it, so
+  the slot's smoothing starts at None. To find where the real system departs from the
+  prediction, measure the same part of the installation — one block, one side, or
+  both sides — and draw a calculated `A - B` overlay with that measurement (the live
+  curve or a capture of it) as A and the prediction as B. Virtual DSP reads relative
+  decibels, so compare with [dB SPL](#sound-pressure-level-db-spl) off: on the SPL
+  axis the capture is not drawn, and `A - B` refuses to mix the two.
 - **Tools... → Audition track…** renders a music file (wav/mp3/flac/m4a and friends) through
   the tune into a stereo WAV: each program channel is convolved with the summed
   processed response of its side, with the microphone calibration optionally

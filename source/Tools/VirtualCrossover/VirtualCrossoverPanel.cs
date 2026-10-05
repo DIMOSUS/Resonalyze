@@ -29,6 +29,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private readonly AcousticViewBuilder viewBuilder;
     private readonly AgentSessionReader agentReader;
     private readonly VirtualCrossoverAudition audition;
+    private readonly VirtualCrossoverOverlayExport overlayExport;
     private readonly VirtualCrossoverSharedScale sharedScale;
     private readonly VirtualCrossoverSideLock sideLock = new();
     private readonly ChainHeadroomReader headroomReader = new();
@@ -90,6 +91,7 @@ public partial class VirtualCrossoverPanel : UserControl
         eqHandoff = new VirtualCrossoverEqHandoff(session, processingCoordinator, metrics, hybridReader);
         agentImport = new AgentImportRunner(session, agentReader, eqHandoff, this, undoHistory);
         audition = new VirtualCrossoverAudition(session, processingCoordinator, metrics, hybridReader);
+        overlayExport = new VirtualCrossoverOverlayExport(session, metrics, hybridReader, viewBuilder);
         sharedScale = new VirtualCrossoverSharedScale(
             session, processingCoordinator, metrics, hybridReader, viewBuilder);
         acousticPlot = new VirtualCrossoverAcousticPlot(
@@ -146,11 +148,11 @@ public partial class VirtualCrossoverPanel : UserControl
     /// <summary>The tune this panel edits, for the host's tests and tools; the panel is its only writer.</summary>
     internal VirtualCrossoverSession Session => session;
 
-    /// <summary>Saves the curve as a Captured FR overlay; returns the slot, null when all are taken.</summary>
+    /// <summary>Where Tools... → Capture to overlay writes.</summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    internal Func<string, OverlayPoint[], int?>? OverlayCaptureRequested { get; set; }
+    internal IFrequencyResponseOverlaySlots? OverlaySlots { get; set; }
 
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(

@@ -39,6 +39,7 @@ for what they bind (`.Project`, `.Calibration`, `.Channels`, `.Sources`, `.Peq`,
 | `DspProcessorSession`, `DspProcessorStatus`, `DspProcessorApply` | the processor dialog ([DSP processor](#dsp-processor-code-map)) |
 | `VirtualCrossoverGateEstimate` | the Gate dialog's τ estimate and auto detrend line ([gate estimate](#gate-estimate)) |
 | `VirtualCrossoverAudition` | what the audition renders; the dialog's own state is in [its code map](#audition-code-map) |
+| `VirtualCrossoverOverlayExport` | Capture to overlay: the magnitude view's curves for a Frequency Response slot, built by `AcousticViewBuilder` as the plot builds them, and the slot it offers |
 | `AgentSessionReader`, `AgentProbeReader`, `AgentJunctionTune`, `AgentEngineRequests` | the Agent Bridge |
 | `AgentImportRunner`, `AgentImportUndo` | an AI import once its review is answered, and its undo ([AI import runner](#ai-import-runner-code-map)) |
 

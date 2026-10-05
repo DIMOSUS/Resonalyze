@@ -124,12 +124,8 @@ internal sealed class AcousticViewBuilder(VirtualCrossoverSession session, Virtu
             if (item.Channel.Pair.ShowProcessedCurve)
             {
                 // Non-null here: magnitudes are withheld only for an empty set.
-                AnalysisCurve curve = magnitudes![i];
-                IReadOnlyList<SignalPoint> points = hybrid != null
-                    ? VirtualCrossoverHybrid.ShiftedBy(hybrid.Channels[i], hybrid.OffsetDb)
-                    : curve.Points;
                 curves.Add(new AcousticCurve(
-                    item.Channel.Name, points, item.Color, 1.8, LineStyle.Solid));
+                    item.Channel.Name, ProcessedPoints(i, magnitudes!, hybrid), item.Color, 1.8, LineStyle.Solid));
             }
         }
 
@@ -150,12 +146,9 @@ internal sealed class AcousticViewBuilder(VirtualCrossoverSession session, Virtu
 
         if (view.ShowSum)
         {
-            // Hybrid: averages hold no phase, so cancellation comes from the IR loss curve (VirtualCrossoverHybrid.Sum).
-            IReadOnlyList<SignalPoint> sumPoints =
-                (hybrid != null ? hybridReader.ActiveSum(processed, summed, magnitudes, hybrid) : null)
-                ?? frame.Sum.Points;
             curves.Add(new AcousticCurve(
-                "Sum", sumPoints, VirtualCrossoverColors.Sum, 2.4, LineStyle.Solid));
+                "Sum", SumPoints(processed, summed, magnitudes, hybrid, frame.Sum), VirtualCrossoverColors.Sum, 2.4,
+                LineStyle.Solid));
             if (frame.OppositeSum != null)
             {
                 curves.Add(new AcousticCurve(
@@ -178,6 +171,51 @@ internal sealed class AcousticViewBuilder(VirtualCrossoverSession session, Virtu
 
         return curves;
     }
+
+    /// <summary>A shown channel's processed curve as the magnitude view draws it.</summary>
+    public static IReadOnlyList<SignalPoint> ProcessedPoints(
+        int index, IReadOnlyList<AnalysisCurve> magnitudes, HybridMagnitudes? hybrid) =>
+        hybrid != null
+            ? VirtualCrossoverHybrid.ShiftedBy(hybrid.Channels[index], hybrid.OffsetDb)
+            : magnitudes[index].Points;
+
+    // Hybrid: averages hold no phase, so cancellation comes from the IR loss curve (VirtualCrossoverHybrid.Sum).
+    public IReadOnlyList<SignalPoint> SumPoints(
+        IReadOnlyList<ProcessedChannel> processed,
+        IReadOnlyList<ProcessedChannel> summed,
+        IReadOnlyList<AnalysisCurve> magnitudes,
+        HybridMagnitudes? hybrid,
+        AnalysisCurve sum) =>
+        (hybrid != null ? hybridReader.ActiveSum(processed, summed, magnitudes, hybrid) : null) ?? sum.Points;
+
+    /// <summary>The opposite side's Sum by the method the shown Sum is drawn with; null for a side of one block, and under
+    /// Hybrid when that side's captures do not join the shown side's set (a mixed-method pair reads as an L/R
+    /// difference).</summary>
+    public AnalysisCurve? OppositeSum(VirtualCrossoverSideSum side, HybridMagnitudes? hybrid)
+    {
+        if (side.ChannelCount < 2)
+        {
+            return null;
+        }
+
+        return hybrid == null
+            ? session.MagnitudeGate.OppositeSum(side, session.Calibration.For).Display
+            : hybridReader.OppositeSum(side, hybrid.OffsetDb);
+    }
+
+    /// <summary>The L+R curve by the method the shown Sum is drawn with.</summary>
+    /// <param name="magnitudes">The frame's channel curves; read only under Hybrid.</param>
+    public AnalysisCurve? StereoSum(
+        StereoSumMode mode,
+        double blendHz,
+        VirtualCrossoverFrame frame,
+        VirtualCrossoverSideSum? opposite,
+        IReadOnlyList<AnalysisCurve>? magnitudes,
+        HybridMagnitudes? hybrid) =>
+        hybrid == null
+            ? VirtualCrossoverStereoSum.Build(
+                mode, frame.Summed, opposite, session.MagnitudeGate, session.Calibration.For, blendHz)
+            : hybridReader.StereoSum(mode, frame.Shown, frame.Summed, magnitudes!, hybrid, opposite, blendHz);
 
     // One summed line per zone, all gated on ONE anchor across the shown channels.
     // See docs/tech/virtual-dsp-panel.md#groups-view.

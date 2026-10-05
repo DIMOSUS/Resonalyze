@@ -181,7 +181,6 @@ internal sealed class UiThemePalette
     // curve defaults are written into user FILES at creation: the value is fixed there, but which value a new
     // curve starts from follows the theme it was created in.
     public required Color CursorOutline { get; init; }
-    public required Color CurveOverlayDefault { get; init; }
     public required Color CurveTargetDefault { get; init; }
 
     // OxyPlot defaults are a light theme; PlotModelStyle.ApplyChrome replaces them with these.
@@ -383,7 +382,6 @@ internal sealed class UiThemePalette
         BandLockedHeaderText = Color.FromArgb(34, 26, 10),
 
         CursorOutline = Color.FromArgb(8, 10, 14),
-        CurveOverlayDefault = Color.FromArgb(230, 184, 0),
         CurveTargetDefault = Color.FromArgb(55, 200, 160),
 
         MarkerFirstArrival = Color.FromArgb(255, 96, 96),
@@ -584,7 +582,6 @@ internal sealed class UiThemePalette
         BandLockedHeaderText = Color.FromArgb(56, 38, 0),
 
         CursorOutline = Color.FromArgb(8, 10, 14),
-        CurveOverlayDefault = Color.FromArgb(150, 104, 0),
         CurveTargetDefault = Color.FromArgb(0, 118, 92),
 
         MarkerFirstArrival = Color.FromArgb(186, 46, 46),

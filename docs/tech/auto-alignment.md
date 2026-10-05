@@ -1248,8 +1248,9 @@ lobe where its direct sound reads 0.36. The whole mid/tweeter stack lands 4 ms e
 
 So where the direct sound can be asked (at or above `DirectCoherenceMinCrossoverHz`) the junction is
 offered a second move: the stack above it shifted a **whole period, unflipped** (`StereoJunctionBranch.Read`
-with `wholePeriod`). Both offers are read; the one the far side gains more from is tried first, and one
-move per junction is made.
+with `wholePeriod`). Both offers are read, each is judged on its own re-render, and of those that hold
+the one the far side gains most from is made: one move per junction. The scan only estimates a move, so
+its ranking of the two is not taken (`…TheRenderRanksTheTwoMovesOtherwiseThanTheScan_TheRenderDecides`).
 
 - **The summation's terms are the flip's**: the far side gains more than `FarGainDb`, the reference side
   pays no more than `ReferenceLossDb`, on a re-render, inside the delay ceiling.

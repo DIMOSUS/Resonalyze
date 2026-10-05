@@ -4295,7 +4295,8 @@ public static class AutoAlignmentEngine
             string junctionName =
                 $"{reference.Lower.Channel.Name}/{reference.Upper.Channel.Name}";
 
-            bool TryMove(StereoBranchReading reading)
+            // An offer as it holds on its own re-render, or null where it is declined.
+            (StereoBranchReading Verified, string Move)? Verify(StereoBranchReading reading)
             {
                 // The scan's optimum is moved onto the DSP's 0.01 ms grid here, so the re-render judges, the log names
                 // and the alignment carries the delay the processor will actually play.
@@ -4308,7 +4309,7 @@ public static class AutoAlignmentEngine
                         $"  stereo branch declined at {junctionName}: {move} would gain " +
                         $"{reading.FarGainDb:0.00} dB on the far side but " +
                         $"{reading.ReferenceGainDb:+0.00;-0.00} dB on the reference side.");
-                    return false;
+                    return null;
                 }
 
                 // The scan rotates inside a fixed window; before a branch is adopted the candidate is RE-RENDERED and
@@ -4389,44 +4390,51 @@ public static class AutoAlignmentEngine
                         $"  stereo branch declined at {junctionName}: {move} gains " +
                         $"{verified.FarGainDb:+0.00;-0.00} dB on the far junction and " +
                         $"{verified.ReferenceGainDb:+0.00;-0.00} dB on the reference one — {refusal}.");
-                    return false;
+                    return null;
                 }
 
-                ApplyBranchMove(alignment, above, shiftScope, verified.DeltaMs, verified.Flip);
-                log.AppendLine(
-                    $"  stereo branch moved at {junctionName}: the stack above it went {move} on " +
-                    $"both sides — the far junction gains {verified.FarGainDb:0.00} dB and " +
-                    $"the reference one {verified.ReferenceGainDb:+0.00;-0.00} dB.");
-                if (decisions != null)
-                {
-                    foreach (IAlignmentChannel channel in above)
-                    {
-                        AmendDecision(
-                            decisions,
-                            channel,
-                            FormattableString.Invariant(
-                                $"moved {move} with the stack above {junctionName}: the far side wanted the other branch by {verified.FarGainDb:0.00} dB"));
-                    }
-                }
-
-                return true;
+                return (verified, move);
             }
 
             // The flip partner half a period off, and, where the direct sound can be asked, the same relation a whole
-            // period off. The one the far side wants more is tried first; one move per junction.
-            List<StereoBranchReading> offers = new[] { false, true }
+            // period off. The scan only estimates a move, so each offer is judged on its own re-render and the one
+            // the far side then gains most from is made; one move per junction.
+            List<(StereoBranchReading Verified, string Move)> held = new[] { false, true }
                 .Where(wholePeriod => !wholePeriod || reference.CrossoverHz >= DirectCoherenceMinCrossoverHz)
                 .Select(wholePeriod => StereoJunctionBranch.Read(
                     BranchScore, halfPeriodMs, wholePeriod: wholePeriod))
                 .OfType<StereoBranchReading>()
                 .Where(offer => offer.FarGainDb > StereoJunctionBranch.NoteworthyFarGainDb)
-                .OrderByDescending(offer => offer.FarGainDb)
+                .Select(Verify)
+                .OfType<(StereoBranchReading Verified, string Move)>()
                 .ToList();
-            foreach (StereoBranchReading offer in offers)
+            if (held.Count == 0)
             {
-                if (TryMove(offer))
+                continue;
+            }
+
+            (StereoBranchReading made, string madeMove) = held.MaxBy(item => item.Verified.FarGainDb);
+            foreach ((StereoBranchReading other, string otherMove) in held.Where(item => item.Verified != made))
+            {
+                log.AppendLine(
+                    $"  stereo branch passed over at {junctionName}: {otherMove} gains " +
+                    $"{other.FarGainDb:0.00} dB on the far junction, less than the move made.");
+            }
+
+            ApplyBranchMove(alignment, above, shiftScope, made.DeltaMs, made.Flip);
+            log.AppendLine(
+                $"  stereo branch moved at {junctionName}: the stack above it went {madeMove} on " +
+                $"both sides — the far junction gains {made.FarGainDb:0.00} dB and " +
+                $"the reference one {made.ReferenceGainDb:+0.00;-0.00} dB.");
+            if (decisions != null)
+            {
+                foreach (IAlignmentChannel channel in above)
                 {
-                    break;
+                    AmendDecision(
+                        decisions,
+                        channel,
+                        FormattableString.Invariant(
+                            $"moved {madeMove} with the stack above {junctionName}: the far side wanted the other branch by {made.FarGainDb:0.00} dB"));
                 }
             }
         }

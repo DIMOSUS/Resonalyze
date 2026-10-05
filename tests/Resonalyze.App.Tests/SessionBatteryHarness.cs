@@ -63,6 +63,14 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         !string.IsNullOrWhiteSpace(
             Environment.GetEnvironmentVariable(StereoVariable));
 
+    /// <summary>A single-side run judges BOTH sides, each alone, instead of only the side the session was saved on:
+    /// the far side on its own is where a lobe witness is weakest.</summary>
+    public const string BothSidesVariable = "RESONALYZE_SESSION_BATTERY_BOTHSIDES";
+
+    private static bool BothSides =>
+        !Stereo && !string.IsNullOrWhiteSpace(
+            Environment.GetEnvironmentVariable(BothSidesVariable));
+
     private static bool AutoGate =>
         !string.IsNullOrWhiteSpace(
             Environment.GetEnvironmentVariable(AutoGateVariable));
@@ -112,7 +120,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         var stopwatch = Stopwatch.StartNew();
         VirtualCrossoverProjectFile project = VirtualCrossoverProjectFile.LoadFrom(sessionPath);
         List<VirtualCrossoverChannel> channels =
-            LoadChannels(project, out string fingerprint, bothSides: Stereo);
+            LoadChannels(project, out string fingerprint, bothSides: Stereo || BothSides);
         string name = Path.GetFileName(Path.GetDirectoryName(sessionPath)!);
         report.AppendLine();
         report.AppendLine($"=== {name}  ({sessionPath})");
@@ -135,7 +143,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         }
 
         var comparisons = new List<JunctionComparison>();
-        foreach (bool side in stereo != null
+        foreach (bool side in stereo != null || BothSides
             ? (bool[])[false, true]
             : [project.ActiveSideRight])
         {
@@ -145,7 +153,8 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
 
         foreach (string line in log.ToString().Split('\n'))
         {
-            if (line.Contains("latch") || line.Contains("veto") ||
+            if (line.Contains("phase lobe") || line.Contains("promoted") ||
+                line.Contains("latch") || line.Contains("veto") ||
                 line.Contains("re-anchored") || line.Contains("lobe hop") ||
                 line.Contains("direct coherence") || line.Contains("arbitration") ||
                 line.Contains("low-junction polarity") ||
@@ -286,6 +295,34 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
 
         DirectPhat("saved", saved);
         DirectPhat("proposed", proposed);
+
+        // The junction phase block's read at the alignment: its score, and the fix it would still ask for. At a high
+        // junction this and "zero r" judge a lobe; the full-window loss follows the cabin (docs/tech/auto-alignment.md#phase-lobe).
+        void PhaseReadout(string label, List<ProcessedChannel> set)
+        {
+            using var coordinator = new VirtualCrossoverProcessingCoordinator();
+            var metrics = new VirtualCrossoverMetrics(
+                coordinator,
+                (_, _, _, _, _) => throw new InvalidOperationException(
+                    "the junction phase block reads no magnitude curve"));
+            foreach (VirtualCrossoverMetric.PhaseEntry entry in metrics.BuildPhaseEntries(
+                set,
+                ordered => ProcessedChannels.JunctionPhaseSpectra(
+                    ordered, ordered[0].SampleRate, pinnedOffsetMs: null,
+                    project.PhaseGateLeftMs, project.PhaseGatePlateauMs, project.PhaseGateRightMs)))
+            {
+                JunctionPhaseResult read = entry.Result;
+                report.AppendLine(FormattableString.Invariant(
+                    $"    phase {label,-8} {entry.Junction}: score {read.CurrentScore:0.00}; ") +
+                    FormattableString.Invariant(
+                        $"best {read.BestExtraDelayMs:+0.00;-0.00;0.00} ms{(read.BestInvert ? " inv" : "")} ({read.BestScore:0.00}); ") +
+                    FormattableString.Invariant(
+                        $"opposite {read.OppositePolarityScore:0.00}; rival {read.RivalExtraDelayMs:+0.00;-0.00;0.00} ms ({read.RivalScore:0.00})"));
+            }
+        }
+
+        PhaseReadout("saved", saved);
+        PhaseReadout("proposed", proposed);
 
         List<VirtualCrossoverMetric.Entry> savedEntries = Judge(project, saved);
         List<VirtualCrossoverMetric.Entry> proposedEntries = Judge(project, proposed);

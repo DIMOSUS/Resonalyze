@@ -700,8 +700,9 @@ public sealed class StereoAlignmentTests
     /// carries no junction but bounds the realizable span.</summary>
     private static (TestChannel LeftMid, TestChannel LeftTwr, TestChannel RightMid, TestChannel RightTwr,
         Dictionary<IAlignmentChannel, AlignmentOverride> Alignment, string Log)
-        RunJunctionBranch(double baseDelayMs = 0, bool withFieldFloor = false, int twinSamples = 12) =>
-        RunJunctionBranch(out _, baseDelayMs, withFieldFloor, twinSamples);
+        RunJunctionBranch(
+            double baseDelayMs = 0, bool withFieldFloor = false, int twinSamples = 12, bool phasePlaced = false) =>
+        RunJunctionBranch(out _, baseDelayMs, withFieldFloor, twinSamples, phasePlaced);
 
     /// <param name="renderedTwrDelays">Every left-tweeter delay a re-render was asked for, in order.</param>
     private static (TestChannel LeftMid, TestChannel LeftTwr, TestChannel RightMid, TestChannel RightTwr,
@@ -710,7 +711,8 @@ public sealed class StereoAlignmentTests
             out List<double> renderedTwrDelays,
             double baseDelayMs = 0,
             bool withFieldFloor = false,
-            int twinSamples = 12)
+            int twinSamples = 12,
+            bool phasePlaced = false)
     {
         List<double> rendered = [];
         renderedTwrDelays = rendered;
@@ -756,7 +758,8 @@ public sealed class StereoAlignmentTests
         var log = new StringBuilder();
 
         AutoAlignmentEngine.RebalanceJunctionBranches(
-            plan, left, right, initial, Reprocess, alignment, log);
+            plan, left, right, initial, Reprocess, alignment, log,
+            phasePlaced: phasePlaced ? new HashSet<AlignmentJunction> { plan.LeftPairs[0] } : null);
 
         return (leftMid, leftTwr, rightMid, rightTwr, alignment, log.ToString());
     }
@@ -820,6 +823,162 @@ public sealed class StereoAlignmentTests
         Assert.Equal(49.9, alignment[leftTwr].DelayMs);
         Assert.Equal(49.9, alignment[rightTwr].DelayMs);
         Assert.False(alignment[leftTwr].InvertPolarity);
+    }
+
+    /// <summary>An 800 Hz junction whose reference side ties between two lobes a period (60 samples) apart: its
+    /// lower channel carries an equal copy a period behind the front. On the far side the upper channel's
+    /// <paramref name="farUpperTaps"/> and the lower channel's <paramref name="farLowerTaps"/> say which lobe it wants.</summary>
+    private static (TestChannel[] Lower, TestChannel[] Upper,
+        Dictionary<IAlignmentChannel, AlignmentOverride> Alignment, string Log)
+        RunPeriodBranch((int Samples, double Amplitude)[] farLowerTaps, (int Samples, double Amplitude)[] farUpperTaps)
+    {
+        const int PeriodSamples = 60;
+        static Complex[] Taps((int Samples, double Amplitude)[] taps)
+        {
+            var ir = new Complex[IrLength];
+            foreach ((int samples, double amplitude) in taps)
+            {
+                ir[BasePosition + samples] += amplitude;
+            }
+
+            return ir;
+        }
+
+        var leftLower = new TestChannel("L woof", Taps([(0, 1.0), (PeriodSamples, 1.0)]));
+        var leftUpper = new TestChannel("L mid", Taps([(0, 1.0)]));
+        var rightLower = new TestChannel("R woof", Taps(farLowerTaps));
+        var rightUpper = new TestChannel("R mid", Taps(farUpperTaps));
+        TestChannel[] all = [leftLower, leftUpper, rightLower, rightUpper];
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(channel => Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+
+        // The stack stands a period up so that a move either way stays above zero.
+        var alignment = all.ToDictionary(
+            channel => (IAlignmentChannel)channel, _ => new AlignmentOverride(4.0, false));
+        IReadOnlyList<AlignmentSnapshot> initial = Reprocess(alignment);
+        List<AlignmentSnapshot> left = [initial[0], initial[1]];
+        List<AlignmentSnapshot> right = [initial[2], initial[3]];
+        var plan = new StereoAlignmentPlan(
+            left, [Junction(left[0], left[1], 800)],
+            right, [Junction(right[0], right[1], 800)],
+            new HashSet<IAlignmentChannel>(), leftUpper, rightUpper,
+            BridgeBandLowHz: 800, BridgeBandHighHz: 4_000, SceneOffsetMs: 0,
+            [
+                new StereoPairLink(leftLower, rightLower, 130, 800),
+                new StereoPairLink(leftUpper, rightUpper, 800, 4_000)
+            ]);
+        var log = new StringBuilder();
+
+        AutoAlignmentEngine.RebalanceJunctionBranches(
+            plan, left, right, initial, Reprocess, alignment, log);
+
+        return ([leftLower, rightLower], [leftUpper, rightUpper], alignment, log.ToString());
+    }
+
+    [Fact]
+    public void RebalanceJunctionBranches_TheFarSideAPeriodOut_MovesTheStackAWholePeriodUnflipped()
+    {
+        // The far mid's front arrives a period (1.25 ms) before its woofer's: only the far side can tell the lobes apart.
+        (TestChannel[] lower, TestChannel[] upper,
+            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+            RunPeriodBranch(farLowerTaps: [(0, 1.0)], farUpperTaps: [(-60, 1.0)]);
+
+        foreach (TestChannel mid in upper)
+        {
+            Assert.False(alignment[mid].InvertPolarity, mid.Name);
+            Assert.Equal(5.25, alignment[mid].DelayMs, 9);
+        }
+        foreach (TestChannel woofer in lower)
+        {
+            Assert.Equal(new AlignmentOverride(4.0, false), alignment[woofer]);
+        }
+    }
+
+    [Fact]
+    public void RebalanceJunctionBranches_OnlyALateCopyWantsThePeriod_TheFrontsKeepTheStack()
+    {
+        // The far fronts already meet; louder copies 15 ms behind them would meet a period later. The summation
+        // gains from that move, the direct sound loses its step, and the stack stays.
+        (_, TestChannel[] upper, Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+            RunPeriodBranch(
+                farLowerTaps: [(0, 1.0), (720, 2.0)],
+                farUpperTaps: [(0, 1.0), (720 - 60, 2.0)]);
+
+        foreach (TestChannel mid in upper)
+        {
+            Assert.Equal(new AlignmentOverride(4.0, false), alignment[mid]);
+        }
+    }
+
+    [Fact]
+    public void RebalanceJunctionBranches_TheRenderRanksTheTwoMovesOtherwiseThanTheScan_TheRenderDecides()
+    {
+        // An 800 Hz junction (period 60 samples). The reference mid stands 50 ms behind its woofer, so that side
+        // sums incoherently and reads the same after either move. The far mid's front arrives a period early:
+        // the scan gains most from the whole period. Its re-render is then handed a far woofer carrying an
+        // inverted copy twice as loud 8.3 ms behind the front, which the scan never saw, and the flip gains more.
+        Complex[] spoiled = ImpulseAtMs(0.0);
+        spoiled[BasePosition + 400] = -2.0;
+        var leftWoof = new TestChannel("L woof", ImpulseAtMs(0.0));
+        var leftMid = new TestChannel("L mid", ImpulseAtMs(50.0));
+        var rightWoof = new TestChannel("R woof", ImpulseAtMs(0.0));
+        var rightWoofSpoiled = new TestChannel("R woof", spoiled);
+        var rightMid = new TestChannel("R mid", ImpulseAtMs(-1.25));
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides)
+        {
+            AlignmentOverride mid = overrides.GetValueOrDefault(rightMid);
+            bool wholePeriodTrial = !mid.InvertPolarity && Math.Abs(mid.DelayMs - 5.25) < 0.05;
+            AlignmentSnapshot woofer = Snapshot(
+                wholePeriodTrial ? rightWoofSpoiled : rightWoof, overrides.GetValueOrDefault(rightWoof));
+            return
+            [
+                Snapshot(leftWoof, overrides.GetValueOrDefault(leftWoof)),
+                Snapshot(leftMid, overrides.GetValueOrDefault(leftMid)),
+                woofer with { Channel = rightWoof },
+                Snapshot(rightMid, mid)
+            ];
+        }
+
+        var alignment = new[] { leftWoof, leftMid, rightWoof, rightMid }.ToDictionary(
+            channel => (IAlignmentChannel)channel, _ => new AlignmentOverride(4.0, false));
+        IReadOnlyList<AlignmentSnapshot> initial = Reprocess(alignment);
+        List<AlignmentSnapshot> left = [initial[0], initial[1]];
+        List<AlignmentSnapshot> right = [initial[2], initial[3]];
+        var plan = new StereoAlignmentPlan(
+            left, [Junction(left[0], left[1], 800)],
+            right, [Junction(right[0], right[1], 800)],
+            new HashSet<IAlignmentChannel>(), leftMid, rightMid,
+            BridgeBandLowHz: 800, BridgeBandHighHz: 4_000, SceneOffsetMs: 0,
+            [
+                new StereoPairLink(leftWoof, rightWoof, 130, 800),
+                new StereoPairLink(leftMid, rightMid, 800, 4_000)
+            ]);
+        var log = new StringBuilder();
+
+        AutoAlignmentEngine.RebalanceJunctionBranches(
+            plan, left, right, initial, Reprocess, alignment, log);
+
+        foreach (TestChannel mid in new[] { leftMid, rightMid })
+        {
+            Assert.True(alignment[mid].InvertPolarity, mid.Name);
+            Assert.InRange(alignment[mid].DelayMs - 4.0, 0.45, 0.80);
+        }
+    }
+
+    [Fact]
+    public void RebalanceJunctionBranches_AJunctionThePhasePlaced_KeepsItsLobe()
+    {
+        // The same near-tie, on a junction the descent stood on its phase lobe: the summation is not asked again.
+        (TestChannel leftMid, TestChannel leftTwr, TestChannel rightMid, TestChannel rightTwr,
+            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+            RunJunctionBranch(phasePlaced: true);
+
+        foreach (TestChannel channel in new[] { leftMid, leftTwr, rightMid, rightTwr })
+        {
+            Assert.Equal(new AlignmentOverride(0, false), alignment.GetValueOrDefault(channel));
+        }
     }
 
     [Fact]
@@ -1232,6 +1391,48 @@ public sealed class StereoAlignmentTests
         Assert.Equal(AutoAlignmentEngine.CrossSideLockTier.None, tier);
     }
 
+    [Fact]
+    [Trait("Category", "Slow")]
+    public void ComputeStereo_ACabinCopySkewedAgainstTheFronts_NoPassMovesTheHighJunctionOffThem()
+    {
+        // Both reference drivers carry a copy 6.25 ms behind the front, twice as loud; the tweeter's is four
+        // samples late, so the summation wants the pair a twelfth of a period off the fronts.
+        var leftMid = new TestChannel("L mid", ImpulseWithEcho(0.0, 1.0, 6.25, 2.0));
+        var leftTwr = new TestChannel("L twr", ImpulseWithEcho(0.0, 1.0, 6.25 + (4_000.0 / SampleRate), 2.0));
+        var rightMid = new TestChannel("R mid", ImpulseAtMs(1.5));
+        var rightTwr = new TestChannel("R twr", ImpulseAtMs(1.5));
+        TestChannel[] all = [leftMid, leftTwr, rightMid, rightTwr];
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(channel => Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+
+        IReadOnlyList<AlignmentSnapshot> initial = Reprocess(new Dictionary<IAlignmentChannel, AlignmentOverride>());
+        List<AlignmentSnapshot> left = [initial[0], initial[1]];
+        List<AlignmentSnapshot> right = [initial[2], initial[3]];
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+
+        AutoAlignmentEngine.ComputeStereo(
+            new StereoAlignmentPlan(
+                left, [Junction(left[0], left[1], 1_500)],
+                right, [Junction(right[0], right[1], 1_500)],
+                new HashSet<IAlignmentChannel>(), leftTwr, rightTwr,
+                BridgeBandLowHz: 1_500, BridgeBandHighHz: 12_000, SceneOffsetMs: 0,
+                [
+                    new StereoPairLink(leftMid, rightMid, 300, 1_500),
+                    new StereoPairLink(leftTwr, rightTwr, 1_500, 12_000)
+                ]),
+            Reprocess,
+            alignment,
+            new StringBuilder());
+
+        Assert.InRange(
+            alignment.GetValueOrDefault(leftTwr).DelayMs - alignment.GetValueOrDefault(leftMid).DelayMs,
+            -0.02, 0.02);
+        Assert.InRange(
+            alignment.GetValueOrDefault(rightTwr).DelayMs - alignment.GetValueOrDefault(rightMid).DelayMs,
+            -0.02, 0.02);
+    }
+
     // Two far channels with 1.0 ms each and a junction (fc 2500) left skewed by the scene positions.
     private static (double MidDelayMs, double TwrDelayMs, string Log)
         RunFarSidePolish(
@@ -1242,10 +1443,22 @@ public sealed class StereoAlignmentTests
             double fieldChannelMs = 0.0,
             double junctionHz = 2_500,
             int rounds = 1,
-            double midOffsetMs = 0.0)
+            double midOffsetMs = 0.0,
+            double? cabinCopyTwrLateMs = null,
+            List<bool>? followed = null)
     {
-        var farMid = new TestChannel("R mid", ImpulseAtMs(5.0));
-        var farTwr = new TestChannel("R twr", ImpulseAtMs(5.0 + twrLateMs));
+        // The cabin copy follows 5 ms behind the fronts, twice as loud and with a skew of its own: inside the
+        // summation's window, past the phase's.
+        Complex[] midIr = ImpulseAtMs(5.0);
+        Complex[] twrIr = ImpulseAtMs(5.0 + twrLateMs);
+        if (cabinCopyTwrLateMs is { } copyLateMs)
+        {
+            midIr = ImpulseWithEcho(5.0, 1.0, 5.0, 2.0);
+            twrIr = ImpulseWithEcho(5.0 + twrLateMs, 1.0, 5.0 + copyLateMs - twrLateMs, 2.0);
+        }
+
+        var farMid = new TestChannel("R mid", midIr);
+        var farTwr = new TestChannel("R twr", twrIr);
         // Carries no right junction; it is the earliest channel the realizable span is measured from.
         var fieldFloor = new TestChannel("L ref", ImpulseAtMs(5.0));
         TestChannel[] all = withFieldFloor
@@ -1281,9 +1494,10 @@ public sealed class StereoAlignmentTests
         var spentMs = new Dictionary<IAlignmentChannel, double>();
         for (int round = 0; round < rounds; round++)
         {
-            AutoAlignmentEngine.PolishFarSideJunctions(
+            bool moved = AutoAlignmentEngine.PolishFarSideJunctions(
                 plan, snapshots, snapshots, Reprocess, alignment, log,
                 AutoAlignmentEngine.DefaultMaxDelayMs, decisions: null, spentMs);
+            followed?.Add(moved);
         }
         return (alignment[farMid].DelayMs, alignment[farTwr].DelayMs, log.ToString());
     }
@@ -1339,6 +1553,28 @@ public sealed class StereoAlignmentTests
             $"the junction skew survived the polish ({residualMs:0.000} ms)");
         Assert.Contains("Far-side polish", log);
         Assert.Contains("off the scene position", log);
+    }
+
+    [Fact]
+    public void PolishFarSideJunctions_UnderAHighJunction_FollowsTheFrontsNotTheCabinCopy()
+    {
+        // The fronts want the mid one sample (0.02 ms) later, the louder copy two samples earlier.
+        (double midDelay, double twrDelay, _) = RunFarSidePolish(0.02, cabinCopyTwrLateMs: -0.04);
+
+        Assert.Equal(1.0, twrDelay);
+        Assert.Equal(1.02, midDelay, 9);
+    }
+
+    [Fact]
+    public void PolishFarSideJunctions_ATrimUnderAHighJunctionAwayFromTheMono_GivesTheMonoNothingToFollow()
+    {
+        // The mid moves, but no junction of its is a mono channel's: the mono co-move has no cause to run again.
+        var followed = new List<bool>();
+
+        (double midDelay, _, _) = RunFarSidePolish(0.02, followed: followed);
+
+        Assert.Equal(1.02, midDelay, 9);
+        Assert.Equal([false], followed);
     }
 
     [Fact]

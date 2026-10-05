@@ -106,6 +106,39 @@ public sealed class StereoJunctionBranchTests
     }
 
     [Fact]
+    public void Read_AskedForAWholePeriod_ProbesTheSameRelationAPeriodOff()
+    {
+        // The far side sums best with the stack a whole period later and unflipped; a flip offers nothing.
+        static double Score(bool farSide, double deltaMs, bool flip) =>
+            flip ? -3.0
+            : farSide ? -2.0 + Math.Max(0, 1.0 - Math.Abs(deltaMs - (2 * HalfPeriodMs)))
+            : -1.0;
+
+        StereoBranchReading reading = StereoJunctionBranch.Read(Score, HalfPeriodMs, wholePeriod: true)!;
+
+        Assert.False(reading.Flip);
+        Assert.InRange(reading.DeltaMs, (2 * HalfPeriodMs) - 0.05, (2 * HalfPeriodMs) + 0.05);
+        Assert.InRange(reading.FarGainDb, 0.95, 1.0);
+        Assert.Equal(0.0, reading.ReferenceGainDb, 6);
+    }
+
+    [Theory]
+    // The far side comes into step and the reference barely moves: the cell of the field case.
+    [InlineData(0.36, 0.76, 0.73, 0.68, true)]
+    // The far side gains too little, or does not reach a coherent read.
+    [InlineData(0.50, 0.70, 0.73, 0.73, false)]
+    [InlineData(0.20, 0.55, 0.73, 0.73, false)]
+    // The reference side falls out of step.
+    [InlineData(0.36, 0.76, 0.80, 0.50, false)]
+    public void WavefrontsBack_NeedsTheFarSideInStepAndTheReferenceStillThere(
+        double farBefore, double farAfter, double referenceBefore, double referenceAfter, bool expected)
+    {
+        Assert.Equal(
+            expected,
+            StereoJunctionBranch.WavefrontsBack(farBefore, farAfter, referenceBefore, referenceAfter));
+    }
+
+    [Fact]
     public void Adopt_RefusesToBuyTheFarJunctionWithTheNearOne()
     {
         var reading = new StereoBranchReading(2.5, true, -0.9, 1.4);

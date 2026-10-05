@@ -56,7 +56,7 @@ internal sealed record VirtualCrossoverPhaseGate(
     /// <summary>The stored pin, else the set's earliest front; the dialog's candidate does not move it.</summary>
     public double SharedOffsetMs(IReadOnlyList<ProcessedChannel> channels, int sampleRate) =>
         PhaseGatePlacement.ResolveSharedOffsetMs(
-            PlacementChannel.From(channels), sampleRate, StoredOffsetMs);
+            ProcessedChannels.Placement(channels), sampleRate, StoredOffsetMs);
 
     /// <summary>Where the views draw the window: the open dialog's candidate, else <see cref="SharedOffsetMs"/>.</summary>
     public double ReferenceOffsetMs(IReadOnlyList<ProcessedChannel> channels, int sampleRate) =>
@@ -83,7 +83,7 @@ internal sealed record VirtualCrossoverPhaseGate(
         double sharedOffsetMs,
         int sampleRate) =>
         PhaseGatePlacement.ResolvePerCurveOffsets(
-            PlacementChannel.From(gatedChannels),
+            ProcessedChannels.Placement(gatedChannels),
             sharedOffsetMs,
             sampleRate,
             PinnedOffsetMs,
@@ -97,7 +97,7 @@ internal sealed record VirtualCrossoverPhaseGate(
         double gateOffsetMs,
         int sampleRate) =>
         PhaseGatePlacement.ResolveCommonDetrendMs(
-            PlacementChannel.From(channels),
+            ProcessedChannels.Placement(channels),
             sampleRate,
             Settings(gateOffsetMs, PhaseDetrendMode.Auto, manualDetrendMilliseconds: 0.0),
             DetrendMode,

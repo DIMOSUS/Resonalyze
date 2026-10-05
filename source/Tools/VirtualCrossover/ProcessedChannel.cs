@@ -21,6 +21,8 @@ internal sealed record ProcessedChannel(
     VirtualCrossoverChannelSettings? SideSettings = null)
 {
     public VirtualCrossoverChannelSettings Settings => SideSettings ?? Channel.Settings;
+
+    public PlacementChannel Placement => new(ImpulseResponse, PeakIndex, ValidRange);
 }
 
 /// <summary><see cref="Unsmoothed"/> is the sum-loss operand; smoothing before the division invents corner dips.</summary>
@@ -113,6 +115,22 @@ internal static class ProcessedChannels
         ValidSampleRange validRange = default) =>
         TransferIrStartCache.ResolveStartIndex(
             impulseResponse, sampleRate, peakIndex, validRange);
+
+    public static IReadOnlyList<PlacementChannel> Placement(IReadOnlyList<ProcessedChannel> channels) =>
+        channels.Select(item => item.Placement).ToList();
+
+    /// <summary>The junction read-out's spectra of a set. See docs/tech/junction-phase-and-group-placement.md#junction-read-out-spectra.</summary>
+    public static List<Complex[]> JunctionPhaseSpectra(
+        IReadOnlyList<ProcessedChannel> channels,
+        int sampleRate,
+        double? pinnedOffsetMs,
+        double leftMs,
+        double plateauMs,
+        double rightMs) =>
+        Dsp.JunctionPhaseSpectra.Build(
+            Placement(channels),
+            channels.Select(item => item.SampleRate).ToList(),
+            sampleRate, pinnedOffsetMs, leftMs, plateauMs, rightMs);
 
     public static int SharedStartAnchorIndex(
         IReadOnlyList<ProcessedChannel> processed) =>

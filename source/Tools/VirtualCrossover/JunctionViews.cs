@@ -127,7 +127,7 @@ internal static class JunctionViews
             ? summed
             : [pair.Lower, pair.Upper];
         List<ProcessedChannel> ordered = ProcessedChannels.OrderByBand(set);
-        List<Complex[]> spectra = JunctionPhaseSpectra.Build(
+        List<Complex[]> spectra = ProcessedChannels.JunctionPhaseSpectra(
             ordered, set[0].SampleRate, gate.PinnedOffsetMs, gate.LeftMs, gate.PlateauMs, gate.RightMs);
         int lower = ordered.FindIndex(item => ReferenceEquals(item, pair.Lower));
         int upper = ordered.FindIndex(item => ReferenceEquals(item, pair.Upper));

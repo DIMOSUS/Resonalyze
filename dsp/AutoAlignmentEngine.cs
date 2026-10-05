@@ -648,7 +648,8 @@ public static class AutoAlignmentEngine
         StringBuilder log,
         Dictionary<AlignmentJunction, OnsetLockState>? onsetLocks,
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
-        IReadOnlyCollection<IAlignmentChannel>? monoChannels = null)
+        IReadOnlyCollection<IAlignmentChannel>? monoChannels = null,
+        HashSet<AlignmentJunction>? phasePlaced = null)
     {
         ArgumentNullException.ThrowIfNull(channelsByBand);
         ArgumentNullException.ThrowIfNull(pairs);
@@ -702,7 +703,8 @@ public static class AutoAlignmentEngine
                 seedPartnerDistanceMs: seedPartnerReach,
                 onsetLocks: onsetLocks,
                 decisions: decisions,
-                monoChannels: monoChannels);
+                monoChannels: monoChannels,
+                phasePlaced: phasePlaced);
         }
     }
 
@@ -1505,7 +1507,8 @@ public static class AutoAlignmentEngine
         Dictionary<AlignmentJunction, OnsetLockState>? onsetLocks = null,
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
         IReadOnlyCollection<IAlignmentChannel>? monoChannels = null,
-        IReadOnlyDictionary<AlignmentJunction, double>? seedPartnerDistanceMs = null)
+        IReadOnlyDictionary<AlignmentJunction, double>? seedPartnerDistanceMs = null,
+        HashSet<AlignmentJunction>? phasePlaced = null)
     {
         // Untrusted seed across this junction (or its secondary): the base may be a half period off.
         bool wideSeed = untrustedSeedJunctions != null &&
@@ -1529,6 +1532,7 @@ public static class AutoAlignmentEngine
 
         // Matched split at or above DirectSeedMinCrossoverHz, no wide seed, no joint search: the filters force polarity (inverted or in phase); a caller polarity outranks it.
         // See docs/tech/auto-alignment.md#expected-polarity.
+        bool polarityHandedDown = forcedPolarity != null;
         bool? filterPolarity = SettledRelativeInversion(pair);
         bool expectsInversion = filterPolarity == true;
         if (forcedPolarity == null && filterPolarity is bool expectedInversion &&
@@ -2238,6 +2242,49 @@ public static class AutoAlignmentEngine
                 }
             }
 
+            // Phase lobe (see docs/tech/auto-alignment.md#phase-lobe): at a high junction the summation follows the
+            // cabin, so the read-out's own phase score names the delay lobe and the delay inside it.
+            // A polarity the filters settled leaves the lobe open, so it is asked there too.
+            string? phaseLobeDetail = null;
+            if (secondaryNeighbor == null && sceneLockToleranceMs == null && onsetAnchorMs == null &&
+                !polarityHandedDown && pair.CrossoverHz >= DirectSeedMinCrossoverHz)
+            {
+                List<AlignmentCandidate> lobes = [.. fineOptima, .. wideOptima, .. retriedOptima];
+                List<SignalPoint>? curve = JunctionPhaseLobe.Curve(
+                    Placement(variableSnapshot), Placement(primaryNeighborSnapshot),
+                    pair.Lower.Channel == channel,
+                    channel.SampleRate, channel.ProcessorSampleRate,
+                    pair.CrossoverHz, bandLowHz, bandHighHz,
+                    lobes.Append(chosen).Max(item => Math.Abs(item.DelayMs)) + 2.0 * halfPeriodMs);
+                if (curve != null &&
+                    JunctionPhaseLobe.Read(
+                        curve, lobes, chosen, halfPeriodMs, neighborInverted ^ expectsInversion) is { } phase)
+                {
+                    string Named(AlignmentCandidate item) => FormattableString.Invariant(
+                        $"{item.DelayMs:0.000} ms{(item.InvertPolarity ? " inv" : "")}");
+                    log.AppendLine(FormattableString.Invariant(
+                        $"  [diag] phase lobe: chosen {Named(chosen)} score {phase.ChosenScore:0.00}; best {Named(phase.Pick)} score {phase.PickScore:0.00} peaking at {phase.PeakDelayMs:0.000} ms; of {lobes.Count} optima.") +
+                        (phase.NamesALobe
+                            ? ""
+                            : FormattableString.Invariant(
+                                $" Under {JunctionPhaseLobe.MinimumScore:0.00} the phase names no lobe.")));
+                    if (phase.NamesALobe)
+                    {
+                        if (phase.Pick != chosen)
+                        {
+                            log.AppendLine(FormattableString.Invariant(
+                                $"  phase lobe: preferred {Named(phase.Pick)} (phase score {phase.PickScore:0.00}) over {Named(chosen)} ({phase.ChosenScore:0.00}) — the direct sound comes into phase there."));
+                            phaseLobeDetail = FormattableString.Invariant(
+                                $"phase score {phase.PickScore:0.00} vs {phase.ChosenScore:0.00} moved the pick");
+                        }
+
+                        // The sum's own figures stay with the optimum they were read at; only the delay moves.
+                        chosen = phase.Pick with { DelayMs = phase.PeakDelayMs };
+                        phasePlaced?.Add(pair);
+                    }
+                }
+            }
+
             // Low-junction polarity (see docs/tech/auto-alignment.md#low-junction-polarity): where the
             // direct-coherence witness stands down, the summation cannot tell a lobe from its
             // half-period-plus-inversion twin, and the channels' own crests are the witness that remains.
@@ -2371,6 +2418,10 @@ public static class AutoAlignmentEngine
                         decisions, channel, directLobeDetail,
                         unsettled: directLobeUnsettled);
                 }
+                if (phaseLobeDetail != null)
+                {
+                    AmendDecision(decisions, channel, phaseLobeDetail);
+                }
                 if (lowPolarityDetail != null)
                 {
                     AmendDecision(
@@ -2402,6 +2453,9 @@ public static class AutoAlignmentEngine
             }
         }
     }
+
+    private static PlacementChannel Placement(AlignmentSnapshot snapshot) =>
+        new(snapshot.ImpulseResponse, snapshot.PeakIndex, snapshot.ValidRange);
 
     // Prior-free score: ScoreDb's prior scales with the window (sigma = window / 4), so cross-window comparisons must use this.
     private static double AcousticScore(AlignmentCandidate candidate) =>
@@ -2621,9 +2675,12 @@ public static class AutoAlignmentEngine
         var onsetLocks = new Dictionary<AlignmentJunction, OnsetLockState>(
             ReferenceEqualityComparer.Instance);
 
+        // Reference-side junctions the phase stood on a lobe: the summing passes below leave them where they are.
+        var phasePlaced = new HashSet<AlignmentJunction>(ReferenceEqualityComparer.Instance);
+
         Compute(
             plan.LeftChannelsByBand, plan.LeftPairs, reprocess, alignment, log,
-            onsetLocks, decisions, plan.MonoChannels);
+            onsetLocks, decisions, plan.MonoChannels, phasePlaced);
 
         // Scope of every uniform shift from here on: one side alone would break the bridge's offset.
         var allChannels = new List<AlignmentSnapshot>(plan.LeftChannelsByBand);
@@ -3200,12 +3257,12 @@ public static class AutoAlignmentEngine
 
         // Shared per-pair delta keeps the scene while trading junction loss between sides.
         RebalancePairsKeepingScene(
-            plan, reprocess, alignment, log, onsetLocks, maxDelayMs, decisions);
+            plan, reprocess, alignment, log, onsetLocks, phasePlaced, maxDelayMs, decisions);
 
         // Both sides read the same junction before one side’s near-tie stands for both.
         RebalanceJunctionBranches(
             plan, plan.LeftChannelsByBand, rightByBand, allChannels,
-            reprocess, alignment, log, maxDelayMs, decisions);
+            reprocess, alignment, log, maxDelayMs, decisions, phasePlaced);
 
         // Mono channels are scene-invariant: this is the first pass where their right junction votes.
         ComoveMonoChannels(
@@ -3644,6 +3701,7 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
         IReadOnlyDictionary<AlignmentJunction, OnsetLockState> onsetLocks,
+        IReadOnlySet<AlignmentJunction> phasePlaced,
         double maxDelayMs,
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
@@ -3681,6 +3739,15 @@ public static class AutoAlignmentEngine
                 plan.MonoChannels.Contains(junction.Lower.Channel) ||
                 plan.MonoChannels.Contains(junction.Upper.Channel)))
             {
+                continue;
+            }
+
+            // So do pairs at a junction the phase placed: this sum would re-time it by the cabin.
+            // See docs/tech/auto-alignment.md#phase-lobe.
+            if (referenceAdjacent.FirstOrDefault(phasePlaced.Contains) is { } placed)
+            {
+                log.AppendLine(FormattableString.Invariant(
+                    $"Co-move {link.Left.Name}+{link.Right.Name}: none, the phase placed the {placed.CrossoverHz:0} Hz junction"));
                 continue;
             }
 
@@ -3927,6 +3994,88 @@ public static class AutoAlignmentEngine
             double spent = spentMs.GetValueOrDefault(channel);
             double sceneMs = current.DelayMs - spent;
             IReadOnlyList<AlignmentSnapshot> snapshots = reprocess(alignment);
+
+            // Feasibility span is rebased on the earliest channel: check a trial against both ends of the rest of the field.
+            List<double> othersMs = fullScope
+                .Where(item => item.Channel != channel)
+                .Select(item => alignment.GetValueOrDefault(item.Channel).DelayMs)
+                .ToList();
+            double othersMinMs = othersMs.Count > 0
+                ? othersMs.Min()
+                : double.PositiveInfinity;
+            double othersMaxMs = othersMs.Count > 0
+                ? othersMs.Max()
+                : double.NegativeInfinity;
+            // Absolute ticks of the DSP's 0.01 ms grid: the exact move to a tick is scored and that tick is written. The
+            // channel may stand off the grid here (the descent rebases the field by unrounded amounts).
+            // One tick more than fits: from an off-grid scene the far edge holds a tick a floor would drop, and the exact
+            // reach check below discards the surplus.
+            int reachTicks = (int)Math.Ceiling(reachMs / 0.01);
+            int sceneTick = (int)Math.Round(sceneMs / 0.01);
+            // No negatives, no uniform shift, no span widening past the DSP range (this pass runs after the cascade settled).
+            List<double> trials = Enumerable.Range(sceneTick - reachTicks, 2 * reachTicks + 1)
+                .Select(tick => Math.Round(tick * 0.01, 2))
+                .Where(trialMs =>
+                    Math.Abs(trialMs - sceneMs) <= reachMs + 1e-9 &&
+                    trialMs >= 0 &&
+                    Math.Max(othersMaxMs, trialMs) - Math.Min(othersMinMs, trialMs) <= maxDelayMs)
+                .ToList();
+
+            void Trim(double trialMs)
+            {
+                alignment[channel] = current with { DelayMs = trialMs };
+                spent = trialMs - sceneMs;
+                spentMs[channel] = spent;
+                AmendDecision(
+                    decisions, channel,
+                    FormattableString.Invariant(
+                        $"far-side polish, now {spent:+0.00;-0.00} ms off the scene position (<= {reachMs:0.00} ms)"));
+            }
+
+            // Under a high junction the trim follows that junction's phase: the sum there follows the cabin.
+            // See docs/tech/auto-alignment.md#phase-lobe.
+            AlignmentJunction top = adjacent.MaxBy(junction => junction.CrossoverHz)!;
+            if (top.CrossoverHz >= DirectSeedMinCrossoverHz &&
+                JunctionPhaseLobe.Curve(
+                    Placement(snapshots.First(item => item.Channel == channel)),
+                    Placement(snapshots.First(item => item.Channel == OtherMember(top, channel))),
+                    top.Lower.Channel == channel,
+                    channel.SampleRate, channel.ProcessorSampleRate,
+                    top.CrossoverHz, top.BandLowHz, top.BandHighHz,
+                    2.0 * reachMs + JunctionPhaseLobe.TrimStepMs, JunctionPhaseLobe.TrimStepMs) is { } curve)
+            {
+                double standing = JunctionPhaseLobe.ScoreAt(curve, 0);
+                double phaseScore = standing;
+                double phaseTrialMs = current.DelayMs;
+                foreach (double trialMs in trials)
+                {
+                    double score = JunctionPhaseLobe.ScoreAt(curve, trialMs - current.DelayMs);
+                    if (score > phaseScore)
+                    {
+                        phaseScore = score;
+                        phaseTrialMs = trialMs;
+                    }
+                }
+
+                if (phaseTrialMs != current.DelayMs &&
+                    phaseScore > standing + JunctionPhaseLobe.TrimMinimumGain)
+                {
+                    Trim(phaseTrialMs);
+                    // Only a trim under a mono channel's own junction gives that channel something to follow.
+                    moved |= adjacent.Any(junction =>
+                        plan.MonoChannels.Contains(OtherMember(junction, channel)));
+                    log.AppendLine(FormattableString.Invariant(
+                        $"Far-side polish {channel.Name}: {spent:+0.00;-0.00} ms off the scene position (phase score {standing:0.00} -> {phaseScore:0.00} at {top.CrossoverHz:0} Hz)"));
+                }
+                else
+                {
+                    log.AppendLine(FormattableString.Invariant(
+                        $"Far-side polish {channel.Name}: kept (phase score {standing:0.00} at {top.CrossoverHz:0} Hz, best in reach {phaseScore:0.00})"));
+                }
+
+                continue;
+            }
+
             List<VirtualCrossoverAnalysis.SumLossEvaluator> evaluators = adjacent
                 .Select(junction => JunctionSum(
                     snapshots, channel, OtherMember(junction, channel), junction.BandLowHz, junction.BandHighHz))
@@ -3944,42 +4093,15 @@ public static class AutoAlignmentEngine
             double Score(double deltaMs) =>
                 evaluators.Sum(evaluator => PenalizedLoss(evaluator, deltaMs)) / evaluators.Count;
 
-            // Feasibility span is rebased on the earliest channel: check a trial against both ends of the rest of the field.
-            List<double> othersMs = fullScope
-                .Where(item => item.Channel != channel)
-                .Select(item => alignment.GetValueOrDefault(item.Channel).DelayMs)
-                .ToList();
-            double othersMinMs = othersMs.Count > 0
-                ? othersMs.Min()
-                : double.PositiveInfinity;
-            double othersMaxMs = othersMs.Count > 0
-                ? othersMs.Max()
-                : double.NegativeInfinity;
             double baseline = Score(0);
             double bestTrialMs = current.DelayMs;
             double bestScore = baseline;
             double refusedDelta = 0;
             double refusedScore = baseline;
             string? refusedWhy = null;
-            // Absolute ticks of the DSP's 0.01 ms grid: the exact move to a tick is scored and that tick is written. The
-            // channel may stand off the grid here (the descent rebases the field by unrounded amounts).
-            // One tick more than fits: from an off-grid scene the far edge holds a tick a floor would drop, and the exact
-            // reach check below discards the surplus.
-            int reachTicks = (int)Math.Ceiling(reachMs / 0.01);
-            int sceneTick = (int)Math.Round(sceneMs / 0.01);
-            for (int tick = sceneTick - reachTicks; tick <= sceneTick + reachTicks; tick++)
+            foreach (double trialMs in trials)
             {
-                double trialMs = Math.Round(tick * 0.01, 2);
                 double delta = trialMs - current.DelayMs;
-                if (Math.Abs(trialMs - sceneMs) > reachMs + 1e-9 ||
-                    trialMs < 0 ||
-                    Math.Max(othersMaxMs, trialMs) -
-                        Math.Min(othersMinMs, trialMs) > maxDelayMs)
-                {
-                    // No negatives, no uniform shift, no span widening past the DSP range (this pass runs after the cascade settled).
-                    continue;
-                }
-
                 double score = Score(delta);
                 if (score <= bestScore)
                 {
@@ -4013,19 +4135,13 @@ public static class AutoAlignmentEngine
 
             if (bestTrialMs != current.DelayMs && bestScore > baseline + FarSidePolishMinimumGainDb)
             {
-                alignment[channel] = current with { DelayMs = bestTrialMs };
-                spent = bestTrialMs - sceneMs;
-                spentMs[channel] = spent;
+                Trim(bestTrialMs);
                 moved = true;
                 log.AppendLine(
                     $"Far-side polish {channel.Name}: " +
                     $"{spent:+0.00;-0.00} ms off the scene position " +
                     $"(own-junction dip-penalized loss " +
                     $"{baseline:0.00} -> {bestScore:0.00} dB)");
-                string amendment = FormattableString.Invariant(
-                    $"far-side polish, now {spent:+0.00;-0.00} ms off the scene position (<= ") +
-                    FormattableString.Invariant($"{reachMs:0.00} ms)");
-                AmendDecision(decisions, channel, amendment);
             }
             else
             {
@@ -4046,7 +4162,8 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         IReadOnlyCollection<IAlignmentChannel> above,
         IReadOnlyList<AlignmentSnapshot> shiftScope,
-        double deltaMs)
+        double deltaMs,
+        bool flip = true)
     {
         if (deltaMs >= 0)
         {
@@ -4075,9 +4192,31 @@ public static class AutoAlignmentEngine
             AlignmentOverride over = alignment.GetValueOrDefault(channel);
             alignment[channel] = over with
             {
-                InvertPolarity = !over.InvertPolarity
+                InvertPolarity = over.InvertPolarity ^ flip
             };
         }
+    }
+
+    // The direct sound's whitened coherence of a rendered junction as it stands.
+    private static double DirectCoherenceAt(IReadOnlyList<AlignmentSnapshot> render, AlignmentJunction junction)
+    {
+        AlignmentSnapshot lower = render.First(item => item.Channel == junction.Lower.Channel);
+        AlignmentSnapshot upper = render.First(item => item.Channel == junction.Upper.Channel);
+        int rate = junction.Lower.Channel.SampleRate;
+        List<SignalPoint> curve = VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
+            VirtualCrossoverAnalysis.CutDirectSound(
+                lower.ImpulseResponse, rate, junction.BandLowHz, junction.BandHighHz,
+                junction.CrossoverHz, lower.ValidRange),
+            VirtualCrossoverAnalysis.CutDirectSound(
+                upper.ImpulseResponse, rate, junction.BandLowHz, junction.BandHighHz,
+                junction.CrossoverHz, upper.ValidRange),
+            rate,
+            junction.CrossoverHz,
+            Math.Log2(junction.BandHighHz / junction.BandLowHz),
+            125.0 / junction.CrossoverHz,
+            0.0,
+            phaseTransform: true);
+        return curve.Count == 0 ? double.NaN : curve.MinBy(point => Math.Abs(point.X)).Y;
     }
 
     // A junction the reference side could not tell apart commits the far side too. Moving the whole stack ABOVE the
@@ -4092,7 +4231,8 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
         double maxDelayMs = DefaultMaxDelayMs,
-        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
+        IReadOnlySet<AlignmentJunction>? phasePlaced = null)
     {
         if (plan.LeftPairs.Count != plan.RightPairs.Count)
         {
@@ -4113,6 +4253,15 @@ public static class AutoAlignmentEngine
                 Counterpart(reference.Upper.Channel) != far.Upper.Channel ||
                 far.Upper.Channel == reference.Upper.Channel)
             {
+                continue;
+            }
+
+            // The phase named this junction's lobe; this sum cannot (docs/tech/auto-alignment.md#phase-lobe).
+            if (phasePlaced?.Contains(reference) == true)
+            {
+                log.AppendLine(
+                    $"  stereo branch not asked at {reference.Lower.Channel.Name}/{reference.Upper.Channel.Name}: " +
+                    "the phase placed it.");
                 continue;
             }
 
@@ -4143,102 +4292,140 @@ public static class AutoAlignmentEngine
             double halfPeriodMs = 500.0 / reference.CrossoverHz;
             double BranchScore(bool farSide, double deltaMs, bool flip) =>
                 PenalizedLoss(farSide ? farBand : referenceBand, deltaMs, flip);
-            StereoBranchReading? reading = StereoJunctionBranch.Read(
-                BranchScore, halfPeriodMs);
-            if (reading == null ||
-                reading.FarGainDb <= StereoJunctionBranch.NoteworthyFarGainDb)
-            {
-                continue;
-            }
-
-            // The scan's optimum is moved onto the DSP's 0.01 ms grid here, so the re-render judges, the log names
-            // and the alignment carries the delay the processor will actually play.
-            reading = StereoJunctionBranch.Quantize(reading, BranchScore);
             string junctionName =
                 $"{reference.Lower.Channel.Name}/{reference.Upper.Channel.Name}";
-            string move = FormattableString.Invariant(
-                $"{reading.DeltaMs:+0.00;-0.00} ms flipped");
-            if (!StereoJunctionBranch.Adopt(reading))
+
+            // An offer as it holds on its own re-render, or null where it is declined.
+            (StereoBranchReading Verified, string Move)? Verify(StereoBranchReading reading)
             {
-                log.AppendLine(
-                    $"  stereo branch declined at {reference.Lower.Channel.Name}/" +
-                    $"{reference.Upper.Channel.Name}: {move} would gain " +
-                    $"{reading.FarGainDb:0.00} dB on the far side but " +
-                    $"{reading.ReferenceGainDb:+0.00;-0.00} dB on the reference side.");
-                continue;
-            }
+                // The scan's optimum is moved onto the DSP's 0.01 ms grid here, so the re-render judges, the log names
+                // and the alignment carries the delay the processor will actually play.
+                reading = StereoJunctionBranch.Quantize(reading, BranchScore);
+                string move = FormattableString.Invariant(
+                    $"{reading.DeltaMs:+0.00;-0.00} ms{(reading.Flip ? " flipped" : ", a whole period,")}");
+                if (!StereoJunctionBranch.Adopt(reading))
+                {
+                    log.AppendLine(
+                        $"  stereo branch declined at {junctionName}: {move} would gain " +
+                        $"{reading.FarGainDb:0.00} dB on the far side but " +
+                        $"{reading.ReferenceGainDb:+0.00;-0.00} dB on the reference side.");
+                    return null;
+                }
 
-            // The scan rotates inside a fixed window; before a branch is adopted the candidate is RE-RENDERED and
-            // measured, because a half period is where that approximation is weakest.
-            var trial = new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment);
-            ApplyBranchMove(trial, above, shiftScope, reading.DeltaMs);
-            IReadOnlyList<AlignmentSnapshot> rendered = reprocess(trial);
-            double? Rendered(AlignmentJunction junction, double lowHz, double highHz) =>
-                JunctionSum(
-                    rendered, junction.Upper.Channel, junction.Lower.Channel, lowHz, highHz) is { } sum
-                    ? PenalizedLoss(sum, 0)
-                    : null;
+                // The scan rotates inside a fixed window; before a branch is adopted the candidate is RE-RENDERED and
+                // measured, because a half period is where that approximation is weakest.
+                var trial = new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment);
+                ApplyBranchMove(trial, above, shiftScope, reading.DeltaMs, reading.Flip);
+                IReadOnlyList<AlignmentSnapshot> rendered = reprocess(trial);
+                double? Rendered(AlignmentJunction junction, double lowHz, double highHz) =>
+                    JunctionSum(
+                        rendered, junction.Upper.Channel, junction.Lower.Channel, lowHz, highHz) is { } sum
+                        ? PenalizedLoss(sum, 0)
+                        : null;
 
-            double GainOf(AlignmentJunction junction, VirtualCrossoverAnalysis.SumLossEvaluator before) =>
-                Rendered(junction, junction.BandLowHz, junction.BandHighHz) is { } after
-                    ? after - PenalizedLoss(before, 0)
-                    : 0;
+                double GainOf(AlignmentJunction junction, VirtualCrossoverAnalysis.SumLossEvaluator before) =>
+                    Rendered(junction, junction.BandLowHz, junction.BandHighHz) is { } after
+                        ? after - PenalizedLoss(before, 0)
+                        : 0;
 
-            var verified = new StereoBranchReading(
-                reading.DeltaMs,
-                true,
-                GainOf(reference, referenceBand),
-                GainOf(far, farBand));
+                var verified = new StereoBranchReading(
+                    reading.DeltaMs,
+                    reading.Flip,
+                    GainOf(reference, referenceBand),
+                    GainOf(far, farBand));
 
-            // The far gain is the whole justification for disturbing a settled junction, so it is what a half may cost.
-            string? refusal = HalfBandRefusal(
-                HalfBandCells([reference], reference.Upper.Channel, current)
-                    .Concat(HalfBandCells([far], far.Upper.Channel, current)),
-                cell => PenalizedLoss(cell.Sum, 0) -
-                    (Rendered(cell.Junction, cell.LowHz, cell.HighHz) ?? PenalizedLoss(cell.Sum, 0)),
-                Math.Max(0.0, verified.FarGainDb));
-            if (refusal != null)
-            {
-                refusal = "it loses " + refusal;
-            }
+                string? refusal;
+                if (reading.Flip)
+                {
+                    // The far gain is the whole justification for disturbing a settled junction, so it is what a half may cost.
+                    refusal = HalfBandRefusal(
+                        HalfBandCells([reference], reference.Upper.Channel, current)
+                            .Concat(HalfBandCells([far], far.Upper.Channel, current)),
+                        cell => PenalizedLoss(cell.Sum, 0) -
+                            (Rendered(cell.Junction, cell.LowHz, cell.HighHz) ?? PenalizedLoss(cell.Sum, 0)),
+                        Math.Max(0.0, verified.FarGainDb));
+                    if (refusal != null)
+                    {
+                        refusal = "it loses " + refusal;
+                    }
+                }
+                else
+                {
+                    // A whole period trades one half of the band for the other by construction, so the wavefronts
+                    // judge it instead. See docs/tech/auto-alignment.md#stereo-branch-check.
+                    double farBefore = DirectCoherenceAt(current, far);
+                    double farAfter = DirectCoherenceAt(rendered, far);
+                    double referenceBefore = DirectCoherenceAt(current, reference);
+                    double referenceAfter = DirectCoherenceAt(rendered, reference);
+                    refusal = StereoJunctionBranch.WavefrontsBack(
+                        farBefore, farAfter, referenceBefore, referenceAfter)
+                        ? null
+                        : FormattableString.Invariant(
+                            $"the direct sound does not back it (far r {farBefore:0.00} -> {farAfter:0.00}, reference {referenceBefore:0.00} -> {referenceAfter:0.00})");
+                }
 
-            // The move is optional, and the field must stay realizable: a span past the ceiling would make the final
-            // feasibility check refuse the whole run for a branch it could simply have kept.
-            if (refusal == null)
-            {
-                List<double> trialDelays = shiftScope
-                    .Select(item => trial.GetValueOrDefault(item.Channel).DelayMs)
-                    .ToList();
-                double spanMs = trialDelays.Max() - trialDelays.Min();
-                if (spanMs > maxDelayMs)
+                // The move is optional, and the field must stay realizable: a span past the ceiling would make the final
+                // feasibility check refuse the whole run for a branch it could simply have kept.
+                if (refusal == null)
+                {
+                    List<double> trialDelays = shiftScope
+                        .Select(item => trial.GetValueOrDefault(item.Channel).DelayMs)
+                        .ToList();
+                    double spanMs = trialDelays.Max() - trialDelays.Min();
+                    if (spanMs > maxDelayMs)
+                    {
+                        refusal = FormattableString.Invariant(
+                            $"the field would span {spanMs:0.00} ms, past the {maxDelayMs:0} ms ceiling");
+                    }
+                }
+
+                if (refusal == null && !StereoJunctionBranch.Adopt(verified))
                 {
                     refusal = FormattableString.Invariant(
-                        $"the field would span {spanMs:0.00} ms, past the {maxDelayMs:0} ms ceiling");
+                        $"re-rendered it gains {verified.FarGainDb:0.00} dB on the far side and {verified.ReferenceGainDb:+0.00;-0.00} dB on the reference one");
                 }
+                if (refusal != null)
+                {
+                    log.AppendLine(
+                        $"  stereo branch declined at {junctionName}: {move} gains " +
+                        $"{verified.FarGainDb:+0.00;-0.00} dB on the far junction and " +
+                        $"{verified.ReferenceGainDb:+0.00;-0.00} dB on the reference one — {refusal}.");
+                    return null;
+                }
+
+                return (verified, move);
             }
 
-            if (refusal == null && !StereoJunctionBranch.Adopt(verified))
+            // The flip partner half a period off, and, where the direct sound can be asked, the same relation a whole
+            // period off. The scan only estimates a move, so each offer is judged on its own re-render and the one
+            // the far side then gains most from is made; one move per junction.
+            List<(StereoBranchReading Verified, string Move)> held = new[] { false, true }
+                .Where(wholePeriod => !wholePeriod || reference.CrossoverHz >= DirectCoherenceMinCrossoverHz)
+                .Select(wholePeriod => StereoJunctionBranch.Read(
+                    BranchScore, halfPeriodMs, wholePeriod: wholePeriod))
+                .OfType<StereoBranchReading>()
+                .Where(offer => offer.FarGainDb > StereoJunctionBranch.NoteworthyFarGainDb)
+                .Select(Verify)
+                .OfType<(StereoBranchReading Verified, string Move)>()
+                .ToList();
+            if (held.Count == 0)
             {
-                refusal = FormattableString.Invariant(
-                    $"re-rendered it gains {verified.FarGainDb:0.00} dB on the far side and {verified.ReferenceGainDb:+0.00;-0.00} dB on the reference one");
-            }
-            if (refusal != null)
-            {
-                log.AppendLine(
-                    $"  stereo branch declined at {junctionName}: {move} gains " +
-                    $"{verified.FarGainDb:+0.00;-0.00} dB on the far junction and " +
-                    $"{verified.ReferenceGainDb:+0.00;-0.00} dB on the reference one — {refusal}.");
                 continue;
             }
 
-            reading = verified;
-            ApplyBranchMove(alignment, above, shiftScope, reading.DeltaMs);
+            (StereoBranchReading made, string madeMove) = held.MaxBy(item => item.Verified.FarGainDb);
+            foreach ((StereoBranchReading other, string otherMove) in held.Where(item => item.Verified != made))
+            {
+                log.AppendLine(
+                    $"  stereo branch passed over at {junctionName}: {otherMove} gains " +
+                    $"{other.FarGainDb:0.00} dB on the far junction, less than the move made.");
+            }
 
+            ApplyBranchMove(alignment, above, shiftScope, made.DeltaMs, made.Flip);
             log.AppendLine(
-                $"  stereo branch moved at {reference.Lower.Channel.Name}/" +
-                $"{reference.Upper.Channel.Name}: the stack above it went {move} on " +
-                $"both sides — the far junction gains {reading.FarGainDb:0.00} dB and " +
-                $"the reference one {reading.ReferenceGainDb:+0.00;-0.00} dB.");
+                $"  stereo branch moved at {junctionName}: the stack above it went {madeMove} on " +
+                $"both sides — the far junction gains {made.FarGainDb:0.00} dB and " +
+                $"the reference one {made.ReferenceGainDb:+0.00;-0.00} dB.");
             if (decisions != null)
             {
                 foreach (IAlignmentChannel channel in above)
@@ -4247,7 +4434,7 @@ public static class AutoAlignmentEngine
                         decisions,
                         channel,
                         FormattableString.Invariant(
-                            $"moved {move} with the stack above {junctionName}: the far side wanted the other branch by {reading.FarGainDb:0.00} dB"));
+                            $"moved {madeMove} with the stack above {junctionName}: the far side wanted the other branch by {made.FarGainDb:0.00} dB"));
                 }
             }
         }

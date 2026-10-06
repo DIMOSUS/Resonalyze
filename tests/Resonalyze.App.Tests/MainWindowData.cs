@@ -11,6 +11,11 @@ public sealed class MainWindowData
     {
         File.Delete(ApplicationDataPaths.Current.SettingsFile);
         File.Delete(ApplicationDataPaths.Current.HistoryFile);
-        File.Delete(VirtualCrossoverProjectFile.GetPath());
+        // Its folder appears only once a tool writes there; File.Delete throws on a missing folder.
+        string autosave = VirtualCrossoverProjectFile.GetPath();
+        if (File.Exists(autosave))
+        {
+            File.Delete(autosave);
+        }
     }
 }

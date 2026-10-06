@@ -655,15 +655,24 @@ public sealed class AnalyzerWiringTests : IDisposable
             Assert.Equal(DragDropEffects.Copy, Drag(card.SourceButton, "OnDragOver", path).Effect);
 
             Drag(card.SpatialAverageButton, "OnDragDrop", path);
-            PumpUntil(() => messages.Count == 1, "name the measurement dropped on MMM");
+            // One drop at a time: the window offers the next once the first has finished.
+            PumpUntil(
+                () => messages.Count == 1 &&
+                    Drag(card.SourceButton, "OnDragOver", path).Effect == DragDropEffects.Copy,
+                "name the measurement dropped on MMM and finish");
             Drag(card.SourceButton, "OnDragDrop", path);
-            PumpUntil(() => channel.TransferImpulseResponse != null, "load the measurement dropped on Source");
+            // The load starts after the drop returns; a side switched in between does not take the file.
+            Assert.True(analyzer.PressKey(Keys.R));
+            PumpUntil(
+                () => channel.SideState(rightSide: false).TransferImpulseResponse != null,
+                "load the measurement dropped on Source");
 
             Assert.Contains("tweeter left.json", messages.Single());
-            Assert.Null(channel.SpatialAverage);
-            Assert.Null(channel.Settings.SpatialAveragePath);
-            Assert.Equal("tweeter left.json", channel.Settings.DisplayName);
-            Assert.Equal(path, channel.Settings.SourceFilePath);
+            Assert.Null(channel.SideState(rightSide: false).SpatialAverage);
+            Assert.Null(channel.SideSettings(rightSide: false).SpatialAveragePath);
+            Assert.Equal("tweeter left.json", channel.SideSettings(rightSide: false).DisplayName);
+            Assert.Equal(path, channel.SideSettings(rightSide: false).SourceFilePath);
+            Assert.Null(channel.SideState(rightSide: true).TransferImpulseResponse);
             Assert.False(analyzer.Document.HasResult);
         });
     }

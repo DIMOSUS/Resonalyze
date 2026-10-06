@@ -1,7 +1,7 @@
 namespace Resonalyze;
 
 /// <summary>A file dropped on a block's Source, MMM or FIR button lands where that button's own file pick would put it,
-/// on the side shown.</summary>
+/// on the side shown when it was dropped.</summary>
 public partial class VirtualCrossoverPanel
 {
     /// <summary>A block button answers for a drop on it, the window's routing included: it refuses what it does not take.</summary>
@@ -18,6 +18,8 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
+        // The side the file was dropped on, whatever the user switches to before the load starts.
+        bool rightSide = target.Channel.ActiveRight;
         // Explorer waits inside the drop until it returns, and a response file stops to ask what it carries.
         await Task.Yield();
         if (IsDisposed || !channelControls.ContainsKey(target.Channel))
@@ -38,15 +40,15 @@ public partial class VirtualCrossoverPanel
         switch (target.Button)
         {
             case VirtualCrossoverDropButton.Source:
-                await LoadSourceFileAsync(target.Channel, target.Channel.ActiveRight, path);
+                await LoadSourceFileAsync(target.Channel, rightSide, path);
                 break;
 
             case VirtualCrossoverDropButton.SpatialAverage:
-                AttachSpatialAverage(target.Channel, path);
+                AttachSpatialAverage(target.Channel, rightSide, path);
                 break;
 
             default:
-                ImportFirFile(target.Channel, path);
+                ImportFirFile(target.Channel, rightSide, path);
                 break;
         }
     }

@@ -95,11 +95,13 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
-        AttachSpatialAverage(channel, dialog.FileName);
+        AttachSpatialAverage(channel, channel.ActiveRight, dialog.FileName);
     }
 
-    private void AttachSpatialAverage(VirtualCrossoverChannel channel, string path)
+    private void AttachSpatialAverage(VirtualCrossoverChannel channel, bool rightSide, string path)
     {
+        VirtualCrossoverChannelState state = channel.SideState(rightSide);
+        VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
         try
         {
             SpatialAverageFileSettings? answers = null;
@@ -108,7 +110,7 @@ public partial class VirtualCrossoverPanel
                 // Not a capture: a response file, attached only once the user has said what it carries.
                 FrequencyResponseTextFile file = SpatialAverageFileImport.Read(path);
                 answers = AskSpatialAverageFile(
-                    channel, path, file, DefaultSpatialAverageFileAnswers(channel));
+                    channel.Name, state, path, file, DefaultSpatialAverageFileAnswers(state));
                 if (answers == null)
                 {
                     return;
@@ -117,11 +119,11 @@ public partial class VirtualCrossoverPanel
                 document = SpatialAverageFileImport.Build(file, answers, path);
             }
 
-            channel.SpatialAverage = document;
-            channel.Settings.SpatialAverageFile = answers;
-            channel.Settings.SpatialAveragePath = path;
+            state.SpatialAverage = document;
+            settings.SpatialAverageFile = answers;
+            settings.SpatialAveragePath = path;
             // The relative path names the previously imported capture; left standing it would steer the next search to it.
-            channel.Settings.SpatialAverageRelativePath = null;
+            settings.SpatialAverageRelativePath = null;
             OnSpatialAverageChanged(channel);
         }
         catch (Exception exception)
@@ -147,7 +149,8 @@ public partial class VirtualCrossoverPanel
         try
         {
             FrequencyResponseTextFile file = SpatialAverageFileImport.Read(path);
-            if (AskSpatialAverageFile(channel, path, file, stated) is not { } answers)
+            if (AskSpatialAverageFile(channel.Name, channel.SideState(channel.ActiveRight), path, file, stated)
+                is not { } answers)
             {
                 return;
             }
@@ -170,9 +173,8 @@ public partial class VirtualCrossoverPanel
 
     // A first attach takes the file as already correct (a REW average of several microphones has no one file) and
     // assumes the channel measurement's hardware filter was in its path too.
-    private static SpatialAverageFileSettings DefaultSpatialAverageFileAnswers(VirtualCrossoverChannel channel)
+    private static SpatialAverageFileSettings DefaultSpatialAverageFileAnswers(VirtualCrossoverChannelState state)
     {
-        VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
         ProtectiveHighPassConfiguration highPass =
             ProtectiveHighPassConfiguration.Normalize(state.ProtectiveHighPass);
         return new SpatialAverageFileSettings
@@ -186,12 +188,12 @@ public partial class VirtualCrossoverPanel
     }
 
     private SpatialAverageFileSettings? AskSpatialAverageFile(
-        VirtualCrossoverChannel channel,
+        string channelName,
+        VirtualCrossoverChannelState state,
         string path,
         FrequencyResponseTextFile file,
         SpatialAverageFileSettings stated)
     {
-        VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
         var available = new List<(string Name, string? FileName, CalibrationFile Curve)>();
         foreach (MicrophoneCalibrationEntry entry in calibrationEntries.Where(entry => entry.Available))
         {
@@ -208,7 +210,7 @@ public partial class VirtualCrossoverPanel
 
         using var dialog = new VirtualCrossoverSpatialAverageFileDialog();
         dialog.Init(
-            channel.Name,
+            channelName,
             path,
             file,
             stated,

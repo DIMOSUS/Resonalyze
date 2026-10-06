@@ -109,6 +109,17 @@ public sealed class VirtualCrossoverAutoSetupJunctionRowTests
     }
 
     [Fact]
+    public void ABoundPastTheOtherSetByHand_HandsThatOneBack()
+    {
+        var both = new AutoSetupJunctionEdits(300m, 500m, null, null, Split: false);
+
+        Assert.Equal(both with { MinHz = 600m, MaxHz = null }, both.WithMinHz(600m));
+        Assert.Equal(both with { MinHz = null, MaxHz = 200m }, both.WithMaxHz(200m));
+        Assert.Equal(both with { MinHz = 400m }, both.WithMinHz(400m));
+        Assert.Equal(both with { MaxHz = 300m }, both.WithMaxHz(300m));
+    }
+
+    [Fact]
     public void AJunctionBackToNothingSet_IsForgotten()
     {
         AutoSetupWizardSession session = Session(FourWay());
@@ -175,13 +186,8 @@ public sealed class VirtualCrossoverAutoSetupJunctionRowTests
             try
             {
                 var junctionsTable = Find<TableLayoutPanel>(dialog, "tableJunctions");
-                foreach (ThemedNumericUpDown field in junctionsTable.Controls.OfType<ThemedNumericUpDown>())
-                {
-                    // Beyond what the drivers can take, so every bound is moved and says so.
-                    field.Value = junctionsTable.GetColumn(field) == 1
-                        ? AutoSetupWizardPlan.FieldMinimumHz
-                        : AutoSetupWizardPlan.FieldMaximumHz;
-                }
+                // The mid-to-tweeter From, under the tweeter's resonance floor: moved, and it says so.
+                ((ThemedNumericUpDown)junctionsTable.GetControlFromPosition(1, 4)!).Value = 1_000m;
 
                 StaTest.Settle(dialog.PendingPreview);
                 Assert.Contains(

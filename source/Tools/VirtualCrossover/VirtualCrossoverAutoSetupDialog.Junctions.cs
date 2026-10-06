@@ -132,11 +132,11 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog
         toolTip.SetToolTip(
             row.MinHz,
             "Lowest crossover the search may pick here. A value the drivers " +
-            "cannot take is raised, and the row says why.");
+            "cannot safely take is raised, and the row says why.");
         toolTip.SetToolTip(
             row.MaxHz,
             "Highest crossover the search may pick here. A value the drivers " +
-            "cannot take is lowered, and the row says why.");
+            "cannot safely take is lowered, and the row says why.");
         toolTip.SetToolTip(
             row.MinSlope,
             "Gentlest slope the search may use here. 24 dB/oct always stays " +
@@ -174,8 +174,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog
 
         row.Split.Checked = kept.Split;
 
-        row.MinHz.ValueChanged += (_, _) => JunctionEdited(row, edits => edits with { MinHz = row.MinHz.Value });
-        row.MaxHz.ValueChanged += (_, _) => JunctionEdited(row, edits => edits with { MaxHz = row.MaxHz.Value });
+        row.MinHz.ValueChanged += (_, _) => JunctionEdited(row, edits => edits.WithMinHz(row.MinHz.Value));
+        row.MaxHz.ValueChanged += (_, _) => JunctionEdited(row, edits => edits.WithMaxHz(row.MaxHz.Value));
         row.MinSlope.SelectedIndexChanged +=
             (_, _) => JunctionEdited(row, edits => edits with { MinSlope = (int)row.MinSlope.SelectedItem! });
         row.MaxSlope.SelectedIndexChanged +=

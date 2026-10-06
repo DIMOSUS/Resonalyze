@@ -854,11 +854,14 @@ that junction may split its corners. The fields are filled in with the wizard's 
 answer, so a row always tells you what is about to happen; change one and it becomes
 yours.
 
-You can narrow a window but not widen it past what the drivers allow. If a number of
-yours cannot be honoured — a tweeter's resonance, the point its distortion says it stops
-being clean, the band a driver actually plays, the usual range of its type — the row
+Your window outranks the wizard's own reading of the drivers — the band each one plays
+and the usual range of its type — so you can put a handover where you know it belongs
+even when a cabin dip makes a driver look finished below it. Only safety and missing data
+overrule you: a tweeter's resonance, the point its distortion says it stops being clean,
+a driver's breakup, the system band limit, the end of a band-limited sweep. Then the row
 prints where it moved the value, and its tooltip why, rather than quietly ignoring you.
-Note that 24 dB/oct always stays inside the slope window: it is what the search
+A junction pinned because a driver's sweep stopped short of where it may safely cross
+is asking for that driver to be measured over a wider band. Note that 24 dB/oct always stays inside the slope window: it is what the search
 measures everything else against.
 
 **Split** lets one junction put its low-pass and high-pass at different frequencies when
@@ -870,7 +873,7 @@ whether each driver's HPF and LPF may differ in slope (**Independent slopes per 
 whether the panel's blocks should be put into the same order, and the bass level over
 the mid/high range, which starts at what the measurements show and only goes down.
 
-To narrow one junction, use its own row — the band limit applies to the whole chain at
+To bound one junction, use its own row — the band limit applies to the whole chain at
 once, and it does two things. It is the protective filter at the two ends: a high-pass
 under the lowest driver and a low-pass over the highest, which are not junctions and so
 have no row of their own. And it bounds every junction window on top of whatever that

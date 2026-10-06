@@ -95,7 +95,7 @@ namespace Resonalyze
             labelJunctions.Name = "labelJunctions";
             labelJunctions.Size = new Size(320, 15);
             labelJunctions.TabIndex = 4;
-            labelJunctions.Text = "Narrow any junction the wizard should not decide on its own:";
+            labelJunctions.Text = "Limit any junction the wizard should not decide on its own:";
             //
             // tableJunctions
             //

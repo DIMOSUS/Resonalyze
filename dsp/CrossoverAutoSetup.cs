@@ -333,8 +333,9 @@ public static class CrossoverAutoSetup
         return result;
     }
 
-    /// <summary>The window a junction search runs on, and why each bound sits where it does. Safety (the tweeter Fs
-    /// floor, the distortion knee, the measured bands) narrows a user window and says so; it never widens one.</summary>
+    /// <summary>The window a junction search runs on, and why each bound sits where it does. A user's bound replaces the
+    /// classes and the measured bands; only the system limit, the end of the measured data and safety (the tweeter Fs
+    /// floor, the distortion knee, the breakup onset) still move it, and say so.</summary>
     public static JunctionWindowResolution ResolveJunctionWindow(
         IReadOnlyList<AutoSetupSource> channels,
         int junctionIndex,
@@ -1415,6 +1416,23 @@ public static class CrossoverAutoSetup
     private static double InterpolateDb(IReadOnlyList<SignalPoint> points, double frequencyHz) =>
         CurveSampling.InterpolateDbLog(points, frequencyHz, clampEnds: true);
 
+    /// <summary>The first and last frequency a curve holds a finite level at; the whole axis when it holds none.</summary>
+    private static (double LowHz, double HighHz) FiniteExtent(IReadOnlyList<SignalPoint> curve)
+    {
+        double low = double.NaN;
+        double high = double.NaN;
+        foreach (SignalPoint point in curve)
+        {
+            if (double.IsFinite(point.Y))
+            {
+                low = double.IsNaN(low) ? point.X : low;
+                high = point.X;
+            }
+        }
+
+        return double.IsNaN(low) ? (0, double.PositiveInfinity) : (low, high);
+    }
+
     private static double AverageLevelDb(
         IReadOnlyList<SignalPoint> curve,
         double fromHz,
@@ -2090,6 +2108,8 @@ public static class CrossoverAutoSetup
         /// Neighbour separation is NOT here — it moves as the descent moves the junctions either side.</summary>
         public JunctionWindowResolution ResolveWindow(int j) => windows[j];
 
+        private const string UserBoundReason = "the bound you set";
+
         private static JunctionWindowNote Moved(double requested, double applied, string reason) =>
             new(
                 $"{NoteHz(requested)} → {NoteHz(applied)}",
@@ -2128,7 +2148,7 @@ public static class CrossoverAutoSetup
             RaiseLow(options.MinCrossoverHz, "the system band limit");
             LowerHigh(options.MaxCrossoverHz, "the system band limit");
 
-            // Three strengths, weakest first. A class bound says which class SHOULD own a region, and the drivers
+            // Four strengths, weakest first. A class bound says which class SHOULD own a region, and the drivers
             // have already said what they CAN do, so a class bound that empties the window is dropped rather than
             // obeyed — silently, because it is a preference losing to a measurement and there is nothing to warn
             // about. See docs/tech/crossover-auto-setup.md#per-junction-windows.
@@ -2179,6 +2199,10 @@ public static class CrossoverAutoSetup
                 safetyHighReason = "the lower driver's breakup onset";
             }
 
+            // A crossed pair keeps the From; the dialog never sends one, it hands the other field back instead.
+            double? userLow = requested?.MinHz;
+            double? userHigh = requested?.MaxHz < userLow ? null : requested?.MaxHz;
+
             // The drivers may not overlap at all, and that is NOT a safety conflict: the window is then the gap
             // between them, which is where a handover has to sit anyway. Deciding this before safety is applied is
             // the point — afterwards the two are indistinguishable, and the safety branch would open a window
@@ -2187,29 +2211,99 @@ public static class CrossoverAutoSetup
             {
                 (autoLow, autoHigh) = (autoHigh, autoLow);
                 (lowReason, highReason) = ("the lower driver's measured band", lowReason);
-                notes.Add(new JunctionWindowNote(
-                    $"Gap {NoteHz(autoLow)}–{NoteHz(autoHigh)}",
-                    $"The two drivers do not overlap: the lower one is down by {NoteHz(autoLow)} and the " +
-                    $"upper one does not reach {NoteHz(autoHigh)}. The handover can only sit in the gap " +
-                    "between them, so that is the window — and the sum through it is the one number worth " +
-                    "reading on this chain."));
+                if (userLow == null || userHigh == null)
+                {
+                    notes.Add(new JunctionWindowNote(
+                        $"Gap {NoteHz(autoLow)}–{NoteHz(autoHigh)}",
+                        $"The two drivers do not overlap: the lower one is down by {NoteHz(autoLow)} and the " +
+                        $"upper one does not reach {NoteHz(autoHigh)}. The handover can only sit in the gap " +
+                        "between them, so that is the window — and the sum through it is the one number worth " +
+                        "reading on this chain."));
+                }
             }
 
+            // The user's bounds replace every preference above.
+            if (userLow is { } setLow)
+            {
+                (autoLow, lowReason) = (setLow, UserBoundReason);
+            }
+
+            if (userHigh is { } setHigh)
+            {
+                (autoHigh, highReason) = (setHigh, UserBoundReason);
+            }
+
+            // A user bound past the wizard's other one opens the window by the span a safety bound would, not pins it.
+            double span = Math.Pow(2.0, SafetyOverrideSpanOctaves);
+            if (autoHigh < autoLow)
+            {
+                if (userLow != null)
+                {
+                    (autoHigh, highReason) = (autoLow * span, "the span that bound leaves");
+                }
+                else
+                {
+                    (autoLow, lowReason) = (autoHigh / span, "the span that bound leaves");
+                }
+            }
+
+            // Hard limits: the system band, and where both curves hold data — past it a driver reads as silence.
+            // Nothing above passes them; only safety may, and the pin below says so.
+            double dataFrom = FiniteExtent(curves[j + 1]).LowHz;
+            double dataTo = FiniteExtent(curves[j]).HighHz;
+            (double hardLow, string hardLowReason) = dataFrom > options.MinCrossoverHz
+                ? (dataFrom, "the start of the upper driver's measurement")
+                : (options.MinCrossoverHz, "the system band limit");
+            (double hardHigh, string hardHighReason) = dataTo < options.MaxCrossoverHz
+                ? (dataTo, "the end of the lower driver's measurement")
+                : (options.MaxCrossoverHz, "the system band limit");
+            if (hardLow <= hardHigh)
+            {
+                (autoLow, lowReason) = autoLow < hardLow ? (hardLow, hardLowReason)
+                    : autoLow > hardHigh ? (hardHigh, hardHighReason)
+                    : (autoLow, lowReason);
+                (autoHigh, highReason) = autoHigh > hardHigh ? (hardHigh, hardHighReason)
+                    : autoHigh < hardLow ? (hardLow, hardLowReason)
+                    : (autoHigh, highReason);
+            }
+
+            // Where a floor and a cap cross, the floor wins: overexcursion is damage and breakup is only a worse sound.
+            double safetyCeiling = safetyLow > safetyHigh ? double.PositiveInfinity : safetyHigh;
+            double allowedLow = Math.Max(hardLow, safetyLow);
+            double allowedHigh = Math.Min(hardHigh, safetyCeiling);
             junctionSafety[j] = (safetyLow, safetyHigh);
             double wantedLow = autoLow;
             double wantedHigh = autoHigh;
-            RaiseLow(safetyLow, safetyLowReason);
-            LowerHigh(safetyHigh, safetyHighReason);
-
             bool overridden = false;
-            if (autoHigh < autoLow)
+            if (allowedLow > allowedHigh)
             {
-                // Safety and the drivers disagree, and after the gap swap above it can only be safety that did it.
+                // No frequency is both safe and measured in band. The highest floor stands, as a floor does
+                // everywhere here, and the junction is pinned to it rather than searched over a silent driver.
+                string floorReason = safetyLow >= hardLow ? safetyLowReason : hardLowReason;
+                string ceilingReason = safetyCeiling <= hardHigh ? safetyHighReason : hardHighReason;
+                (autoLow, autoHigh) = (allowedLow, allowedLow);
+                (lowReason, highReason) = (floorReason, floorReason);
+                junctionSafety[j] = (safetyLow, safetyCeiling >= allowedLow ? safetyCeiling : double.PositiveInfinity);
+                notes.Add(new JunctionWindowNote(
+                    $"Pinned to {NoteHz(allowedLow)}",
+                    $"{floorReason} is at {NoteHz(allowedLow)}, above {ceilingReason} at {NoteHz(allowedHigh)}, so " +
+                    "no frequency meets both. The floor stands and the junction is pinned to it; a driver read " +
+                    "past the end of its measurement counts as silent, so measure it further to judge the sum."));
+                overridden = true;
+            }
+            else
+            {
+                RaiseLow(safetyLow, safetyLowReason);
+                LowerHigh(safetyHigh, safetyHighReason);
+            }
+
+            if (!overridden && autoHigh < autoLow)
+            {
+                // Safety and the window disagree, and after the steps above it can only be safety that did it.
                 // A floor protects hardware — a tweeter crossed under its resonance overexcurts — so it stands and
                 // the window opens UPWARD from it; collapsing onto it is what left the search nothing to do and
                 // handed the corner to the after-the-fact floor instead. A cap protects the lower driver from its
-                // own breakup, which is one-sided the other way, so the window opens DOWNWARD from the cap. Where
-                // both crossed, the floor wins: overexcursion is damage and breakup is only a worse sound.
+                // own breakup, which is one-sided the other way, so the window opens DOWNWARD from the cap.
                 string blocked = lowReason;
                 string yielded = highReason;
                 // Two questions, and only the first can make a safety bound give way. The drivers, the classes and
@@ -2219,42 +2313,33 @@ public static class CrossoverAutoSetup
                 // Not just "did the floor clear the top of the window": a floor and a cap can each sit inside
                 // the window and still cross EACH OTHER, and that is the case the policy is actually about.
                 bool floorWon = safetyConflict || safetyLow > wantedHigh;
-                double span = Math.Pow(2.0, SafetyOverrideSpanOctaves);
                 if (floorWon)
                 {
-                    autoLow = Math.Clamp(
-                        Math.Max(safetyLow, wantedLow),
-                        options.MinCrossoverHz,
-                        options.MaxCrossoverHz);
-                    double reach = safetyConflict
-                        ? autoLow * span
-                        : Math.Min(autoLow * span, safetyHigh);
-                    autoHigh = Math.Clamp(reach, autoLow, options.MaxCrossoverHz);
-                    highReason = safetyConflict || autoLow * span <= safetyHigh
-                        ? "the span that bound leaves"
-                        : safetyHighReason;
-                    junctionSafety[j] = safetyConflict
-                        ? (safetyLow, double.PositiveInfinity)
-                        : (safetyLow, safetyHigh);
+                    autoLow = Math.Clamp(Math.Max(safetyLow, wantedLow), hardLow, hardHigh);
+                    double reach = Math.Min(autoLow * span, safetyCeiling);
+                    highReason = reach < autoLow * span ? safetyHighReason : "the span that bound leaves";
+                    if (reach > hardHigh)
+                    {
+                        (reach, highReason) = (hardHigh, hardHighReason);
+                    }
+
+                    autoHigh = Math.Max(reach, autoLow);
+                    junctionSafety[j] = (safetyLow, safetyCeiling);
                 }
                 else
                 {
-                    autoHigh = Math.Clamp(
-                        Math.Min(safetyHigh, wantedHigh),
-                        options.MinCrossoverHz,
-                        options.MaxCrossoverHz);
+                    autoHigh = Math.Clamp(Math.Min(safetyHigh, wantedHigh), hardLow, hardHigh);
                     // safetyConflict cannot hold here: it would have made the floor win.
-                    autoLow = Math.Clamp(
-                        Math.Max(autoHigh / span, safetyLow),
-                        options.MinCrossoverHz,
-                        autoHigh);
+                    double reach = Math.Max(autoHigh / span, safetyLow);
                     blocked = highReason;
                     yielded = lowReason;
-                    lowReason = autoHigh / span >= safetyLow
-                        ? "the span that bound leaves"
-                        : safetyLowReason;
-                    highReason = blocked;
-                    junctionSafety[j] = (safetyLow, safetyHigh);
+                    lowReason = reach > autoHigh / span ? safetyLowReason : "the span that bound leaves";
+                    if (reach < hardLow)
+                    {
+                        (reach, lowReason) = (hardLow, hardLowReason);
+                    }
+
+                    autoLow = Math.Min(reach, autoHigh);
                 }
 
                 notes.Add(new JunctionWindowNote(
@@ -2263,66 +2348,39 @@ public static class CrossoverAutoSetup
                         : floorWon
                             ? $"Moved up to {NoteHz(autoLow)}"
                             : $"Moved down to {NoteHz(autoHigh)}",
-                    $"The drivers only meet at {NoteHz(wantedLow)}–{NoteHz(wantedHigh)}, on the " +
+                    (userLow == null && userHigh == null
+                        ? $"The drivers only meet at {NoteHz(wantedLow)}–{NoteHz(wantedHigh)}, on the "
+                        : $"The window asked for is {NoteHz(wantedLow)}–{NoteHz(wantedHigh)}, on the ") +
                     $"wrong side of {blocked}. Protecting the driver outranks {yielded}, so the " +
                     $"window moved to {NoteHz(autoLow)}–{NoteHz(autoHigh)} and the search runs " +
                     "there instead of being dragged there afterwards."));
                 overridden = true;
             }
 
-            bool pinned = overridden && autoHigh <= autoLow;
-
+            // Against what the fields hold, so a value the search does not use is never shown without a note.
             double low = autoLow;
             double high = autoHigh;
-            if (!pinned)
+            if (requested?.MinHz is { } askedLow && Math.Abs(low - askedLow) > 1e-6)
             {
-                // The user may narrow, never widen; where safety disagrees, safety wins and says why.
-                if (requested?.MinHz is { } userLow)
-                {
-                    if (userLow > high)
-                    {
-                        notes.Add(Moved(userLow, high, highReason));
-                    }
-                    else if (userLow < autoLow - 1e-6)
-                    {
-                        notes.Add(Moved(userLow, autoLow, lowReason));
-                    }
-                    else
-                    {
-                        low = userLow;
-                    }
-                }
+                notes.Add(Moved(askedLow, low, lowReason));
+            }
 
-                if (requested?.MaxHz is { } userHigh)
-                {
-                    if (userHigh < low)
-                    {
-                        notes.Add(Moved(userHigh, low, lowReason));
-                    }
-                    else if (userHigh > autoHigh + 1e-6)
-                    {
-                        notes.Add(Moved(userHigh, autoHigh, highReason));
-                    }
-                    else
-                    {
-                        high = userHigh;
-                    }
-                }
-
-                if (high < low)
-                {
-                    (low, high) = (autoLow, autoHigh);
-                }
+            if (requested?.MaxHz is { } askedHigh && Math.Abs(high - askedHigh) > 1e-6)
+            {
+                notes.Add(Moved(askedHigh, high, highReason));
             }
 
             // A window of one frequency is a real answer (the classes touch, or a floor met a cap), but it looks like
-            // a broken field unless it says so.
-            if (!pinned && high <= low + 1e-6)
+            // a broken field unless it says so — except to the user who typed one frequency into both fields.
+            bool askedForOne = userLow == userHigh && userLow is { } one && Math.Abs(low - one) <= 1e-6;
+            if (!overridden && !askedForOne && high <= low + 1e-6)
             {
                 notes.Add(new JunctionWindowNote(
                     $"Pinned to {NoteHz(low)}",
-                    $"{lowReason} and {highReason} meet at {NoteHz(low)}, so there is one frequency " +
-                    "this junction can take and nothing for the search to choose between."));
+                    (lowReason == highReason
+                        ? $"{lowReason} holds the window at {NoteHz(low)}"
+                        : $"{lowReason} and {highReason} meet at {NoteHz(low)}") +
+                    ", so there is one frequency this junction can take and nothing for the search to choose between."));
             }
 
             (int minSlope, int maxSlope) = ClampSlopeWindow(

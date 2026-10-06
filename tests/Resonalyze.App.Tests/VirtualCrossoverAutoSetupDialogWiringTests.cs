@@ -53,13 +53,13 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
         AssertShows(wizard, expected, untouched.GetAwaiter().GetResult()!);
 
         // 24 dB/oct stays in every window, so a gentlest slope of 30 changes no fit: only the row can show it held.
-        // A floor no driver reaches is moved and noted, but the field keeps what was typed; its ceiling is untouched.
-        wizard.MinHz(2).Value = 4_000m;
+        // A floor under the tweeter's resonance is moved and noted, but the field keeps what was typed.
+        wizard.MinHz(2).Value = 1_000m;
         wizard.Split(1).Checked = true;
         wizard.MinSlope(0).SelectedItem = 30;
         wizard.MinHz(1).Value = AutoSetupWizardPlan.FieldMinimumHz;
         AutoSetupWizardJunction top = expected.Junctions()[2];
-        expected.Edit(top, expected.EditsOf(top) with { MinHz = 4_000m });
+        expected.Edit(top, expected.EditsOf(top) with { MinHz = 1_000m });
         AutoSetupWizardJunction middle = expected.Junctions()[1];
         expected.Edit(middle, expected.EditsOf(middle) with { MinHz = AutoSetupWizardPlan.FieldMinimumHz, Split = true });
         AutoSetupWizardJunction bottom = expected.Junctions()[0];
@@ -68,10 +68,28 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
         wizard.Settle();
 
         AssertShows(wizard, expected, edited.GetAwaiter().GetResult()!);
-        Assert.Equal(4_000m, wizard.MinHz(2).Value);
+        Assert.Equal(1_000m, wizard.MinHz(2).Value);
         Assert.Equal(AutoSetupWizardPlan.FieldMinimumHz, wizard.MinHz(1).Value);
-        Assert.True(wizard.Notes(1).Visible, "The moved floor was not noted.");
+        Assert.True(wizard.Notes(2).Visible, "The moved floor was not noted.");
         Assert.Equal(30, wizard.MinSlope(0).SelectedItem);
+    });
+
+    [Fact]
+    public void AFromPastTheToSetByHand_ShowsTheToTheSearchUses() => StaTest.Run(() =>
+    {
+        using var wizard = new Wizard(FourWay());
+        wizard.MaxHz(1).Value = 300m;
+        wizard.MinHz(1).Value = 600m;
+        wizard.Settle();
+
+        AutoSetupWizardSession expected = Session(FourWay());
+        AutoSetupWizardJunction middle = expected.Junctions()[1];
+        expected.Edit(middle, AutoSetupJunctionEdits.None with { MinHz = 600m });
+        JunctionWindowResolution window = AutoSetupWizardPlan.ResolvedWindows(expected)
+            .Single(item => item.Junction == middle).Window;
+        Assert.Equal(600m, wizard.MinHz(1).Value);
+        Assert.Equal(AutoSetupWizardPlan.FieldHz(window.HighHz), wizard.MaxHz(1).Value);
+        Assert.True(window.HighHz > 600, $"The To came back at {window.HighHz:0} Hz, under the From.");
     });
 
     [Fact]

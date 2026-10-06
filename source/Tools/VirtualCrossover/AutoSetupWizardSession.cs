@@ -48,6 +48,14 @@ internal sealed record AutoSetupJunctionEdits(
 
     public JunctionSearchWindow ToWindow() =>
         new((double?)MinHz, (double?)MaxHz, MinSlope, MaxSlope, Split);
+
+    /// <summary>A From past the To set by hand hands that To back to the wizard rather than crossing it: a crossed pair
+    /// would leave a row showing a window the search reads another way.</summary>
+    public AutoSetupJunctionEdits WithMinHz(decimal minHz) =>
+        this with { MinHz = minHz, MaxHz = MaxHz < minHz ? null : MaxHz };
+
+    public AutoSetupJunctionEdits WithMaxHz(decimal maxHz) =>
+        this with { MaxHz = maxHz, MinHz = MinHz > maxHz ? null : MinHz };
 }
 
 /// <summary>The crossover wizard's state: the channels in chain order with their types, what the user set on each

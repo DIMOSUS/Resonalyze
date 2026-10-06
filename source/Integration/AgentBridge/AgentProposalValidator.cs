@@ -782,7 +782,7 @@ internal static class AgentProposalValidator
                 "crossover hands over between them.";
         }
 
-        // A real handover: both play inside the octave-each-way band around the pair's corner.
+        // A real handover, by the panel's own rule: both play within an octave of the pair's corner, or a gap crosses above the floor.
         VirtualCrossoverAlignmentStage stage = VirtualCrossoverAlignmentStages.StageOf(lowerFound.Zone);
         List<AgentChannelSnapshot> byBand = session.Channels
             .Where(channel => channel.PlaysOn(side) && channel.HasMeasurement &&
@@ -799,13 +799,11 @@ internal static class AgentProposalValidator
                 : $"{lowerFound.Label} and {upperFound.Label} are not neighbours along the spectrum.";
         }
 
-        double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(lowerFound.Settings, upperFound.Settings);
-        (double bandLowHz, double bandHighHz) = VirtualCrossoverJunctions.OverlapBand(pairHz);
-        if (!PlaysWithin(lowerFound.Settings, bandLowHz, bandHighHz) ||
-            !PlaysWithin(upperFound.Settings, bandLowHz, bandHighHz))
+        if (!VirtualCrossoverJunctions.HandsOver(
+                lowerFound.Settings, upperFound.Settings, session.ProcessorSampleRateHz))
         {
             return $"{lowerFound.Label} and {upperFound.Label} do not hand over to each other: " +
-                "one of them does not play within an octave of the pair's corner.";
+                "one of them does not play within an octave of the pair's corner, and their slopes do not cross a gap.";
         }
 
         lower = lowerFound;
@@ -858,12 +856,6 @@ internal static class AgentProposalValidator
         }
 
         return found;
-    }
-
-    private static bool PlaysWithin(VirtualCrossoverChannelSettings settings, double lowHz, double highHz)
-    {
-        (double channelLow, double channelHigh) = VirtualCrossoverJunctions.GetChannelBand(settings);
-        return channelHigh > lowHz && channelLow < highHz;
     }
 
     /// <summary>Default corner window: half an octave each way, snapped to the wizard's lattice.</summary>
@@ -1076,7 +1068,8 @@ internal static class AgentProposalValidator
             return problem;
         }
 
-        double currentHz = VirtualCrossoverJunctions.GetPairCrossoverHz(lower!.Settings, upper!.Settings);
+        double currentHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
+            lower!.Settings, upper!.Settings, session.ProcessorSampleRateHz);
         (double defaultMin, double defaultMax) = DefaultJunctionWindow(currentHz);
         double minHz = junction.MinHz ?? defaultMin;
         double maxHz = junction.MaxHz ?? defaultMax;

@@ -62,7 +62,8 @@ public sealed class StereoAlignmentTests
         StringBuilder Log, int ReprocessCount)>> StereoRuns = new();
 
     /// <summary>Mono sub plus woof/mid/twr per side; the right side arrives 1.5 ms later. <paramref name="rightMidEchoMs"/> adds a stronger
-    /// later lobe (correlation chases it, the scene follows the first); <paramref name="reprocessCount"/>[0] receives the reprocess count.</summary>
+    /// later lobe (correlation chases it, the scene follows the first); <paramref name="rightWoofLateCopyMs"/> puts most of the
+    /// right woofer's energy that far behind its front; <paramref name="reprocessCount"/>[0] receives the reprocess count.</summary>
     private static (TestChannel Sub,
         TestChannel[] Left, TestChannel[] Right,
         Dictionary<IAlignmentChannel, AlignmentOverride> Alignment,
@@ -78,17 +79,18 @@ public sealed class StereoAlignmentTests
             double rightMidAmplitude = 1.0,
             int[]? reprocessCount = null,
             double globalLateMs = 0,
-            bool mirrorPlan = false)
+            bool mirrorPlan = false,
+            double rightWoofLateCopyMs = 0)
     {
         string key = string.Join(";", new object[]
         {
             sceneOffsetMs, rightLateMs, leftTopAmplitude, rightTopAmplitude,
             linkBands == null ? "-" : string.Join(",", linkBands.Select(band => band?.ToString() ?? "null")),
-            rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan
+            rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan, rightWoofLateCopyMs
         });
         var run = StereoRuns.GetOrAdd(key, _ => new(() => RunStereoOnce(
             sceneOffsetMs, rightLateMs, leftTopAmplitude, rightTopAmplitude, linkBands,
-            rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan))).Value;
+            rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan, rightWoofLateCopyMs))).Value;
         if (reprocessCount != null)
         {
             reprocessCount[0] = run.ReprocessCount;
@@ -113,7 +115,8 @@ public sealed class StereoAlignmentTests
             double leftLateMs,
             double rightMidAmplitude,
             double globalLateMs,
-            bool mirrorPlan)
+            bool mirrorPlan,
+            double rightWoofLateCopyMs)
     {
         int reprocessCount = 0;
         var sub = new TestChannel(
@@ -125,7 +128,10 @@ public sealed class StereoAlignmentTests
         var leftTwr = new TestChannel(
             "L twr", ImpulseAtMs(0.0 + leftLateMs + globalLateMs, leftTopAmplitude));
         var rightWoof = new TestChannel(
-            "R woof", ImpulseAtMs(1.0 + rightLateMs + globalLateMs));
+            "R woof",
+            rightWoofLateCopyMs > 0
+                ? ImpulseWithEcho(1.0 + rightLateMs + globalLateMs, 1.0, rightWoofLateCopyMs, 4.0)
+                : ImpulseAtMs(1.0 + rightLateMs + globalLateMs));
         Complex[] rightMidIr = ImpulseAtMs(
             0.4 + rightLateMs + globalLateMs,
             rightMidEchoMs > 0 ? 0.6 : rightMidAmplitude);
@@ -555,25 +561,77 @@ public sealed class StereoAlignmentTests
         }
 
         [Fact]
-        public void ComputeStereo_PureLowBandPairIsLockedToItsArrivalLobe()
+        public void ComputeStereo_PureLowBandPairIsHeldOnItsOwnSum()
         {
-            // The woofer link's band never reaches the localization region: locked to the cross-side lobe, not the tight scene pin.
+            // The woofer link's band never reaches the localization region: the pair is held, tightly, where its two
+            // sides sum best, beside the mid pair's scene pin.
             (TestChannel _, TestChannel[] _, TestChannel[] _,
                 Dictionary<IAlignmentChannel, AlignmentOverride> _,
                 StringBuilder log) = RunStereo(
                     sceneOffsetMs: 0.25,
-                    linkBands: UserLinkBands);
+                    linkBands: [(80, 175), (400, 2_500), null]);
 
             string[] lines = log.ToString().Split('\n');
             string woofLine = Array.Find(lines,
                 line => line.StartsWith("Channel R woof:"))!;
             Assert.NotNull(woofLine);
             Assert.Contains("(cross-side)", woofLine);
-            Assert.Contains("SCENE-LOCKED", woofLine);
+            Assert.Contains($"SCENE-LOCKED ±{0.05:0.00}", woofLine);
+            Assert.Contains("held on its own sum", log.ToString());
             string midLine = Array.Find(lines,
                 line => line.StartsWith("Channel R mid:"))!;
             Assert.NotNull(midLine);
-            Assert.Contains("SCENE-LOCKED", midLine);
+            Assert.Contains($"SCENE-LOCKED ±{0.05:0.00}", midLine);
+        }
+
+        [Fact]
+        public void ComputeStereo_ALowPairStandsOnItsOwnSum_NotOnItsFrontsNorTheCabinsGeometry()
+        {
+            // The right woofer's front arrives 1.5 ms after the left one, as the mids and tweeters do, but four fifths
+            // of its energy follows 2.5 ms behind: the pair meets where its sides sum best, on that energy.
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) = RunStereo(
+                    sceneOffsetMs: 0.25,
+                    linkBands: UserLinkBands,
+                    rightWoofLateCopyMs: 2.5);
+
+            double delta =
+                FinalArrivalMs(left[0], 1.0, alignment) - FinalArrivalMs(right[0], 5.0, alignment);
+            Assert.InRange(delta, 0.15, 0.35);
+        }
+
+        [Fact]
+        public void ComputeStereo_EachSideOfALowPairMeetsItsOwnMid_PlacedByBothSidesAndTrimmedByEach()
+        {
+            // The right mid carries a stronger lobe 0.6 ms behind its front, and the scene lock pins the mid pair by
+            // the fronts: the right woofer's junction with its mid asks for the woofer later than the pair's sum puts
+            // it, by more than one side's trim (an eighth of the 400 Hz period) may give. The pair's placement by both
+            // sides' junctions gives the rest, and the left trim takes its own side back onto its mid.
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, StringBuilder log) = RunStereo(
+                    sceneOffsetMs: 0.25,
+                    linkBands: UserLinkBands,
+                    rightMidEchoMs: 0.6);
+            (TestChannel _, TestChannel[] evenLeft, TestChannel[] evenRight,
+                Dictionary<IAlignmentChannel, AlignmentOverride> even, _) = RunStereo(
+                    sceneOffsetMs: 0.25,
+                    linkBands: UserLinkBands);
+
+            static double Delay(Dictionary<IAlignmentChannel, AlignmentOverride> alignment, TestChannel channel) =>
+                alignment.GetValueOrDefault(channel).DelayMs;
+            Assert.InRange(Delay(even, evenLeft[0]) - Delay(even, evenRight[0]), 1.70, 1.80);
+            Assert.InRange(
+                (Delay(alignment, left[0]) - Delay(alignment, left[1])) -
+                    (Delay(even, evenLeft[0]) - Delay(even, evenLeft[1])),
+                -0.05, 0.05);
+            Assert.InRange(
+                Delay(alignment, left[0]) - Delay(alignment, right[0]),
+                1.75 - 0.5 - 0.05, 1.75 - 0.3125 - 0.02);
+            Assert.Contains("Co-move L woof+R woof: +0", log.ToString());
+            Assert.Contains("Far-side polish R woof: +0", log.ToString());
+            Assert.Contains("Reference-side polish L woof: -0", log.ToString());
+            Assert.Contains("Reference-side polish L woof:", log.ToString());
+            Assert.Contains("Far-side polish R woof:", log.ToString());
         }
 
         [Fact]
@@ -1553,6 +1611,18 @@ public sealed class StereoAlignmentTests
             $"the junction skew survived the polish ({residualMs:0.000} ms)");
         Assert.Contains("Far-side polish", log);
         Assert.Contains("off the scene position", log);
+    }
+
+    [Fact]
+    public void PolishFarSideJunctions_TheEarliestChannelTrimsEarlierByRaisingTheRestOfTheField()
+    {
+        // The tweeter arrives 0.02 ms before the mid, which stands at zero: the mid cannot go negative, so the rest of
+        // the field goes 0.02 ms later instead — the same relation, and no lost trim.
+        (double midDelay, double twrDelay, string log) = RunFarSidePolish(-0.02, baseDelayMs: 0.0);
+
+        Assert.Equal(0.0, midDelay);
+        Assert.Equal(0.02, twrDelay, 9);
+        Assert.Contains("Far-side polish R mid: -0.02 ms off the scene position", log.Replace(',', '.'));
     }
 
     [Fact]

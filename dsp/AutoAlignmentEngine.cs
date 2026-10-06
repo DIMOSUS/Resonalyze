@@ -2853,9 +2853,9 @@ public static class AutoAlignmentEngine
                 out Dictionary<AlignmentJunction, double> rightSeedPartnerReach);
 
         // Delay landing the right arrival the scene offset ahead of its left twin: the search prior and the scene-lock pin.
-        // Coarse pins only the lobe; TightLock (quarter period) only from corroborated donor geometry; null = no trusted target.
-        // See docs/tech/auto-alignment.md#cross-side-target.
-        (double TargetMs, bool Coarse, bool TightLock)? CrossSideTargetMs(
+        // Coarse pins only the lobe; TightLock (quarter period) only from corroborated donor geometry; OwnSum holds a low
+        // pair at the split its own sum chose; null = no trusted target. See docs/tech/auto-alignment.md#cross-side-target.
+        (double TargetMs, bool Coarse, bool TightLock, bool OwnSum)? CrossSideTargetMs(
             IAlignmentChannel rightChannel,
             StereoPairLink link,
             double bandLowHz,
@@ -3050,22 +3050,19 @@ public static class AutoAlignmentEngine
                     anyLatch = true;
                 }
             }
-            if (measured.Reads is not { } arrivals)
+            // The cabin's L/R geometry from the other cleanly measured pairs. See docs/tech/auto-alignment.md#donor-geometry.
+            ((double PathSplitMs, CrossSideLockTier Tier, int Corroborating,
+                double ClusterLowMs, double ClusterHighMs) Resolved, int Donors, string Names) DonorGeometry()
             {
-                if (!anyLatch)
-                {
-                    return null;
-                }
-
-                // Last rung: donor L/R geometry from other cleanly measured pairs. See docs/tech/auto-alignment.md#donor-geometry.
                 var donorSplits = new List<(double SplitMs, string Names)>();
                 if (plan.PairLinks != null)
                 {
                     static double LinkCenterHz(StereoPairLink item) =>
                         Math.Sqrt(item.BandLowHz * item.BandHighHz);
                     double centerHz = LinkCenterHz(link);
+                    // A low pair's read can pass its certificate and be a millisecond and a half off: it vouches for nothing.
                     foreach (StereoPairLink other in plan.PairLinks
-                        .Where(item => item != link)
+                        .Where(item => item != link && IsSceneLockable(item))
                         .OrderBy(item =>
                             Math.Abs(Math.Log(LinkCenterHz(item) / centerHz))))
                     {
@@ -3134,28 +3131,81 @@ public static class AutoAlignmentEngine
                     ResolveLatchedPathSplit(
                         donorSplits.Select(item => item.SplitMs).ToList(),
                         CrossSideDonorAgreementMs);
+                // Name only donors inside the resolver's winning span (a distance-to-median test can catch outliers).
+                return (resolved, donorSplits.Count, string.Join(", ", donorSplits
+                    .Where(item => item.SplitMs >= resolved.ClusterLowMs &&
+                        item.SplitMs <= resolved.ClusterHighMs)
+                    .Select(item => item.Names)));
+            }
+
+            // A low pair's own arrivals are the cabin's least reliable read; where its two sides sum best is not.
+            // See docs/tech/auto-alignment.md#a-low-pair-stands-on-its-own-sum.
+            AlignmentOverride twin = alignment.GetValueOrDefault(link.Left);
+            if (IsLowPair(link) &&
+                StereoPairSum.Read(
+                    leftIr, rightIr, link.Left.SampleRate, link.BandLowHz, link.BandHighHz,
+                    invertRight: twin.InvertPolarity,
+                    leftSnapshot.ValidRange, rightSnapshot.ValidRange,
+                    centreMs: -twin.DelayMs) is { } pairSum)
+            {
+                string runnerUp = pairSum.RunnerUpMs is { } second
+                    ? $", runner-up {twin.DelayMs + second:+0.000;-0.000} ms at {pairSum.RunnerUpGainDb:+0.00;-0.00} dB"
+                    : "";
+                string sum = $"the pair sums best with {link.Left.Name} " +
+                    $"{twin.DelayMs + pairSum.LeftLaterMs:+0.000;-0.000} ms later " +
+                    $"({pairSum.GainDb:+0.00;-0.00} dB over the sides' power sum in " +
+                    $"{Math.Max(link.BandLowHz, StereoPairSum.FloorHz):0}-{link.BandHighHz:0} Hz{runnerUp})";
+                if (!pairSum.IsDecisive)
+                {
+                    log.AppendLine(
+                        $"  cross-side link {rightChannel.Name}: {sum} — not decisive (a hold needs " +
+                        $"{StereoPairSum.DecisiveGainDb:0.0} dB and {StereoPairSum.DecisiveLobeMarginDb:0.0} dB " +
+                        "over the runner-up); the arrival read stands");
+                }
+                else
+                {
+                    // The scene offset is a localization-band instruction; below that region the pair's own sum is the scene.
+                    double sumTarget = -pairSum.LeftLaterMs;
+                    string ownRead = measured.Reads is { } reads
+                        ? $"; the pair's own {usedLowHz:0}-{usedHighHz:0} Hz read, " +
+                            $"{reads.Right.FirstArrivalDelayMilliseconds - reads.Left.FirstArrivalDelayMilliseconds + twin.DelayMs:+0.000;-0.000} ms, set aside"
+                        : anyLatch ? "; the pair's own arrivals latch on modes" : "; the pair's own arrivals are unmeasurable";
+                    string geometry = DonorGeometry() is { Resolved.Tier: not CrossSideLockTier.None } cabin
+                        ? $"; the cabin's geometry from {cabin.Names} says {cabin.Resolved.PathSplitMs:+0.000;-0.000} ms"
+                        : "";
+                    log.AppendLine(
+                        $"  cross-side prior {rightChannel.Name}: target {sumTarget:0.000} ms — {sum}" +
+                        $"{ownRead}{geometry}; held on its own sum");
+                    return (sumTarget, true, true, true);
+                }
+            }
+
+            if (measured.Reads is not { } arrivals)
+            {
+                if (!anyLatch)
+                {
+                    return null;
+                }
+
+                // Last rung: the cabin's geometry stands in for the pair's unreadable arrivals.
+                ((double PathSplitMs, CrossSideLockTier Tier, int Corroborating,
+                    double ClusterLowMs, double ClusterHighMs) resolved, int donors, string donorNames) =
+                    DonorGeometry();
                 if (resolved.Tier == CrossSideLockTier.None)
                 {
                     // No corroborated geometry: withdraw the prior rather than hard-lock to a fabricated one.
                     log.AppendLine(
                         $"  cross-side prior {rightChannel.Name}: withdrawn — " +
                         "direct arrivals unmeasurable and no linked pair gives a " +
-                        (donorSplits.Count == 0
+                        (donors == 0
                             ? "clean L/R geometry reference"
-                            : $"corroborated one ({donorSplits.Count} donor(s) disagree)"));
+                            : $"corroborated one ({donors} donor(s) disagree)"));
                     return null;
                 }
 
-                double leftDelayMs =
-                    alignment.GetValueOrDefault(link.Left).DelayMs;
                 double latchedTarget =
-                    leftDelayMs - resolved.PathSplitMs - plan.SceneOffsetMs;
+                    twin.DelayMs - resolved.PathSplitMs - plan.SceneOffsetMs;
                 bool tight = resolved.Tier == CrossSideLockTier.Tight;
-                // Name only donors inside the resolver's winning span (a distance-to-median test can catch outliers).
-                string donorNames = string.Join(", ", donorSplits
-                    .Where(item => item.SplitMs >= resolved.ClusterLowMs &&
-                        item.SplitMs <= resolved.ClusterHighMs)
-                    .Select(item => item.Names));
                 log.AppendLine(
                     $"  cross-side prior {rightChannel.Name}: target " +
                     $"{latchedTarget:0.000} ms — settled {link.Left.Name} shifted " +
@@ -3163,7 +3213,7 @@ public static class AutoAlignmentEngine
                     $"L/R arrival split {resolved.PathSplitMs:+0.000;-0.000} ms from " +
                     $"{donorNames} (direct arrivals unmeasurable; " +
                     $"{(tight ? "quarter" : "half")}-period lock)");
-                return (latchedTarget, true, tight);
+                return (latchedTarget, true, tight, false);
             }
 
             // Unverified read: pins only the lobe (Coarse), never the tight tolerance.
@@ -3182,9 +3232,10 @@ public static class AutoAlignmentEngine
                     ? ", energy onsets"
                     : "") +
                 $"{(measured.Verified ? "" : "; arrival not certified by the upper-half probe — lobe pin only")})");
-            return (target, !measured.Verified, false);
+            return (target, !measured.Verified, false, false);
         }
 
+        var ownSumHeld = new HashSet<IAlignmentChannel>();
         void AlignRight(int index, int neighborIndex, AlignmentJunction pair)
         {
             IAlignmentChannel channel = rightByBand[index].Channel;
@@ -3211,7 +3262,7 @@ public static class AutoAlignmentEngine
             StereoPairLink? channelLink = plan.PairLinks?.FirstOrDefault(
                 item => item.Right == channel);
             bool lockable = channelLink != null && IsSceneLockable(channelLink);
-            (double TargetMs, bool Coarse, bool TightLock)? cross = channelLink == null
+            (double TargetMs, bool Coarse, bool TightLock, bool OwnSum)? cross = channelLink == null
                 ? null
                 : CrossSideTargetMs(
                     channel,
@@ -3223,10 +3274,16 @@ public static class AutoAlignmentEngine
                     pair.BandLowHz,
                     pair.BandHighHz);
             double? crossTarget = cross?.TargetMs;
-            // TightLock gets ±T/4: with direct arrivals unmeasurable, modes shape the sum too. A lone donor keeps ±T/2.
+            bool heldOnOwnSum = cross is { OwnSum: true };
+            if (heldOnOwnSum)
+            {
+                ownSumHeld.Add(channel);
+            }
+
+            // Above the localization edge a TightLock gets ±T/4: with direct arrivals unmeasurable, modes shape the sum too. A lone donor keeps ±T/2.
             double? sceneLock = cross is not { } resolved
                 ? null
-                : lockable && !resolved.Coarse
+                : heldOnOwnSum || (lockable && !resolved.Coarse)
                     ? SceneLockToleranceMs
                     : (resolved.TightLock ? 250.0 : 500.0) / Math.Max(
                         pair.CrossoverHz,
@@ -3255,9 +3312,9 @@ public static class AutoAlignmentEngine
             AlignRight(i, i - 1, plan.RightPairs[i - 1]);
         }
 
-        // Shared per-pair delta keeps the scene while trading junction loss between sides.
+        // Shared per-pair delta keeps the scene while trading junction loss between sides; a pair on its own sum is placed here.
         RebalancePairsKeepingScene(
-            plan, reprocess, alignment, log, onsetLocks, phasePlaced, maxDelayMs, decisions);
+            plan, reprocess, alignment, log, onsetLocks, phasePlaced, maxDelayMs, decisions, ownSumHeld);
 
         // Both sides read the same junction before one side’s near-tie stands for both.
         RebalanceJunctionBranches(
@@ -3268,9 +3325,9 @@ public static class AutoAlignmentEngine
         ComoveMonoChannels(
             plan, reprocess, alignment, log, allChannels, maxDelayMs, decisions);
 
-        // The polish moves the far side under the mono channels' right junctions; a mono channel that followed may release
-        // a trim the polish refused for its sake, so the two alternate while both keep moving.
-        // See docs/tech/auto-alignment.md#post-descent-passes.
+        // The polish moves the far side (and both sides of a pair on its own sum) under the mono channels' junctions; a
+        // mono channel that followed may release a trim the polish refused for its sake, so the two alternate while
+        // both keep moving. See docs/tech/auto-alignment.md#post-descent-passes.
         var polishSpentMs = new Dictionary<IAlignmentChannel, double>();
         for (int round = 1; round <= PolishMonoRounds; round++)
         {
@@ -3281,7 +3338,7 @@ public static class AutoAlignmentEngine
             bool followed =
                 PolishFarSideJunctions(
                     plan, rightByBand, allChannels, reprocess, alignment, log,
-                    maxDelayMs, decisions, polishSpentMs) &&
+                    maxDelayMs, decisions, polishSpentMs, ownSumHeld) &&
                 ComoveMonoChannels(
                     plan, reprocess, alignment, log, allChannels, maxDelayMs, decisions, afterPolish: true);
             if (!followed)
@@ -3522,6 +3579,11 @@ public static class AutoAlignmentEngine
         Math.Max(link.BandLowHz, SceneLockLocalizationLowHz) *
         VirtualCrossoverAnalysis.MinimumArrivalBandRatio;
 
+    // Band below the localization region: timed by its sum. See docs/tech/auto-alignment.md#a-low-pair-stands-on-its-own-sum.
+    private static bool IsLowPair(StereoPairLink link) =>
+        link.BandHighHz <
+        SceneLockLocalizationLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio;
+
     // Pair co-move range; also capped per pair to half its tightest junction period (a flat window walked tweeters a lobe off).
     private const double PairComoveSearchRangeMs = 1.2;
     private const double PairComoveMinimumGainDb = 0.05;
@@ -3694,6 +3756,7 @@ public static class AutoAlignmentEngine
     }
 
     // Co-move each linked pair by one delta (scene invariant), scored on the reference side's junctions and bounded by both sides.
+    // A pair held on its own sum is scored on both sides instead: this is where the pair, as one, meets its neighbours.
     // Analytic scan: one reprocess, then e^{-jωΔ} rotations. See docs/tech/auto-alignment.md#post-descent-passes.
     private static void RebalancePairsKeepingScene(
         StereoAlignmentPlan plan,
@@ -3703,7 +3766,8 @@ public static class AutoAlignmentEngine
         IReadOnlyDictionary<AlignmentJunction, OnsetLockState> onsetLocks,
         IReadOnlySet<AlignmentJunction> phasePlaced,
         double maxDelayMs,
-        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
+        IReadOnlySet<IAlignmentChannel>? ownSumHeld = null)
     {
         if (plan.PairLinks == null)
         {
@@ -3718,6 +3782,7 @@ public static class AutoAlignmentEngine
         {
             AlignmentOverride leftOverride = alignment.GetValueOrDefault(link.Left);
             AlignmentOverride rightOverride = alignment.GetValueOrDefault(link.Right);
+            bool ownSum = ownSumHeld?.Contains(link.Right) == true;
 
             // Both sides bound the delta; only the reference side scores it.
             List<AlignmentJunction> referenceAdjacent = plan.LeftPairs
@@ -3734,10 +3799,11 @@ public static class AutoAlignmentEngine
                 continue;
             }
 
-            // Pairs bordering the mono channel stay put: the mono is timed by the left pass alone.
-            if (adjacent.Any(junction =>
+            // Pairs bordering the mono channel stay put (the mono is timed by the left pass alone), unless on their own sum.
+            bool Mono(AlignmentJunction junction) =>
                 plan.MonoChannels.Contains(junction.Lower.Channel) ||
-                plan.MonoChannels.Contains(junction.Upper.Channel)))
+                plan.MonoChannels.Contains(junction.Upper.Channel);
+            if (!ownSum && adjacent.Any(Mono))
             {
                 continue;
             }
@@ -3751,22 +3817,28 @@ public static class AutoAlignmentEngine
                 continue;
             }
 
+            List<AlignmentJunction> scored = ownSum
+                ? adjacent.Where(junction => !Mono(junction)).ToList()
+                : referenceAdjacent;
+            if (scored.Count == 0)
+            {
+                continue;
+            }
+
             IReadOnlyList<AlignmentSnapshot> current = reprocess(alignment);
 
             // Only the reference (near-listener) side votes: a two-side mean buys the far junction with the near one.
+            IAlignmentChannel MoverOf(AlignmentJunction junction) =>
+                junction.Lower.Channel == link.Left || junction.Upper.Channel == link.Left
+                    ? link.Left
+                    : link.Right;
             var evaluators = new List<VirtualCrossoverAnalysis.SumLossEvaluator>();
-            foreach (AlignmentJunction junction in referenceAdjacent)
+            foreach (AlignmentJunction junction in scored)
             {
-                bool lowerMoves = junction.Lower.Channel == link.Left;
-                IAlignmentChannel mover = lowerMoves
-                    ? junction.Lower.Channel
-                    : junction.Upper.Channel;
-                IAlignmentChannel neighbor = lowerMoves
-                    ? junction.Upper.Channel
-                    : junction.Lower.Channel;
+                IAlignmentChannel mover = MoverOf(junction);
                 // The window is held fixed across all probed deltas and rebuilt from `current`, whose fronts moved with the cascade.
                 VirtualCrossoverAnalysis.SumLossEvaluator? evaluator = JunctionSum(
-                    current, mover, neighbor, junction.BandLowHz, junction.BandHighHz);
+                    current, mover, OtherMember(junction, mover), junction.BandLowHz, junction.BandHighHz);
                 if (evaluator != null)
                 {
                     evaluators.Add(evaluator);
@@ -3864,7 +3936,9 @@ public static class AutoAlignmentEngine
                 }
 
                 string? why = HalfBandRefusal(
-                    cells ??= HalfBandCells(referenceAdjacent, link.Left, current),
+                    cells ??= scored
+                        .SelectMany(junction => HalfBandCells([junction], MoverOf(junction), current))
+                        .ToList(),
                     cell => PenalizedLoss(cell.Sum, 0) - PenalizedLoss(cell.Sum, delta),
                     score - baseline);
                 if (why != null)
@@ -3896,11 +3970,12 @@ public static class AutoAlignmentEngine
                 Consider(delta);
             }
 
+            string judged = ownSum ? "both sides' junctions" : "the reference-side junctions";
             if (refusedWhy != null && refusedScore > bestScore)
             {
                 log.AppendLine(
                     $"Co-move {link.Left.Name}+{link.Right.Name}: {refusedDelta:+0.00;-0.00} ms refused — " +
-                    $"it would gain {refusedScore - baseline:0.00} dB over the reference-side junctions but loses {refusedWhy}");
+                    $"it would gain {refusedScore - baseline:0.00} dB over {judged} but loses {refusedWhy}");
             }
 
             if (bestDelta != 0 && bestScore > baseline + PairComoveMinimumGainDb)
@@ -3922,8 +3997,8 @@ public static class AutoAlignmentEngine
                 log.AppendLine(
                     $"Co-move {link.Left.Name}+{link.Right.Name}: " +
                     $"{bestDelta:+0.00;-0.00} ms to both sides " +
-                    $"(reference-side dip-penalized junction loss " +
-                    $"{baseline:0.00} -> {bestScore:0.00} dB; scene untouched)");
+                    $"(dip-penalized loss over {judged} " +
+                    $"{baseline:0.00} -> {bestScore:0.00} dB; {(ownSum ? "the pair's split kept" : "scene untouched")})");
                 // In-lobe polish, but the final delays differ from the walk's: report it.
                 string pairAmendment = FormattableString.Invariant(
                     $"pair co-move {bestDelta:+0.00;-0.00} ms (scene kept)");
@@ -3941,8 +4016,9 @@ public static class AutoAlignmentEngine
     }
 
     // Far-side polish: each far channel may leave its scene position by an eighth of its highest junction's period to
-    // recover its own junctions; spentMs carries each channel's trim across rounds. True when a channel moved.
-    // See docs/tech/auto-alignment.md#post-descent-passes.
+    // recover its own junctions; spentMs carries each channel's trim across rounds. Both sides of a pair held on its own
+    // sum polish by their junctions with the stereo neighbours: the mono channel follows the pair, not the reverse.
+    // True when a channel moved. See docs/tech/auto-alignment.md#post-descent-passes.
     internal static bool PolishFarSideJunctions(
         StereoAlignmentPlan plan,
         IReadOnlyList<AlignmentSnapshot> rightByBand,
@@ -3952,18 +4028,30 @@ public static class AutoAlignmentEngine
         StringBuilder log,
         double maxDelayMs,
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions,
-        Dictionary<IAlignmentChannel, double> spentMs)
+        Dictionary<IAlignmentChannel, double> spentMs,
+        IReadOnlySet<IAlignmentChannel>? ownSumHeld = null)
     {
         bool moved = false;
-        foreach (AlignmentSnapshot entry in rightByBand
-            .OrderByDescending(item => plan.RightPairs
-                .Where(pair => pair.Lower.Channel == item.Channel ||
-                    pair.Upper.Channel == item.Channel)
-                .Select(pair => pair.CrossoverHz)
-                .DefaultIfEmpty(0)
-                .Max()))
+        var ownSumLeft = new HashSet<IAlignmentChannel>(
+            plan.PairLinks?
+                .Where(link => ownSumHeld?.Contains(link.Right) == true)
+                .Select(link => link.Left) ?? []);
+        bool OnOwnSum(IAlignmentChannel channel) =>
+            ownSumHeld?.Contains(channel) == true || ownSumLeft.Contains(channel);
+        List<AlignmentJunction> Adjacent(IAlignmentChannel channel, IReadOnlyList<AlignmentJunction> pairs) => pairs
+            .Where(pair => pair.Lower.Channel == channel || pair.Upper.Channel == channel)
+            .Where(pair => !OnOwnSum(channel) ||
+                !(plan.MonoChannels.Contains(pair.Lower.Channel) || plan.MonoChannels.Contains(pair.Upper.Channel)))
+            .ToList();
+        List<(IAlignmentChannel Channel, List<AlignmentJunction> Adjacent, string Label)> entries = rightByBand
+            .Select(item => (item.Channel, Adjacent(item.Channel, plan.RightPairs), "Far-side polish"))
+            .OrderByDescending(entry => entry.Item2.Select(pair => pair.CrossoverHz).DefaultIfEmpty(0).Max())
+            .Concat(plan.LeftChannelsByBand
+                .Where(item => ownSumLeft.Contains(item.Channel))
+                .Select(item => (item.Channel, Adjacent(item.Channel, plan.LeftPairs), "Reference-side polish")))
+            .ToList();
+        foreach ((IAlignmentChannel channel, List<AlignmentJunction> adjacent, string label) in entries)
         {
-            IAlignmentChannel channel = entry.Channel;
             if (plan.MonoChannels.Contains(channel))
             {
                 continue;
@@ -3973,14 +4061,10 @@ public static class AutoAlignmentEngine
             if (channel == plan.BridgeRight)
             {
                 log.AppendLine(
-                    $"Far-side polish {channel.Name}: none, the bridge holds the scene delta");
+                    $"{label} {channel.Name}: none, the bridge holds the scene delta");
                 continue;
             }
 
-            List<AlignmentJunction> adjacent = plan.RightPairs
-                .Where(pair => pair.Lower.Channel == channel ||
-                    pair.Upper.Channel == channel)
-                .ToList();
             if (adjacent.Count == 0)
             {
                 continue;
@@ -3988,6 +4072,7 @@ public static class AutoAlignmentEngine
 
             double reachMs = FarSidePolishReachPeriods * 1000.0 /
                 adjacent.Max(junction => junction.CrossoverHz);
+            string origin = OnOwnSum(channel) ? "the pair's position" : "the scene position";
 
             AlignmentOverride current = alignment.GetValueOrDefault(channel);
             // The reach is spent from the scene position: a second round otherwise walks a channel twice its leash.
@@ -4012,24 +4097,29 @@ public static class AutoAlignmentEngine
             // reach check below discards the surplus.
             int reachTicks = (int)Math.Ceiling(reachMs / 0.01);
             int sceneTick = (int)Math.Round(sceneMs / 0.01);
-            // No negatives, no uniform shift, no span widening past the DSP range (this pass runs after the cascade settled).
+            // No span widening past the DSP range (this pass runs after the cascade settled); the earliest channel may
+            // still trim earlier, the rest of the field rising instead.
             List<double> trials = Enumerable.Range(sceneTick - reachTicks, 2 * reachTicks + 1)
                 .Select(tick => Math.Round(tick * 0.01, 2))
                 .Where(trialMs =>
                     Math.Abs(trialMs - sceneMs) <= reachMs + 1e-9 &&
-                    trialMs >= 0 &&
                     Math.Max(othersMaxMs, trialMs) - Math.Min(othersMinMs, trialMs) <= maxDelayMs)
                 .ToList();
 
             void Trim(double trialMs)
             {
-                alignment[channel] = current with { DelayMs = trialMs };
                 spent = trialMs - sceneMs;
                 spentMs[channel] = spent;
+                if (trialMs < 0)
+                {
+                    ShiftAllExcept(fullScope, channel, -trialMs, alignment, log);
+                    trialMs = 0;
+                }
+                alignment[channel] = current with { DelayMs = trialMs };
                 AmendDecision(
                     decisions, channel,
                     FormattableString.Invariant(
-                        $"far-side polish, now {spent:+0.00;-0.00} ms off the scene position (<= {reachMs:0.00} ms)"));
+                        $"{label.ToLowerInvariant()}, now {spent:+0.00;-0.00} ms off {origin} (<= {reachMs:0.00} ms)"));
             }
 
             // Under a high junction the trim follows that junction's phase: the sum there follows the cabin.
@@ -4065,12 +4155,12 @@ public static class AutoAlignmentEngine
                     moved |= adjacent.Any(junction =>
                         plan.MonoChannels.Contains(OtherMember(junction, channel)));
                     log.AppendLine(FormattableString.Invariant(
-                        $"Far-side polish {channel.Name}: {spent:+0.00;-0.00} ms off the scene position (phase score {standing:0.00} -> {phaseScore:0.00} at {top.CrossoverHz:0} Hz)"));
+                        $"{label} {channel.Name}: {spent:+0.00;-0.00} ms off {origin} (phase score {standing:0.00} -> {phaseScore:0.00} at {top.CrossoverHz:0} Hz)"));
                 }
                 else
                 {
                     log.AppendLine(FormattableString.Invariant(
-                        $"Far-side polish {channel.Name}: kept (phase score {standing:0.00} at {top.CrossoverHz:0} Hz, best in reach {phaseScore:0.00})"));
+                        $"{label} {channel.Name}: kept (phase score {standing:0.00} at {top.CrossoverHz:0} Hz, best in reach {phaseScore:0.00})"));
                 }
 
                 continue;
@@ -4129,7 +4219,7 @@ public static class AutoAlignmentEngine
             if (refusedWhy != null && refusedScore > bestScore)
             {
                 log.AppendLine(
-                    $"Far-side polish {channel.Name}: {refusedDelta:+0.00;-0.00} ms refused — " +
+                    $"{label} {channel.Name}: {refusedDelta:+0.00;-0.00} ms refused — " +
                     $"it would gain {refusedScore - baseline:0.00} dB over its junctions but loses {refusedWhy}");
             }
 
@@ -4138,15 +4228,15 @@ public static class AutoAlignmentEngine
                 Trim(bestTrialMs);
                 moved = true;
                 log.AppendLine(
-                    $"Far-side polish {channel.Name}: " +
-                    $"{spent:+0.00;-0.00} ms off the scene position " +
+                    $"{label} {channel.Name}: " +
+                    $"{spent:+0.00;-0.00} ms off {origin} " +
                     $"(own-junction dip-penalized loss " +
                     $"{baseline:0.00} -> {bestScore:0.00} dB)");
             }
             else
             {
                 log.AppendLine(
-                    $"Far-side polish {channel.Name}: kept " +
+                    $"{label} {channel.Name}: kept " +
                     $"(best gain {bestScore - baseline:0.00} dB below the " +
                     $"{FarSidePolishMinimumGainDb:0.00} dB threshold)");
             }

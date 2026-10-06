@@ -2876,6 +2876,19 @@ that is not in the car. A view whose chain holds no junction at all drops the
 and here there is none to measure. The Sum itself is still drawn — the drivers
 do both play, and their combined output is a real thing to look at.
 
+The slopes decide what a hole is. A midrange low-passed at 2.5 kHz beside a
+tweeter high-passed at 6.8 kHz, both on second-order slopes, are each about
+9 dB down halfway between the corners: they do hand over, and that junction is
+read where the two slopes cross (about 4.1 kHz here), not at either corner —
+in the read-out, in the Correlation list and by Auto delay alike. The rule is
+corners an octave or more apart whose slopes cross no more than 12 dB down.
+Corners closer than an octave keep the junction at the lower driver's low-pass.
+Auto delay walks a chain of junctions, so a hole between two neighbours of its
+run stops it with a message naming the pair and how far down their slopes meet:
+bring the corners closer, or disable the block that does not belong in that
+chain, and rerun. The AI assistant's junction tune follows the same rule, so a
+junction the package lists is one it can tune.
+
 The **total** needs more than one junction somewhere: it needs the set to be one
 unbroken chain. Rear + Sub on a car with two subwoofers is the case that
 separates the two — the subwoofers cross each other for real, so their junction
@@ -4154,7 +4167,27 @@ such a read `energy onsets`; it needs 30 dB of SNR on both sides, below which
 the pair is read by first peaks on both. The junction searches and their
 seeds keep the first arrivals: a link compares one driver pair through
 near-identical chains, where the onset's own bias cancels, which the
-front-predicting junction machinery cannot rely on. The **scene
+front-predicting junction machinery cannot rely on. A low pair's own arrival
+is still the cabin's least reliable read: the same under-seat woofers measured
+in one car read anywhere from 0.1 to 2.6 ms apart from session to session,
+where its midranges read 1.4 to 1.6. So a pair below the localization region
+is not timed by its arrivals at all but by its own sum: the run scans the two
+sides' sum over the pair's band and takes the split at which they add best
+(the log names the figure and the runner-up optimum, the pair's own arrival
+read, and the cabin's geometry from the other pairs where they read it), and
+the pair is **held** on that split through the far-side descent; the scene
+offset does not apply to it, since below the localization region the pair's
+own sum is the scene. The pair then
+meets its neighbours as one: the scene-preserving pass below moves both sides
+by one shared delta for the best of both sides' junctions, and each side may
+afterwards trim on its own for its junction with the mid, by the same eighth
+of a period the far-side polish allows; the mono sub follows both. Half a
+period of freedom around a wrong arrival figure had put one cabin's far
+midbass 2.3 ms ahead of its twin, the two sides a third of a turn apart
+through 125-180 Hz. The price can be the far side's own handover: where the
+far driver's phase is turned against its twin's, no delay serves both, the
+run keeps the two sides together, and the junction row shows what that
+handover pays. The **scene
 offset** is entered as a non-negative magnitude — how far the far side leads —
 so switching LHD/RHD never means re-entering a sign, and the level tilt is
 entered the same way, as a cut on the near side. The gain balance itself is
@@ -4170,7 +4203,8 @@ few hundredths of a millisecond for a midrange under a 2 kHz split, half a
 millisecond for a midbass under a 200 Hz one, where the image does not
 localize. Under a crossover above 1 kHz that trim follows the junction's phase
 score instead of the summation, for the same reason the search does. The bridge channel itself never moves: it stands at the scene offset
-you set.
+you set. The earliest channel may still trim earlier: the rest of the field
+goes later by the same amount, which is the same relation.
 
 **Rear fill** sets how far behind the front stage the rear arrives, and is off
 unless the project has a block in the Rear zone. Ten to twenty milliseconds

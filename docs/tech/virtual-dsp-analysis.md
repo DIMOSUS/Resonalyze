@@ -185,6 +185,40 @@ by the incoherent sum of exactly the summed channels.
   at 110 Hz beside a rear fill starting at 290 Hz hands nothing across. A pair is a junction
   only when both channels play inside the octave-each-way window the junction is measured over;
   this reuses the measurement window instead of inventing a gap tolerance.
+- `GapHandoverHz`: slopes decide what a hole is, and that window cannot see them. A midrange to
+  2.5 kHz beside a tweeter from 6.8 kHz, both second-order, are each 9 dB down halfway between the
+  corners and do hand over; fourth-order slopes over the same spread (the sub and rear fill above)
+  meet 18 dB down. For corners an octave or more apart the function scans between them for where the
+  two slopes cross. At or above `GapHandoverFloorDb` (−12 dB: two drivers in phase sum 6 dB under the
+  passband) that frequency is the junction's (`GetPairCrossoverHz`), for the panel and for Auto
+  delay alike; below it the pair is a hole as before. The slopes are read as the chain realizes them:
+  - at the processor's rate. Second-order corners at 10 and 20 kHz meet 8 dB down on a 96 kHz
+    processor and 14 dB down on a 48 kHz one, whose high-pass the bilinear warp steepens towards
+    Nyquist;
+  - from both filtering stages, the IIR sections and the FIR kernel's own response. A FIR's edges
+    do not state its slope: a windowed sinc is a brick wall whatever they are labelled, and a
+    magnitude design may be 96 dB/octave steep, which no IIR section is (read through
+    `CrossoverFilter`, such an edge threw). On the field case the junction had been absent
+  from the panel while Auto delay aligned the pair in 1250-5000 Hz, an octave around the lower
+  corner where the tweeter is 6 to 29 dB down. Judged where the slopes cross (2062-8246 Hz), that
+  alignment read −1.80 / −9.53 dB with a direct coherence of 0.13 on the reference side; aligned
+  there it reads −1.07 / −5.95 and 0.73. The far side, scene-locked to the reference one, trades a
+  third of a dB of average for as much of dip (−1.46 / −4.82 to −1.80 / −4.42).
+- Corners closer than an octave keep the junction at the lower low-pass. Centring every unequal pair
+  between its corners was measured: 22 of 46 archived sides moved, lobes and polarities among them,
+  for junctions whose corners stand less than half an octave apart.
+- `HandsOver` is the one rule: across a gap of an octave or more the slopes' crossing is the whole
+  answer, above the floor or not; closer corners hand over when both play within an octave of the
+  pair's corner. The octave test must not be a fallback for a gap below the floor: a high-pass at
+  20 kHz has no band above its corner and reads as full range, which turned the near-Nyquist hole on
+  a 48 kHz processor back into a junction. `GetAdjacentPairs`, the agent's junction validator and
+  Auto delay's walk all ask it. The validator had drifted: first-order corners at 100 and 800 Hz cross at 283 Hz, 9.5 dB
+  down, and it refused that junction because the upper driver's nominal band lies above the octave
+  around the crossing, while the panel listed it. Auto delay's walk (`AdjacentJunctions`, also under a
+  later group's own settlement) is a chain of junctions and needs one between every two neighbours;
+  across a hole it used to build one at the lower corner's band and align two filter tails there,
+  while the panel showed no junction. Now it refuses the run, naming the pair and how far down their
+  slopes meet (`GapCrossing`): the owner's choice over aligning at the crossing however deep.
 - `IsContinuousChain`: the reference car's Rear + Sub view has two subwoofers that genuinely
   cross (below 50 Hz into 50–110 Hz) and a rear fill from 290 Hz. Per-junction figures are real;
   a total over the set is not, so no total is reported unless the set is one chain.

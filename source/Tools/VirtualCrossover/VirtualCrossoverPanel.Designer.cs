@@ -46,15 +46,15 @@ namespace Resonalyze
             radioSideRight = new ReleaseClickRadioButton();
             buttonCopyLeftToRight = new ReleaseClickButton();
             buttonCopyRightToLeft = new ReleaseClickButton();
-            checkBoxSideLock = new ReleaseClickCheckBox();
+            checkBoxSideLock = new ToggleCheckBox();
             labelGroupView = new Label();
             comboBoxGroupView = new ThemedComboBox();
             checkBoxShowTarget = new ReleaseClickCheckBox();
             numericTargetLevel = new ThemedNumericUpDown();
             buttonTargetSettings = new ReleaseClickButton();
             labelCalibration = new Label();
-            checkBoxShowSum = new ReleaseClickCheckBox();
-            checkBoxHybrid = new ReleaseClickCheckBox();
+            checkBoxShowSum = new ToggleCheckBox();
+            checkBoxHybrid = new ToggleCheckBox();
             labelSumLoss = new Label();
             comboBoxSumLoss = new ThemedComboBox();
             labelStereoSum = new Label();
@@ -263,7 +263,6 @@ namespace Resonalyze
             checkBoxSideLock.BackColor = UiPalette.ButtonBackground;
             checkBoxSideLock.Checked = true;
             checkBoxSideLock.CheckState = CheckState.Checked;
-            checkBoxSideLock.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
             checkBoxSideLock.FlatStyle = FlatStyle.Flat;
             checkBoxSideLock.ForeColor = UiPalette.TextPrimary;
             checkBoxSideLock.Location = new Point(220, 0);
@@ -354,7 +353,6 @@ namespace Resonalyze
             checkBoxShowSum.BackColor = UiPalette.ButtonBackground;
             checkBoxShowSum.Checked = true;
             checkBoxShowSum.CheckState = CheckState.Checked;
-            checkBoxShowSum.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
             checkBoxShowSum.FlatStyle = FlatStyle.Flat;
             checkBoxShowSum.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxShowSum.ForeColor = UiPalette.TextDefault;
@@ -371,7 +369,6 @@ namespace Resonalyze
             // 
             checkBoxHybrid.Appearance = Appearance.Button;
             checkBoxHybrid.BackColor = UiPalette.ButtonBackground;
-            checkBoxHybrid.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
             checkBoxHybrid.FlatStyle = FlatStyle.Flat;
             checkBoxHybrid.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxHybrid.ForeColor = UiPalette.TextDefault;
@@ -904,15 +901,15 @@ namespace Resonalyze
         private ReleaseClickRadioButton radioSideRight;
         private ReleaseClickButton buttonCopyLeftToRight;
         private ReleaseClickButton buttonCopyRightToLeft;
-        private ReleaseClickCheckBox checkBoxSideLock;
+        private ToggleCheckBox checkBoxSideLock;
         private Label labelGroupView;
         private ThemedComboBox comboBoxGroupView;
         private ReleaseClickCheckBox checkBoxShowTarget;
         private ThemedNumericUpDown numericTargetLevel;
         private ReleaseClickButton buttonTargetSettings;
         private Label labelCalibration;
-        private ReleaseClickCheckBox checkBoxShowSum;
-        private ReleaseClickCheckBox checkBoxHybrid;
+        private ToggleCheckBox checkBoxShowSum;
+        private ToggleCheckBox checkBoxHybrid;
         private Label labelSumLoss;
         private ThemedComboBox comboBoxSumLoss;
         private RoundedPanel curvesPanel;

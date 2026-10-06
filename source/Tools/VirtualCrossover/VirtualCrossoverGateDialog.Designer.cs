@@ -32,7 +32,7 @@ namespace Resonalyze
         {
             labelGateOffset = new Label();
             numericGateOffset = new ThemedNumericUpDown();
-            checkAutoOffset = new ReleaseClickCheckBox();
+            checkAutoOffset = new ToggleCheckBox();
             labelLeft = new Label();
             numericLeft = new ThemedNumericUpDown();
             labelPlateau = new Label();
@@ -93,7 +93,6 @@ namespace Resonalyze
             //
             checkAutoOffset.Appearance = Appearance.Button;
             checkAutoOffset.BackColor = UiPalette.ControlSurface;
-            checkAutoOffset.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
             checkAutoOffset.FlatStyle = FlatStyle.Flat;
             checkAutoOffset.ForeColor = UiPalette.TextPrimary;
             checkAutoOffset.Location = new Point(198, 10);
@@ -416,7 +415,7 @@ namespace Resonalyze
 
         private Label labelGateOffset;
         private ThemedNumericUpDown numericGateOffset;
-        private ReleaseClickCheckBox checkAutoOffset;
+        private ToggleCheckBox checkAutoOffset;
         private Label labelLeft;
         private ThemedNumericUpDown numericLeft;
         private Label labelPlateau;

@@ -37,9 +37,9 @@ namespace Resonalyze
             numericGain = new ThemedNumericUpDown();
             labelDelay = new Label();
             numericDelay = new ThemedNumericUpDown();
-            checkBoxInvert = new ReleaseClickCheckBox();
-            checkBoxMono = new ReleaseClickCheckBox();
-            checkBoxBothInputs = new ReleaseClickCheckBox();
+            checkBoxInvert = new ToggleCheckBox();
+            checkBoxMono = new ToggleCheckBox();
+            checkBoxBothInputs = new ToggleCheckBox();
             comboBoxZone = new ThemedComboBox();
             buttonMoveUp = new ReleaseClickButton();
             buttonMoveDown = new ReleaseClickButton();
@@ -59,9 +59,9 @@ namespace Resonalyze
             buttonPeqMenu = new ReleaseClickButton();
             labelPeqInfo = new Label();
             labelCurves = new Label();
-            checkBoxShowRaw = new ReleaseClickCheckBox();
-            checkBoxShowProcessed = new ReleaseClickCheckBox();
-            checkBoxBypass = new ReleaseClickCheckBox();
+            checkBoxShowRaw = new ToggleCheckBox();
+            checkBoxShowProcessed = new ToggleCheckBox();
+            checkBoxBypass = new ToggleCheckBox();
             buttonMute = new ReleaseClickButton();
             numericHighPassRipple = new ThemedNumericUpDown();
             numericLowPassRipple = new ThemedNumericUpDown();
@@ -188,7 +188,6 @@ namespace Resonalyze
             // 
             checkBoxInvert.Appearance = Appearance.Button;
             checkBoxInvert.BackColor = UiPalette.ButtonBackground;
-            checkBoxInvert.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
             checkBoxInvert.FlatStyle = FlatStyle.Flat;
             checkBoxInvert.Font =  new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxInvert.ForeColor = UiPalette.TextDefault;
@@ -205,7 +204,6 @@ namespace Resonalyze
             // 
             checkBoxMono.Appearance = Appearance.Button;
             checkBoxMono.BackColor = UiPalette.ButtonBackground;
-            checkBoxMono.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
             checkBoxMono.FlatStyle = FlatStyle.Flat;
             checkBoxMono.Font =  new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxMono.ForeColor = UiPalette.TextDefault;
@@ -224,7 +222,6 @@ namespace Resonalyze
             checkBoxBothInputs.BackColor = UiPalette.ButtonBackground;
             checkBoxBothInputs.Checked = true;
             checkBoxBothInputs.CheckState = CheckState.Checked;
-            checkBoxBothInputs.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
             checkBoxBothInputs.FlatStyle = FlatStyle.Flat;
             checkBoxBothInputs.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxBothInputs.ForeColor = UiPalette.TextDefault;
@@ -522,7 +519,6 @@ namespace Resonalyze
             // 
             checkBoxShowRaw.Appearance = Appearance.Button;
             checkBoxShowRaw.BackColor = UiPalette.ButtonBackground;
-            checkBoxShowRaw.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
             checkBoxShowRaw.FlatStyle = FlatStyle.Flat;
             checkBoxShowRaw.Font =  new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxShowRaw.ForeColor = UiPalette.TextDefault;
@@ -541,7 +537,6 @@ namespace Resonalyze
             checkBoxShowProcessed.BackColor = UiPalette.ButtonBackground;
             checkBoxShowProcessed.Checked = true;
             checkBoxShowProcessed.CheckState = CheckState.Checked;
-            checkBoxShowProcessed.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
             checkBoxShowProcessed.FlatStyle = FlatStyle.Flat;
             checkBoxShowProcessed.Font =  new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxShowProcessed.ForeColor = UiPalette.TextDefault;
@@ -558,7 +553,6 @@ namespace Resonalyze
             // 
             checkBoxBypass.Appearance = Appearance.Button;
             checkBoxBypass.BackColor = UiPalette.ButtonBackground;
-            checkBoxBypass.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
             checkBoxBypass.FlatStyle = FlatStyle.Flat;
             checkBoxBypass.Font =  new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxBypass.ForeColor = UiPalette.TextDefault;
@@ -717,9 +711,9 @@ namespace Resonalyze
         private ThemedNumericUpDown numericGain;
         private Label labelDelay;
         private ThemedNumericUpDown numericDelay;
-        private ReleaseClickCheckBox checkBoxInvert;
-        private ReleaseClickCheckBox checkBoxMono;
-        private ReleaseClickCheckBox checkBoxBothInputs;
+        private ToggleCheckBox checkBoxInvert;
+        private ToggleCheckBox checkBoxMono;
+        private ToggleCheckBox checkBoxBothInputs;
         private ThemedComboBox comboBoxZone;
         private ReleaseClickButton buttonMoveUp;
         private ReleaseClickButton buttonMoveDown;
@@ -745,9 +739,9 @@ namespace Resonalyze
         private ReleaseClickButton buttonFir;
         private Label labelFirInfo;
         private Label labelCurves;
-        private ReleaseClickCheckBox checkBoxShowRaw;
-        private ReleaseClickCheckBox checkBoxShowProcessed;
-        private ReleaseClickCheckBox checkBoxBypass;
+        private ToggleCheckBox checkBoxShowRaw;
+        private ToggleCheckBox checkBoxShowProcessed;
+        private ToggleCheckBox checkBoxBypass;
         private ReleaseClickButton buttonMute;
         private ThemedNumericUpDown numericHighPassRipple;
         private ThemedNumericUpDown numericLowPassRipple;

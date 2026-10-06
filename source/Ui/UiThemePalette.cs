@@ -32,7 +32,10 @@ internal sealed class UiThemePalette
     // Accent fill carries TextOnAccent, white in both themes; no hover lift, it drops the label under 4.5:1.
     public required Color AccentFill { get; init; }
     public required Color AccentFillPressed { get; init; }
+    // A toggle that is on is filled and framed in the accent (AccentMark); one ticked where it does not apply keeps
+    // the muted fill and the BorderMuted frame of an unticked one.
     public required Color ToggleCheckedFill { get; init; }
+    public required Color ToggleCheckedFillMuted { get; init; }
     // The Virtual DSP side buttons: left blue, right red, a dim unframed fill until chosen; chosen carries TextOnAccent.
     public required Color SideLeftFill { get; init; }
     public required Color SideLeftFillSelected { get; init; }
@@ -222,7 +225,8 @@ internal sealed class UiThemePalette
         ButtonDisabledBackground = Color.FromArgb(55, 60, 70),
         AccentFill = Color.FromArgb(36, 86, 210),
         AccentFillPressed = Color.FromArgb(24, 60, 150),
-        ToggleCheckedFill = Color.FromArgb(80, 100, 140),
+        ToggleCheckedFill = Color.FromArgb(44, 82, 160),
+        ToggleCheckedFillMuted = Color.FromArgb(80, 100, 140),
         SideLeftFill = Color.FromArgb(38, 46, 70),
         SideLeftFillSelected = Color.FromArgb(36, 86, 210),
         SideLeftBorder = Color.FromArgb(86, 140, 245),
@@ -422,7 +426,8 @@ internal sealed class UiThemePalette
         ButtonDisabledBackground = Color.FromArgb(222, 225, 232),
         AccentFill = Color.FromArgb(36, 86, 210),
         AccentFillPressed = Color.FromArgb(24, 60, 150),
-        ToggleCheckedFill = Color.FromArgb(150, 176, 226),
+        ToggleCheckedFill = Color.FromArgb(140, 174, 238),
+        ToggleCheckedFillMuted = Color.FromArgb(150, 176, 226),
         SideLeftFill = Color.FromArgb(220, 227, 243),
         SideLeftFillSelected = Color.FromArgb(30, 80, 200),
         SideLeftBorder = Color.FromArgb(30, 80, 200),

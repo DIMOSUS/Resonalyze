@@ -55,6 +55,9 @@ public sealed class UiPaletteContrastTests
                 (nameof(UiThemePalette.TextOnAccent), nameof(UiThemePalette.AccentFill), 4.5),
                 (nameof(UiThemePalette.TextOnAccent), nameof(UiThemePalette.AccentFillPressed), 4.5),
                 (nameof(UiThemePalette.TitleBarTextActive), nameof(UiThemePalette.ButtonBackground), 4.5),
+                (nameof(UiThemePalette.TextPrimary), nameof(UiThemePalette.ToggleCheckedFill), 4.5),
+                (nameof(UiThemePalette.TextDefault), nameof(UiThemePalette.ToggleCheckedFill), 4.5),
+                (nameof(UiThemePalette.AccentMark), nameof(UiThemePalette.PanelSurface), 3.0),
 
                 (nameof(UiThemePalette.TitleBarText), nameof(UiThemePalette.TitleBarBackground), 4.5),
                 (nameof(UiThemePalette.TitleBarTextActive), nameof(UiThemePalette.TitleBarBackground), 4.5),

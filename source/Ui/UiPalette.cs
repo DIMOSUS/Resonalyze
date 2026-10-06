@@ -34,6 +34,7 @@ internal static class UiPalette
     public static Color AccentFill => Current.AccentFill;
     public static Color AccentFillPressed => Current.AccentFillPressed;
     public static Color ToggleCheckedFill => Current.ToggleCheckedFill;
+    public static Color ToggleCheckedFillMuted => Current.ToggleCheckedFillMuted;
     public static Color SideLeftFill => Current.SideLeftFill;
     public static Color SideLeftFillSelected => Current.SideLeftFillSelected;
     public static Color SideLeftBorder => Current.SideLeftBorder;

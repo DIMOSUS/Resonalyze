@@ -45,8 +45,8 @@ internal sealed record VirtualCrossoverChannelAverageReadout(string Text, Color 
                 _ =>
                     "No spatial average for this channel." + newLine + newLine +
                     "Click to attach a moving-microphone capture, or a response file " +
-                    "averaged elsewhere (REW's text export). The hybrid view needs one " +
-                    "on every channel that plays."
+                    "averaged elsewhere (REW's text export), or drop either on this " +
+                    "button. The hybrid view needs one on every channel that plays."
             }
             : resolved
             ? (file ? $"Response file: {title}" : $"Spatial average: {title}") +

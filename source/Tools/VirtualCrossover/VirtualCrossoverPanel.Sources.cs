@@ -93,11 +93,7 @@ public partial class VirtualCrossoverPanel
 
     private async Task ChooseSourceFileAsync(VirtualCrossoverChannel channel)
     {
-        // Capture the concrete slot, settings and revision NOW: side, Mono or a session import can change during the load.
-        // See docs/tech/virtual-dsp-panel.md#source-loading.
         bool rightSide = channel.ActiveRight;
-        VirtualCrossoverChannelState targetState = channel.SideState(rightSide);
-        VirtualCrossoverChannelSettings targetSettings = channel.SideSettings(rightSide);
         using var dialog = new OpenFileDialog
         {
             CheckFileExists = true,
@@ -111,12 +107,21 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
+        await LoadSourceFileAsync(channel, rightSide, dialog.FileName);
+    }
+
+    private async Task LoadSourceFileAsync(VirtualCrossoverChannel channel, bool rightSide, string path)
+    {
+        // Capture the concrete slot, settings and revision NOW: side, Mono or a session import can change during the load.
+        // See docs/tech/virtual-dsp-panel.md#source-loading.
+        VirtualCrossoverChannelState targetState = channel.SideState(rightSide);
+        VirtualCrossoverChannelSettings targetSettings = channel.SideSettings(rightSide);
         int revision = targetState.BeginSourceLoad();
         pendingSourceLoads++;
         RefreshAutoActionsEnabled();
         try
         {
-            ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(dialog.FileName);
+            ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
             if (IsDisposed)
             {
                 return;
@@ -128,8 +133,8 @@ public partial class VirtualCrossoverPanel
                     channel,
                     targetSettings,
                     new VirtualCrossoverSourceReference(
-                        Path.GetFileName(dialog.FileName),
-                        dialog.FileName,
+                        Path.GetFileName(path),
+                        path,
                         HistoryEntryId: null));
             }
         }
@@ -368,7 +373,7 @@ public partial class VirtualCrossoverPanel
             resolved
                 ? channel.Settings.SourceFilePath ?? name
                 : "Pick the channel's measurement: a saved impulse-response\r\n" +
-                  "file or a history entry.\r\n" +
+                  "file (or drop one on this button) or a history entry.\r\n" +
                   "Requires a loopback transfer IR.");
     }
 }

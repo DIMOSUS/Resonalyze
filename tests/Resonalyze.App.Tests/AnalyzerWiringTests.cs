@@ -629,6 +629,66 @@ public sealed class AnalyzerWiringTests : IDisposable
         });
     }
 
+    [Fact]
+    public void AFileDroppedOnAVirtualDspBlockButton_LandsInThatBlock_NotInTheAnalyzers()
+    {
+        string path = WriteMeasurement("tweeter left.json", peak: 240);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            var panel = analyzer.Field<VirtualCrossoverPanel>("virtualCrossoverPanel");
+            var messages = new List<string>();
+            panel.ShowMessage = (text, _, _, _) =>
+            {
+                messages.Add(text);
+                return DialogResult.OK;
+            };
+            analyzer.Select(ModeTab.ToolsVirtualCrossover);
+            VirtualCrossoverChannel channel = panel.Session.Channels[0];
+            VirtualCrossoverChannelControl card = panel.Controls.Find("channelListPanel", searchAllChildren: true)
+                .Single().Controls.OfType<VirtualCrossoverChannelControl>()
+                .Single(card => card.ChannelName == channel.Name);
+            // The drop's awaits resume through the form's context, as on the real UI thread.
+            SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
+
+            Assert.Equal(DragDropEffects.None, Drag(card.SourceButton, "OnDragOver", "sweep.wav").Effect);
+            Assert.Equal(DragDropEffects.Copy, Drag(card.SourceButton, "OnDragOver", path).Effect);
+
+            Drag(card.SpatialAverageButton, "OnDragDrop", path);
+            PumpUntil(() => messages.Count == 1, "name the measurement dropped on MMM");
+            Drag(card.SourceButton, "OnDragDrop", path);
+            PumpUntil(() => channel.TransferImpulseResponse != null, "load the measurement dropped on Source");
+
+            Assert.Contains("tweeter left.json", messages.Single());
+            Assert.Null(channel.SpatialAverage);
+            Assert.Null(channel.Settings.SpatialAveragePath);
+            Assert.Equal("tweeter left.json", channel.Settings.DisplayName);
+            Assert.Equal(path, channel.Settings.SourceFilePath);
+            Assert.False(analyzer.Document.HasResult);
+        });
+    }
+
+    private static DragEventArgs Drag(Control control, string method, string path)
+    {
+        var payload = new DataObject();
+        payload.SetData(DataFormats.FileDrop, new[] { path });
+        var args = new DragEventArgs(payload, 0, 0, 0, DragDropEffects.All, DragDropEffects.None);
+        typeof(Control).GetMethod(method, Hidden)!.Invoke(control, [args]);
+        return args;
+    }
+
+    private static void PumpUntil(Func<bool> condition, string what)
+    {
+        DateTime deadline = DateTime.UtcNow.AddSeconds(30);
+        while (!condition() && DateTime.UtcNow < deadline)
+        {
+            StaTest.Pump();
+            Thread.Sleep(5);
+        }
+
+        Assert.True(condition(), $"The drop did not {what}.");
+    }
+
     private sealed class LiveAnalyzer : IDisposable
     {
         public LiveAnalyzer()

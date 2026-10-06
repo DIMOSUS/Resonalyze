@@ -107,6 +107,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
     }
 
     internal Button SourceButton => buttonSource;
+    internal Button SpatialAverageButton => buttonSpatialAverage;
 
     internal ThemedNumericUpDown GainInput => numericGain;
     internal ThemedNumericUpDown DelayInput => numericDelay;

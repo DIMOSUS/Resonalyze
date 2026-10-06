@@ -17,7 +17,7 @@ internal sealed record VirtualCrossoverChannelFirReadout(
         "The channel's FIR filter — a kernel the processor convolves the channel" + "\r\n" +
         "with, designed in the FIR Constructor or imported from a file, kept in" + "\r\n" +
         "the session, and run AT THE PROCESSOR'S RATE." + "\r\n" +
-        "Click to design, import, export or clear it.";
+        "Click to design, import, export or clear it, or drop a kernel file on it.";
 
     public static VirtualCrossoverChannelFirReadout Read(
         FirFilter? kernel,

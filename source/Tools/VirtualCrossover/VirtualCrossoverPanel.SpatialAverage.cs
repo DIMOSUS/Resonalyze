@@ -95,26 +95,31 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
+        AttachSpatialAverage(channel, dialog.FileName);
+    }
+
+    private void AttachSpatialAverage(VirtualCrossoverChannel channel, string path)
+    {
         try
         {
             SpatialAverageFileSettings? answers = null;
-            if (!LiveCaptureDocument.TryLoad(dialog.FileName, out LiveCaptureDocument document))
+            if (!LiveCaptureDocument.TryLoad(path, out LiveCaptureDocument document))
             {
                 // Not a capture: a response file, attached only once the user has said what it carries.
-                FrequencyResponseTextFile file = SpatialAverageFileImport.Read(dialog.FileName);
+                FrequencyResponseTextFile file = SpatialAverageFileImport.Read(path);
                 answers = AskSpatialAverageFile(
-                    channel, dialog.FileName, file, DefaultSpatialAverageFileAnswers(channel));
+                    channel, path, file, DefaultSpatialAverageFileAnswers(channel));
                 if (answers == null)
                 {
                     return;
                 }
 
-                document = SpatialAverageFileImport.Build(file, answers, dialog.FileName);
+                document = SpatialAverageFileImport.Build(file, answers, path);
             }
 
             channel.SpatialAverage = document;
             channel.Settings.SpatialAverageFile = answers;
-            channel.Settings.SpatialAveragePath = dialog.FileName;
+            channel.Settings.SpatialAveragePath = path;
             // The relative path names the previously imported capture; left standing it would steer the next search to it.
             channel.Settings.SpatialAverageRelativePath = null;
             OnSpatialAverageChanged(channel);

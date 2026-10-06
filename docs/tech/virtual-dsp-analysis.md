@@ -207,9 +207,12 @@ by the incoherent sum of exactly the summed channels.
 - Corners closer than an octave keep the junction at the lower low-pass. Centring every unequal pair
   between its corners was measured: 22 of 46 archived sides moved, lobes and polarities among them,
   for junctions whose corners stand less than half an octave apart.
-- `HandsOver` is the one rule: both play within an octave of the pair's corner, or the slopes cross a
-  gap above the floor. `GetAdjacentPairs`, the agent's junction validator and Auto delay's walk all
-  ask it. The validator had drifted: first-order corners at 100 and 800 Hz cross at 283 Hz, 9.5 dB
+- `HandsOver` is the one rule: across a gap of an octave or more the slopes' crossing is the whole
+  answer, above the floor or not; closer corners hand over when both play within an octave of the
+  pair's corner. The octave test must not be a fallback for a gap below the floor: a high-pass at
+  20 kHz has no band above its corner and reads as full range, which turned the near-Nyquist hole on
+  a 48 kHz processor back into a junction. `GetAdjacentPairs`, the agent's junction validator and
+  Auto delay's walk all ask it. The validator had drifted: first-order corners at 100 and 800 Hz cross at 283 Hz, 9.5 dB
   down, and it refused that junction because the upper driver's nominal band lies above the octave
   around the crossing, while the panel listed it. Auto delay's walk (`AdjacentJunctions`, also under a
   later group's own settlement) is a chain of junctions and needs one between every two neighbours;

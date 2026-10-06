@@ -103,6 +103,28 @@ public sealed class VirtualCrossoverJunctionsTests
     }
 
     [Theory]
+    // The gap near Nyquist of GetPairCrossoverHz_AGapNearNyquist: a wide gap is decided by its crossing alone. On a
+    // 48 kHz processor the slopes meet 14 dB down, and the octave test must not revive the pair — a high-pass at
+    // 20 kHz has no band above its corner, which reads as full range there.
+    [InlineData(96_000, true)]
+    [InlineData(48_000, false)]
+    public void HandsOver_AWideGapIsDecidedByItsCrossingAlone(int processorSampleRateHz, bool expected)
+    {
+        var lower = new VirtualCrossoverChannelSettings
+        {
+            CrossoverKind = CrossoverKind.LowPass,
+            LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 10_000, 12)
+        };
+        var upper = new VirtualCrossoverChannelSettings
+        {
+            CrossoverKind = CrossoverKind.HighPass,
+            HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 20_000, 12)
+        };
+
+        Assert.Equal(expected, VirtualCrossoverJunctions.HandsOver(lower, upper, processorSampleRateHz));
+    }
+
+    [Theory]
     // Second-order corners at 10 and 20 kHz meet 8 dB down on a 96 kHz processor, and 14 dB down on a 48 kHz one,
     // whose high-pass the bilinear warp steepens towards Nyquist: there the gap is a hole.
     [InlineData(96_000, 14_348)]

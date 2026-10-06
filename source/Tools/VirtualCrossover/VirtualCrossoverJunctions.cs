@@ -118,17 +118,20 @@ internal static class VirtualCrossoverJunctions
     public static (double LowHz, double HighHz) OverlapBand(double centerHz) =>
         (Math.Max(20, centerHz / 2), Math.Min(20_000, centerHz * 2));
 
-    /// <summary>Whether two adjacent channels hand over to each other: both play within an octave of the pair's corner, or
-    /// their slopes cross a gap above <see cref="GapHandoverFloorDb"/>. The one rule the panel, Auto delay's agent and the
-    /// junction views share; a pair that fails it is a hole. See docs/tech/virtual-dsp-analysis.md#measured-bands-and-junctions.</summary>
+    /// <summary>Whether two adjacent channels hand over to each other: across a gap of an octave or more, where their slopes
+    /// cross is the whole answer (above <see cref="GapHandoverFloorDb"/> or not); closer corners hand over when both play
+    /// within an octave of the pair's corner. The one rule the panel, Auto delay and its agent share; a pair that fails it
+    /// is a hole. See docs/tech/virtual-dsp-analysis.md#measured-bands-and-junctions.</summary>
     public static bool HandsOver(
         VirtualCrossoverChannelSettings lower,
         VirtualCrossoverChannelSettings upper,
         int? processorSampleRateHz = null)
     {
-        if (GapHandoverHz(lower, upper, processorSampleRateHz) != null)
+        if (lower.EffectiveLowPassHz is { } lowPassHz &&
+            upper.EffectiveHighPassHz is { } highPassHz &&
+            highPassHz >= 2 * lowPassHz)
         {
-            return true;
+            return GapHandoverHz(lower, upper, processorSampleRateHz) != null;
         }
 
         (double lowHz, double highHz) = OverlapBand(GetPairCrossoverHz(lower, upper, processorSampleRateHz));

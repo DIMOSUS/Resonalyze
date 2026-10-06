@@ -75,6 +75,24 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
     });
 
     [Fact]
+    public void AFromPastTheToSetByHand_ShowsTheToTheSearchUses() => StaTest.Run(() =>
+    {
+        using var wizard = new Wizard(FourWay());
+        wizard.MaxHz(1).Value = 300m;
+        wizard.MinHz(1).Value = 600m;
+        wizard.Settle();
+
+        AutoSetupWizardSession expected = Session(FourWay());
+        AutoSetupWizardJunction middle = expected.Junctions()[1];
+        expected.Edit(middle, AutoSetupJunctionEdits.None with { MinHz = 600m });
+        JunctionWindowResolution window = AutoSetupWizardPlan.ResolvedWindows(expected)
+            .Single(item => item.Junction == middle).Window;
+        Assert.Equal(600m, wizard.MinHz(1).Value);
+        Assert.Equal(AutoSetupWizardPlan.FieldHz(window.HighHz), wizard.MaxHz(1).Value);
+        Assert.True(window.HighHz > 600, $"The To came back at {window.HighHz:0} Hz, under the From.");
+    });
+
+    [Fact]
     public void AnArrow_ReordersTheChain_MarksTheDoubtfulRows_AndKeepsAWindowSetByHand() => StaTest.Run(() =>
     {
         AutoSetupWizardSession expected = Session(FourWay());

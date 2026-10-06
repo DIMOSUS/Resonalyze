@@ -174,8 +174,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog
 
         row.Split.Checked = kept.Split;
 
-        row.MinHz.ValueChanged += (_, _) => JunctionEdited(row, edits => edits with { MinHz = row.MinHz.Value });
-        row.MaxHz.ValueChanged += (_, _) => JunctionEdited(row, edits => edits with { MaxHz = row.MaxHz.Value });
+        row.MinHz.ValueChanged += (_, _) => JunctionEdited(row, edits => edits.WithMinHz(row.MinHz.Value));
+        row.MaxHz.ValueChanged += (_, _) => JunctionEdited(row, edits => edits.WithMaxHz(row.MaxHz.Value));
         row.MinSlope.SelectedIndexChanged +=
             (_, _) => JunctionEdited(row, edits => edits with { MinSlope = (int)row.MinSlope.SelectedItem! });
         row.MaxSlope.SelectedIndexChanged +=

@@ -860,7 +860,8 @@ even when a cabin dip makes a driver look finished below it. Only safety and mis
 overrule you: a tweeter's resonance, the point its distortion says it stops being clean,
 a driver's breakup, the system band limit, the end of a band-limited sweep. Then the row
 prints where it moved the value, and its tooltip why, rather than quietly ignoring you.
-Note that 24 dB/oct always stays inside the slope window: it is what the search
+A junction pinned because a driver's sweep stopped short of where it may safely cross
+is asking for that driver to be measured over a wider band. Note that 24 dB/oct always stays inside the slope window: it is what the search
 measures everything else against.
 
 **Split** lets one junction put its low-pass and high-pass at different frequencies when

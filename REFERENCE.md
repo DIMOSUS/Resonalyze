@@ -3576,7 +3576,11 @@ resonance floor, the frequency its distortion says it stops being clean, the
 lower driver's breakup, the system band limit, the end of a band-limited
 measurement — and the row then says so under it, with the value it moved to, and
 the note's tooltip gives the reason. Set one bound past the wizard's other one and
-that one opens 1.5 octaves from yours rather than pinning the junction. A window
+that one opens 1.5 octaves from yours rather than pinning the junction; type a
+From above a To of yours, or a To below your From, and the other field goes back
+to the wizard's value. Where nothing is both measured and safe — a midrange swept
+only to 1 kHz under a tweeter that must not be crossed under 1.65 kHz — the junction
+is pinned to the safe side and the row says the sum there is not measured. A window
 that comes out as a single frequency says that too.
 
 The slope window always keeps 24 dB/oct inside it, widening if you exclude it.

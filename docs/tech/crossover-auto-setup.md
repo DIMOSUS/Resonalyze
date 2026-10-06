@@ -287,12 +287,27 @@ reports at once. Weakest first:
    level on an in-car FDW curve — and a cabin dip reads as the driver's edge: a Fiesta door woofer 20 dB down
    at 300–400 Hz and back by 700 Hz measured to 214 Hz, and a typed 300–500 Hz was refused. Inside the window
    the search reads the real curves, so a handover the drivers cannot make shows in the sum, not as a refusal.
-   What the user cannot pass is where there is no data: past the system limit, or past where a driver's
-   measurement ends (a band-limited sweep), the search would score `InterpolateDb`'s clamped skirt.
+   A crossed pair keeps the From; the dialog never sends one (`AutoSetupJunctionEdits.WithMinHz` /
+   `WithMaxHz` hand the other bound back to the wizard instead), because a row whose fields read one window
+   while the search runs another is the thing the notes exist to prevent.
 4. **Safety** — the tweeter Fs floor and the distortion knee — always applies, including where the class bounds
    had to be dropped. It used to be bundled into the same variable as the class bound and went out with it: a
    midbass measuring to 736 Hz under a tweeter measuring from 712 Hz produced a 712-736 Hz window, inside the
    dome's own resonance.
+
+Beside the four sits a **hard interval** that nothing on the list may pass: the system band limit, and where both
+curves hold data — from the first finite point of the upper driver's curve to the last of the lower's. A
+band-limited sweep leaves NaN outside its band, and `DriverResponse` reads NaN as silence (a trimmed curve would
+instead read `InterpolateDb`'s clamped end), so a window past the data scores a driver that is not there. The two
+limits are one interval, applied together: a chain of single clamps let a bound that broke both stop at the first
+it met, which put a 1 kHz request at a 500 Hz system limit above a lower driver measured only to 200 Hz.
+
+Safety is applied inside that interval, and the safety override opens and closes inside it too. When the hard
+interval and safety do not meet at all — a midrange measured to 1 kHz under a tweeter whose Fs floor is 1.65 kHz
+— there is no frequency both measured and safe, and opening 1.5 octaves above the floor would only search where
+the lower driver reads as silence. The junction is then pinned to the highest floor, as a floor wins everywhere
+else here, and the row says "Pinned to" with both bounds named: the handover is safe, and the sum there is no
+measured answer until the driver is measured further.
 
 Before any of that, the drivers may simply not overlap — the lower one is already down where the upper one has
 not started. That is NOT a safety conflict and must be separated from one, because afterwards the two look

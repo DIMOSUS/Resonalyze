@@ -25,6 +25,16 @@ internal static class VirtualCrossoverJunctions
     public static double? GapHandoverHz(
         VirtualCrossoverChannelSettings lower,
         VirtualCrossoverChannelSettings upper,
+        int? processorSampleRateHz = null) =>
+        GapCrossing(lower, upper, processorSampleRateHz) is { } crossing && crossing.LevelDb >= GapHandoverFloorDb
+            ? crossing.Hz
+            : null;
+
+    /// <summary>The slopes' crossing across a gap of an octave or more, as the chain realizes them: where, and how far down
+    /// the two meet. Null for closer corners, a missing corner, or a high-pass at or past Nyquist.</summary>
+    public static (double Hz, double LevelDb)? GapCrossing(
+        VirtualCrossoverChannelSettings lower,
+        VirtualCrossoverChannelSettings upper,
         int? processorSampleRateHz = null)
     {
         int rateHz = processorSampleRateHz is > 0 ? processorSampleRateHz.Value : UnwarpedRateHz;
@@ -43,8 +53,7 @@ internal static class VirtualCrossoverJunctions
         double[] upperLevels = FilterMagnitudes(upper, frequencies, rateHz);
         int crossing = Enumerable.Range(0, frequencies.Length)
             .MaxBy(index => Math.Min(lowerLevels[index], upperLevels[index]));
-        double crossingLevel = Math.Min(lowerLevels[crossing], upperLevels[crossing]);
-        return 20 * Math.Log10(crossingLevel) >= GapHandoverFloorDb ? frequencies[crossing] : null;
+        return (frequencies[crossing], 20 * Math.Log10(Math.Min(lowerLevels[crossing], upperLevels[crossing])));
     }
 
     // Both filtering stages as the chain runs them: a FIR's slope is its kernel's, not its edges'.

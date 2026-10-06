@@ -208,12 +208,14 @@ by the incoherent sum of exactly the summed channels.
   between its corners was measured: 22 of 46 archived sides moved, lobes and polarities among them,
   for junctions whose corners stand less than half an octave apart.
 - `HandsOver` is the one rule: both play within an octave of the pair's corner, or the slopes cross a
-  gap above the floor. `GetAdjacentPairs` and the agent's junction validator both ask it, since the
-  two had drifted: first-order corners at 100 and 800 Hz cross at 283 Hz, 9.5 dB down, and the
-  validator refused that junction because the upper driver's nominal band lies above the octave
-  around the crossing, while the panel listed it. Auto delay's own walk still builds a junction
-  between every adjacent pair of its set (the engine needs a contiguous chain); across a hole that
-  junction is the lower corner's band.
+  gap above the floor. `GetAdjacentPairs`, the agent's junction validator and Auto delay's walk all
+  ask it. The validator had drifted: first-order corners at 100 and 800 Hz cross at 283 Hz, 9.5 dB
+  down, and it refused that junction because the upper driver's nominal band lies above the octave
+  around the crossing, while the panel listed it. Auto delay's walk (`AdjacentJunctions`, also under a
+  later group's own settlement) is a chain of junctions and needs one between every two neighbours;
+  across a hole it used to build one at the lower corner's band and align two filter tails there,
+  while the panel showed no junction. Now it refuses the run, naming the pair and how far down their
+  slopes meet (`GapCrossing`): the owner's choice over aligning at the crossing however deep.
 - `IsContinuousChain`: the reference car's Rear + Sub view has two subwoofers that genuinely
   cross (below 50 Hz into 50–110 Hz) and a rear fill from 290 Hz. Per-junction figures are real;
   a total over the set is not, so no total is reported unless the set is one chain.

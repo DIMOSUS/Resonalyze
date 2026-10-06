@@ -632,13 +632,30 @@ internal static class VirtualCrossoverAutoDelay
         [.. channels.OrderBy(channel => VirtualCrossoverJunctions.BandCenterHz(channel.Settings))];
 
     /// <summary>The junctions between neighbours of a band-ordered walk, each searched in its crossover's overlap band.</summary>
+    /// <summary>The walk's junctions, one between every two neighbours by band order; a hole between two of them refuses the
+    /// run, since the walk is a chain of junctions and would otherwise align filter tails at the lower corner.</summary>
+    /// <exception cref="InvalidOperationException">Two neighbours do not hand over to each other (the panel's own rule).</exception>
     internal static List<AlignmentJunction> AdjacentJunctions(IReadOnlyList<AlignmentSnapshot> byBand)
     {
         var junctions = new List<AlignmentJunction>();
         for (int i = 0; i < byBand.Count - 1; i++)
         {
-            double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
-                SettingsOf(byBand[i]), SettingsOf(byBand[i + 1]), byBand[i].Channel.ProcessorSampleRate);
+            VirtualCrossoverChannelSettings lower = SettingsOf(byBand[i]);
+            VirtualCrossoverChannelSettings upper = SettingsOf(byBand[i + 1]);
+            int processorRate = byBand[i].Channel.ProcessorSampleRate;
+            if (!VirtualCrossoverJunctions.HandsOver(lower, upper, processorRate))
+            {
+                string where = VirtualCrossoverJunctions.GapCrossing(lower, upper, processorRate) is { } crossing
+                    ? $"their slopes meet {-crossing.LevelDb:0} dB down at {crossing.Hz:0} Hz, below the " +
+                        $"{-VirtualCrossoverJunctions.GapHandoverFloorDb:0} dB floor"
+                    : "one of them does not play within an octave of the pair's corner";
+                throw new InvalidOperationException(
+                    $"{byBand[i].Channel.Name} and {byBand[i + 1].Channel.Name} do not hand over to each other: " +
+                    $"{where}. Auto delay aligns a chain of junctions and cannot cross a hole. Bring their corners " +
+                    "closer, or disable the block that does not belong in this chain, and rerun.");
+            }
+
+            double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(lower, upper, processorRate);
             (double lowHz, double highHz) = VirtualCrossoverJunctions.OverlapBand(pairHz);
             junctions.Add(new AlignmentJunction(byBand[i], byBand[i + 1], pairHz, lowHz, highHz));
         }

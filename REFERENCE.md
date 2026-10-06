@@ -2883,6 +2883,11 @@ read where the two slopes cross (about 4.1 kHz here), not at either corner —
 in the read-out, in the Correlation list and by Auto delay alike. The rule is
 corners an octave or more apart whose slopes cross no more than 12 dB down.
 Corners closer than an octave keep the junction at the lower driver's low-pass.
+Auto delay walks a chain of junctions, so a hole between two neighbours of its
+run stops it with a message naming the pair and how far down their slopes meet:
+bring the corners closer, or disable the block that does not belong in that
+chain, and rerun. The AI assistant's junction tune follows the same rule, so a
+junction the package lists is one it can tune.
 
 The **total** needs more than one junction somewhere: it needs the set to be one
 unbroken chain. Rear + Sub on a car with two subwoofers is the case that

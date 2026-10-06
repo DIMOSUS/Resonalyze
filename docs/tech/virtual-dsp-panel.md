@@ -623,7 +623,9 @@ then refuses the bank if the panel meanwhile draws a hybrid.
   A missing source leaves the side unresolved rather than failing the load.
 - Interactive picks capture the concrete slot, settings and a revision (`BeginSourceLoad`) before awaiting:
   the side selector, Mono (which reroutes `SideState`) or a session import can change during the load. A
-  `Clear()` or a newer pick refuses the landing.
+  `Clear()` or a newer pick refuses the landing. A file dropped on a block button takes them before it yields
+  to the drop's return (a dropped capture or kernel takes only its slot and settings), so turning Mono on in
+  between clears the right slot and refuses a measurement dropped on R.
 - `TryAssignSource` is shared by interactive picks and the silent restore; it enforces the revision, the
   loopback transfer IR requirement and the sample rate. A project runs at one rate: mixed rates are refused,
   checked against every resolved side of every pair. The interactive policy can prompt; the silent restore

@@ -93,7 +93,11 @@ public partial class VirtualCrossoverPanel
 
     private async Task ChooseSourceFileAsync(VirtualCrossoverChannel channel)
     {
+        // Capture the concrete slot, settings and revision before the load's first await: side, Mono or a session import can
+        // change during it. See docs/tech/virtual-dsp-panel.md#source-loading.
         bool rightSide = channel.ActiveRight;
+        VirtualCrossoverChannelState targetState = channel.SideState(rightSide);
+        VirtualCrossoverChannelSettings targetSettings = channel.SideSettings(rightSide);
         using var dialog = new OpenFileDialog
         {
             CheckFileExists = true,
@@ -107,16 +111,17 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
-        await LoadSourceFileAsync(channel, rightSide, dialog.FileName);
+        await LoadSourceFileAsync(
+            channel, targetState, targetSettings, targetState.BeginSourceLoad(), dialog.FileName);
     }
 
-    private async Task LoadSourceFileAsync(VirtualCrossoverChannel channel, bool rightSide, string path)
+    private async Task LoadSourceFileAsync(
+        VirtualCrossoverChannel channel,
+        VirtualCrossoverChannelState targetState,
+        VirtualCrossoverChannelSettings targetSettings,
+        int revision,
+        string path)
     {
-        // Capture the concrete slot, settings and revision NOW: side, Mono or a session import can change during the load.
-        // See docs/tech/virtual-dsp-panel.md#source-loading.
-        VirtualCrossoverChannelState targetState = channel.SideState(rightSide);
-        VirtualCrossoverChannelSettings targetSettings = channel.SideSettings(rightSide);
-        int revision = targetState.BeginSourceLoad();
         pendingSourceLoads++;
         RefreshAutoActionsEnabled();
         try

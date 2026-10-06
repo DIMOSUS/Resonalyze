@@ -18,16 +18,25 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
-        // The side the file was dropped on, whatever the user switches to before the load starts.
-        bool rightSide = target.Channel.ActiveRight;
+        VirtualCrossoverChannel channel = target.Channel;
+        string? other = VirtualCrossoverDroppedFile.OtherDocument(target.Button, path);
+        // The slot the file was dropped on, taken before the first await as a pick takes it: L/R, Mono or an import can
+        // reroute the side meanwhile. See docs/tech/virtual-dsp-panel.md#source-loading.
+        bool rightSide = channel.ActiveRight;
+        VirtualCrossoverChannelState state = channel.SideState(rightSide);
+        VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
+        // Only a measurement that will load takes a revision: any other would refuse a source load in flight.
+        int revision = other == null && target.Button == VirtualCrossoverDropButton.Source
+            ? state.BeginSourceLoad()
+            : 0;
         // Explorer waits inside the drop until it returns, and a response file stops to ask what it carries.
         await Task.Yield();
-        if (IsDisposed || !channelControls.ContainsKey(target.Channel))
+        if (IsDisposed || !channelControls.ContainsKey(channel))
         {
             return;
         }
 
-        if (VirtualCrossoverDroppedFile.OtherDocument(target.Button, path) is { } other)
+        if (other != null)
         {
             ShowMessage(
                 $"'{Path.GetFileName(path)}' is {other}.",
@@ -40,15 +49,15 @@ public partial class VirtualCrossoverPanel
         switch (target.Button)
         {
             case VirtualCrossoverDropButton.Source:
-                await LoadSourceFileAsync(target.Channel, rightSide, path);
+                await LoadSourceFileAsync(channel, state, settings, revision, path);
                 break;
 
             case VirtualCrossoverDropButton.SpatialAverage:
-                AttachSpatialAverage(target.Channel, rightSide, path);
+                AttachSpatialAverage(channel, state, settings, path);
                 break;
 
             default:
-                ImportFirFile(target.Channel, rightSide, path);
+                ImportFirFile(channel, settings, path);
                 break;
         }
     }

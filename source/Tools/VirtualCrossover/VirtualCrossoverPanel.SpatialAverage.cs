@@ -95,13 +95,15 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
-        AttachSpatialAverage(channel, channel.ActiveRight, dialog.FileName);
+        AttachSpatialAverage(channel, channel.SideState(channel.ActiveRight), channel.Settings, dialog.FileName);
     }
 
-    private void AttachSpatialAverage(VirtualCrossoverChannel channel, bool rightSide, string path)
+    private void AttachSpatialAverage(
+        VirtualCrossoverChannel channel,
+        VirtualCrossoverChannelState state,
+        VirtualCrossoverChannelSettings settings,
+        string path)
     {
-        VirtualCrossoverChannelState state = channel.SideState(rightSide);
-        VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
         try
         {
             SpatialAverageFileSettings? answers = null;

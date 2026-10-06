@@ -35,6 +35,21 @@ public sealed class ToggleCheckBoxTests
     });
 
     [Fact]
+    public void TheMutedTextLook_DropsTheLitLookUntilItIsLifted() => StaTest.Run(() =>
+    {
+        using var on = new ToggleCheckBox { Checked = true };
+        using var toggle = new ToggleCheckBox { Checked = true };
+
+        UiStyle.SetTextEnabledLook(toggle, false, interactive: true);
+        Assert.NotEqual(on.FlatAppearance.BorderColor, toggle.FlatAppearance.BorderColor);
+        Assert.False(toggle.AutoCheck);
+
+        UiStyle.SetTextEnabledLook(toggle, true, interactive: true);
+        Assert.Equal(on.FlatAppearance.BorderColor, toggle.FlatAppearance.BorderColor);
+        Assert.True(toggle.AutoCheck);
+    });
+
+    [Fact]
     public void UnmutingATickedToggleLightsItAgain() => StaTest.Run(() =>
     {
         using var on = new ToggleCheckBox { Checked = true };

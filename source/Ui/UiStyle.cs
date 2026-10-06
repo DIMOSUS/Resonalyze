@@ -38,6 +38,9 @@ internal static class UiStyle
                 radioButton.AutoCheck = enabled;
                 radioButton.TabStop = enabled;
                 break;
+            case ToggleCheckBox toggle:
+                toggle.Muted = !enabled;
+                break;
             case CheckBox checkBox:
                 checkBox.AutoCheck = enabled;
                 checkBox.TabStop = enabled;

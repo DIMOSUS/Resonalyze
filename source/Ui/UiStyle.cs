@@ -7,7 +7,7 @@ internal static class UiStyle
     private static readonly ConditionalWeakTable<Control, object> enabledForeColors = new();
 
     // WinForms paints disabled Label/CheckBox/RadioButton text in a system grey that ignores the palette,
-    // so they stay Enabled with muted text instead. interactive:true also stops toggling and focus.
+    // so they stay Enabled with muted text instead. interactive:true also stops toggling and leaves the tab order.
     public static void SetTextEnabledLook(Control control, bool enabled, bool interactive = false)
     {
         if (enabled)

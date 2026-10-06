@@ -363,8 +363,9 @@ changed basis when the user glanced at the phase view would read as two imbalanc
 - The hybrid is magnitude-only, so the toggle is **muted, not unticked**, in other views. It is coloured
   by hand rather than through `UiStyle.SetTextEnabledLook`, which memorizes the colour it mutes (this
   toggle wears a reminder colour when live and unticked); `ToggleCheckBox.Muted` carries the disabling
-  (no click, no focus, no lit fill or frame) because WinForms' disabled paint is near-black on the dark
-  theme. `hybridAvailable` caches the verdict because the Enabled state cannot stand in for it.
+  (no toggling by the user, out of the tab order, the faint frame instead of the lit fill and frame)
+  because WinForms' disabled paint is near-black on the dark theme. `hybridAvailable` caches the
+  verdict because the Enabled state cannot stand in for it.
 - **Live, available and unticked** is shown in the error colour: captures are attached and the plot is
   drawing one position's dips — a tune about to be fitted to the wrong curve. Only the label is red: the
   frame of every `ToggleCheckBox` says on or off, so a red frame on an unticked toggle cannot read as lit.

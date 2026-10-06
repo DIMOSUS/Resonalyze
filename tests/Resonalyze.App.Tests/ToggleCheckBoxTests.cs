@@ -29,6 +29,7 @@ public sealed class ToggleCheckBoxTests
         Assert.NotEqual(toggle.ForeColor, toggle.FlatAppearance.BorderColor);
         Assert.Equal(lit, toggle.FlatAppearance.CheckedBackColor == on.FlatAppearance.CheckedBackColor);
         Assert.Equal(!muted, toggle.AutoCheck);
+        Assert.Equal(!muted, toggle.TabStop);
         Assert.Equal(
             ticked ? toggle.FlatAppearance.CheckedBackColor : Color.Empty,
             toggle.FlatAppearance.MouseOverBackColor);

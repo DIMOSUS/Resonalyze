@@ -14,7 +14,8 @@ public sealed class ToggleCheckBox : ReleaseClickCheckBox
         PaintState();
     }
 
-    /// <summary>Keeps the tick but takes no clicks or focus and drops the lit look: the toggle does not apply here.</summary>
+    /// <summary>Keeps the tick, ignores the user's toggling (AutoCheck), leaves the tab order and drops the lit look: the
+    /// toggle does not apply here. Click still fires, so handlers belong on CheckedChanged.</summary>
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool Muted

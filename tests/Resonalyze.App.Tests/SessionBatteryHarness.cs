@@ -154,6 +154,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         if (stereo != null)
         {
             TwinSums(channels, stereo, name, report);
+            CentreSums(project, channels, stereo, name, report);
         }
 
         foreach (string line in log.ToString().Split('\n'))
@@ -165,7 +166,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                 line.Contains("low-junction polarity") ||
                 line.Contains("direct lobe") || line.Contains("mono ") ||
                 line.Contains("stereo branch") || line.Contains("[diag]") ||
-                line.Contains("polish") || line.Contains("Co-move") ||
+                line.Contains("polish") || line.Contains("Co-move") || line.Contains("cross-side prior") ||
                 line.Contains("Reference:") || line.Contains("Channel ") || line.Contains("Bridge "))
             {
                 report.AppendLine("    | " + line.Trim());
@@ -176,9 +177,30 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         return comparisons;
     }
 
+    // A quarter second with a raised-cosine tail, read at the band's own frequencies.
+    private static Complex[] Spectrum(ProcessedChannel item, double[] frequencies)
+    {
+        int count = Math.Min(item.ImpulseResponse.Length, item.SampleRate / 4);
+        int fade = count / 4;
+        return Array.ConvertAll(frequencies, hz =>
+        {
+            double step = -2.0 * Math.PI * hz / item.SampleRate;
+            Complex sum = Complex.Zero;
+            for (int i = 0; i < count; i++)
+            {
+                double window = i < count - fade
+                    ? 1.0
+                    : 0.5 * (1.0 + Math.Cos(Math.PI * (i - (count - fade)) / fade));
+                sum += item.ImpulseResponse[i].Real * window * Complex.FromPolarCoordinates(1.0, step * i);
+            }
+
+            return sum;
+        });
+    }
+
     /// <summary>How the two sides of each low stereo pair sum over the pair's own band: L+R against their power sum
     /// (+3 dB in phase, 0 unrelated), saved and proposed, and where the far side would have to stand for the most. The
-    /// summation loss judges one side's junctions and cannot see this. See docs/tech/auto-alignment.md#a-low-pair-stands-on-it.</summary>
+    /// summation loss judges one side's junctions and cannot see this. See docs/tech/auto-alignment.md#a-low-pair-stands-on-its-own-sum.</summary>
     private static void TwinSums(
         List<VirtualCrossoverChannel> channels,
         StereoProposal stereo,
@@ -200,27 +222,6 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                     channel.Pair.Enabled && !channel.Pair.Bypass && !channel.Pair.Mono &&
                     channel.TransferImpulseResponse != null).ToList(),
                 channel => proposed ? stereo.For(channel, right) : null);
-        }
-
-        // A quarter second with a raised-cosine tail, read at the band's own frequencies.
-        static Complex[] Spectrum(ProcessedChannel item, double[] frequencies)
-        {
-            int count = Math.Min(item.ImpulseResponse.Length, item.SampleRate / 4);
-            int fade = count / 4;
-            return Array.ConvertAll(frequencies, hz =>
-            {
-                double step = -2.0 * Math.PI * hz / item.SampleRate;
-                Complex sum = Complex.Zero;
-                for (int i = 0; i < count; i++)
-                {
-                    double window = i < count - fade
-                        ? 1.0
-                        : 0.5 * (1.0 + Math.Cos(Math.PI * (i - (count - fade)) / fade));
-                    sum += item.ImpulseResponse[i].Real * window * Complex.FromPolarCoordinates(1.0, step * i);
-                }
-
-                return sum;
-            });
         }
 
         static double GainDb(Complex[] left, Complex[] right, double[] frequencies, double rightLaterMs)
@@ -270,6 +271,66 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                 $"    twin {channel.Name} {lowHz:0}-{highHz:0} Hz: L+R over the power sum, saved {savedGain:+0.00;-0.00} dB, proposed {proposedGain:+0.00;-0.00} dB; best {bestGain:+0.00;-0.00} dB with the right side {bestMs:+0.00;-0.00} ms off the proposal"));
             report.AppendLine(FormattableString.Invariant(
                 $"TWIN\t{name}\t{channel.Name}\t{lowHz:0}\t{highHz:0}\t{savedGain:0.00}\t{proposedGain:0.00}\t{bestGain:0.00}\t{bestMs:0.00}"));
+        }
+    }
+
+    /// <summary>A centre-panned signal plays every channel of both sides: the whole sum against its coherent ceiling
+    /// over each junction's band, mean and worst bin, saved and proposed.</summary>
+    private static void CentreSums(
+        VirtualCrossoverProjectFile project,
+        List<VirtualCrossoverChannel> channels,
+        StereoProposal stereo,
+        string name,
+        StringBuilder report)
+    {
+        const int Bins = 48;
+
+        List<ProcessedChannel> Side(bool right, bool proposed)
+        {
+            foreach (VirtualCrossoverChannel member in channels)
+            {
+                member.ActiveRight = right;
+            }
+
+            return Process(
+                channels.Where(channel =>
+                    channel.Pair.Enabled && !channel.Pair.Bypass &&
+                    channel.TransferImpulseResponse != null).ToList(),
+                channel => proposed ? stereo.For(channel, right) : null);
+        }
+
+        (double Mean, double Worst) Centre(bool proposed, double lowHz, double highHz)
+        {
+            double[] frequencies = Enumerable.Range(0, Bins)
+                .Select(i => lowHz * Math.Pow(highHz / lowHz, i / (Bins - 1.0)))
+                .ToArray();
+            var sum = new Complex[Bins];
+            var ceiling = new double[Bins];
+            foreach (bool right in new[] { false, true })
+            {
+                foreach (ProcessedChannel item in Side(right, proposed))
+                {
+                    Complex[] spectrum = Spectrum(item, frequencies);
+                    for (int bin = 0; bin < Bins; bin++)
+                    {
+                        sum[bin] += spectrum[bin];
+                        ceiling[bin] += spectrum[bin].Magnitude;
+                    }
+                }
+            }
+
+            double[] loss = sum.Select((value, bin) => 20.0 * Math.Log10(value.Magnitude / ceiling[bin])).ToArray();
+            return (loss.Average(), loss.Min());
+        }
+
+        foreach (VirtualCrossoverMetric.Entry row in Judge(project, Side(false, false)).Where(entry => !entry.IsTotal))
+        {
+            (double Mean, double Worst) saved = Centre(false, row.LowHz, row.HighHz);
+            (double Mean, double Worst) proposed = Centre(true, row.LowHz, row.HighHz);
+            report.AppendLine(FormattableString.Invariant(
+                $"    centre {row.Junction} {row.LowHz:0}-{row.HighHz:0} Hz: both sides' sum to the coherent ceiling, mean / worst, saved {saved.Mean:0.00} / {saved.Worst:0.00} dB, proposed {proposed.Mean:0.00} / {proposed.Worst:0.00} dB"));
+            report.AppendLine(FormattableString.Invariant(
+                $"CENTRE\t{name}\t{row.Junction}\t{row.LowHz:0}\t{row.HighHz:0}\t{saved.Mean:0.00}\t{saved.Worst:0.00}\t{proposed.Mean:0.00}\t{proposed.Worst:0.00}"));
         }
     }
 

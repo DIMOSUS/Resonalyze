@@ -57,11 +57,16 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
+        ImportFirFile(channel, channel.Settings, dialog.FileName);
+    }
+
+    private void ImportFirFile(VirtualCrossoverChannel channel, VirtualCrossoverChannelSettings settings, string path)
+    {
         FirFilter kernel;
         try
         {
             // Not a kernel: the assignment below would silently drop the existing one.
-            kernel = FirFilterFiles.Load(dialog.FileName);
+            kernel = FirFilterFiles.Load(path);
         }
         catch (Exception exception)
         {
@@ -69,9 +74,8 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
-        VirtualCrossoverChannelSettings settings = channel.Settings;
         settings.Fir = kernel;
-        settings.FirSourceName = Path.GetFileName(dialog.FileName);
+        settings.FirSourceName = Path.GetFileName(path);
         // A file is taps only, not a designed crossover.
         settings.FirDesign = null;
         UpdateFirReadout(channel);

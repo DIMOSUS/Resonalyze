@@ -629,6 +629,119 @@ public sealed class AnalyzerWiringTests : IDisposable
         });
     }
 
+    [Fact]
+    public void AFileDroppedOnAVirtualDspBlockButton_LandsInThatBlock_NotInTheAnalyzers()
+    {
+        string path = WriteMeasurement("tweeter left.json", peak: 240);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            var messages = new List<string>();
+            (VirtualCrossoverChannel channel, VirtualCrossoverChannelControl card) = OpenVirtualDsp(analyzer, messages);
+
+            Assert.Equal(DragDropEffects.None, Drag(card.SourceButton, "OnDragOver", "sweep.wav").Effect);
+            Assert.Equal(DragDropEffects.Copy, Drag(card.SourceButton, "OnDragOver", path).Effect);
+
+            Drag(card.SpatialAverageButton, "OnDragDrop", path);
+            PumpUntil(
+                () => messages.Count == 1 && TakesDrops(card, path),
+                "name the measurement dropped on MMM and finish");
+            Drag(card.SourceButton, "OnDragDrop", path);
+            // The load starts after the drop returns; a side switched in between does not take the file.
+            Assert.True(analyzer.PressKey(Keys.R));
+            PumpUntil(
+                () => channel.SideState(rightSide: false).TransferImpulseResponse != null,
+                "load the measurement dropped on Source");
+
+            Assert.Contains("tweeter left.json", messages.Single());
+            Assert.Null(channel.SideState(rightSide: false).SpatialAverage);
+            Assert.Null(channel.SideSettings(rightSide: false).SpatialAveragePath);
+            Assert.Equal("tweeter left.json", channel.SideSettings(rightSide: false).DisplayName);
+            Assert.Equal(path, channel.SideSettings(rightSide: false).SourceFilePath);
+            Assert.Null(channel.SideState(rightSide: true).TransferImpulseResponse);
+            Assert.False(analyzer.Document.HasResult);
+        });
+    }
+
+    [Fact]
+    public void AFileDroppedOnAVirtualDspBlockButton_KeepsTheSlotItWasDroppedOn_UntilItLoads()
+    {
+        string measurement = WriteMeasurement("tweeter right.json", peak: 240);
+        string kernel = Path.Combine(directory, "tweeter right.wav");
+        FirFilterFiles.Save(kernel, new FirFilter([0.5, 0.25, -0.125]), SampleRate, null);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            (VirtualCrossoverChannel channel, VirtualCrossoverChannelControl card) = OpenVirtualDsp(analyzer, []);
+            Assert.True(analyzer.PressKey(Keys.R));
+
+            Drag(card.FirButton, "OnDragDrop", kernel);
+            Assert.True(analyzer.PressKey(Keys.L));
+            PumpUntil(
+                () => channel.Pair.Right.Fir != null && TakesDrops(card, measurement),
+                "import the kernel dropped on FIR");
+
+            Assert.Equal("tweeter right.wav", channel.Pair.Right.FirSourceName);
+            Assert.Null(channel.Pair.Left.Fir);
+
+            // Mono clears the right slot it reroutes, so the measurement dropped there just before lands on neither.
+            Assert.True(analyzer.PressKey(Keys.R));
+            Drag(card.SourceButton, "OnDragDrop", measurement);
+            card.MonoCheckBox.Checked = true;
+            PumpUntil(() => TakesDrops(card, measurement), "finish the drop on Source");
+
+            Assert.True(channel.Pair.Mono);
+            Assert.Null(channel.PhysicalSideState(rightSide: false).TransferImpulseResponse);
+            Assert.Null(channel.PhysicalSideState(rightSide: true).TransferImpulseResponse);
+            Assert.False(channel.Pair.Left.HasSource);
+            Assert.False(channel.Pair.Right.HasSource);
+        });
+    }
+
+    private static (VirtualCrossoverChannel Channel, VirtualCrossoverChannelControl Card) OpenVirtualDsp(
+        LiveAnalyzer analyzer, List<string> messages)
+    {
+        var panel = analyzer.Field<VirtualCrossoverPanel>("virtualCrossoverPanel");
+        panel.ShowMessage = (text, _, _, _) =>
+        {
+            messages.Add(text);
+            return DialogResult.OK;
+        };
+        analyzer.Select(ModeTab.ToolsVirtualCrossover);
+        VirtualCrossoverChannel channel = panel.Session.Channels[0];
+        VirtualCrossoverChannelControl card = panel.Controls.Find("channelListPanel", searchAllChildren: true)
+            .Single().Controls.OfType<VirtualCrossoverChannelControl>()
+            .Single(card => card.ChannelName == channel.Name);
+        // The drop's awaits resume through the form's context, as on the real UI thread.
+        SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
+        return (channel, card);
+    }
+
+    // One drop at a time: the window offers the next once the last has finished.
+    private static bool TakesDrops(VirtualCrossoverChannelControl card, string path) =>
+        Drag(card.SourceButton, "OnDragOver", path).Effect == DragDropEffects.Copy;
+
+    private static DragEventArgs Drag(Control control, string method, string path)
+    {
+        var payload = new DataObject();
+        payload.SetData(DataFormats.FileDrop, new[] { path });
+        var args = new DragEventArgs(payload, 0, 0, 0, DragDropEffects.All, DragDropEffects.None);
+        typeof(Control).GetMethod(method, Hidden)!.Invoke(control, [args]);
+        return args;
+    }
+
+    private static void PumpUntil(Func<bool> condition, string what)
+    {
+        DateTime deadline = DateTime.UtcNow.AddSeconds(30);
+        while (!condition() && DateTime.UtcNow < deadline)
+        {
+            StaTest.Pump();
+            Thread.Sleep(5);
+        }
+
+        Assert.True(condition(), $"The drop did not {what}.");
+    }
+
     private sealed class LiveAnalyzer : IDisposable
     {
         public LiveAnalyzer()

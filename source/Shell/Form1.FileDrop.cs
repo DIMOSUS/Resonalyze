@@ -1,6 +1,7 @@
 namespace Resonalyze;
 
-// Explorer drops take the Load button's routing by document kind; a drop on the Compare button is the reference instead.
+// Explorer drops take the Load button's routing by document kind; a drop on the Compare button is the reference instead,
+// and one on a Virtual DSP block's file button lands in that block.
 public partial class Form1
 {
     // One at a time: concurrent opens would each install a measurement.
@@ -9,12 +10,14 @@ public partial class Form1
     private void EnableFileDrop() =>
         FileDropTarget.Attach(this, CanOpenDroppedFiles, OpenDroppedFiles);
 
-    // Runs on every drag move, so extension only; the Compare button takes only .json.
+    // Runs on every drag move, so extension only; the Compare button takes only .json, a block button what its pick opens.
     private bool CanOpenDroppedFiles(Control over, IReadOnlyList<string> files) =>
         files.Count == 1 &&
         !openingDroppedFile &&
         !analyzerDocument.IsBusy &&
-        (over == buttonCompare
+        (virtualCrossoverPanel.OwnsFileDrop(over)
+            ? virtualCrossoverPanel.TakesFileDrop(over, files[0])
+            : over == buttonCompare
             ? DroppedFile.HasJsonExtension(files[0])
             : DroppedFile.HasOpenableExtension(files[0]));
 
@@ -28,7 +31,11 @@ public partial class Form1
         openingDroppedFile = true;
         try
         {
-            if (over == buttonCompare)
+            if (virtualCrossoverPanel.OwnsFileDrop(over))
+            {
+                await virtualCrossoverPanel.DropFileAsync(over, files[0]);
+            }
+            else if (over == buttonCompare)
             {
                 await OpenDroppedCompareFileAsync(files[0]);
             }

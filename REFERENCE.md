@@ -1356,7 +1356,7 @@ while it hovers, the cursor showing that no drop will happen. The same refusal
 covers a drag arriving while a sweep is running, or while a dialog is up: a file
 opened underneath one would replace the very measurement it is asking about.
 
-The one exception is the [**Compare**](#compare) button. An impulse response
+One exception is the [**Compare**](#compare) button. An impulse response
 dropped on it becomes the Compare reference instead of replacing the
 measurement — the button's own **Choose file…** without the dialog. The button
 takes only what that dialog offers, a `.json`: a sweep recording or a REW export
@@ -1364,6 +1364,18 @@ is refused while it hovers there, and any other Resonalyze document (a capture, 
 session, an overlay slot) is named for what it is rather than loaded as a
 reference. A capture or a session dropped elsewhere on the window still opens
 where it belongs.
+
+The [Virtual DSP](#virtual-dsp) block buttons are the other exception: a file
+dropped on one lands in that block, on the side shown, as the button's own file
+pick would put it. On **Source...** an impulse response becomes the block's
+measurement (**Choose file...** without the dialog); on **MMM** a capture or a
+response file is attached as its
+[spatial average](#hybrid-spatial-averages-under-the-prediction), a response file
+still asking what it carries; on **FIR** a kernel is imported. Each button takes
+only what its dialog offers — a `.json` on Source, a `.json` or `.txt` on MMM, a
+`.wav`, `.fir` or `.txt` on FIR — and refuses anything else while it hovers. A
+Resonalyze document of the wrong kind, such as a capture on Source or a measurement
+on MMM, is named for what it is and where it goes rather than loaded.
 
 ### Sending a measurement to REW
 
@@ -2461,6 +2473,11 @@ target curve, which the EQ Wizard owns. Every channel in a
 project must share one sample rate — the rate they were MEASURED at, which is a
 separate question from the rate the processor runs at (see
 [DSP processor](#dsp-processor)).
+
+An impulse response dragged from Explorer onto the source button loads into that
+side as **Choose file...** does; **MMM** and **FIR** take a dropped capture and
+kernel the same way (see
+[Dropping a file on the window](#dropping-a-file-on-the-window)).
 
 The source button's menu also carries **Open in analyzers**: it loads that
 side's own measurement into the analysis modes and lands on Frequency Response,

@@ -740,7 +740,8 @@ the rule `OverlayTargets.SupportsMode` applies too); smoothing is dead in impuls
 stays live and switches to the magnitude view. The loss selector also picks the read-out column's window, so it
 stays live in phase and impulse, and is muted only where no loss is quoted. Muting reads the intent, not a
 child's `Enabled`, which reads false through a parent disabled during a load. The Sum toggle keeps one answer
-per view (the impulse view writes none). The Target and Hybrid toggles are muted by hand, not through
+per view (the impulse view writes none). On a `ToggleCheckBox` the helper's interactive mute sets `Muted`, so a muted
+Sum keeps its tick without the lit fill and frame. The Target and Hybrid toggles are muted by hand, not through
 `UiStyle.SetTextEnabledLook`, because that helper memorizes the colour it muted and these toggles are
 recoloured (with the target, or as an unused-capture reminder). The DSP-mode radios span two containers, so
 exclusivity is wired by hand and the other container is cleared first so `OnDspPlotModeChanged` never sees

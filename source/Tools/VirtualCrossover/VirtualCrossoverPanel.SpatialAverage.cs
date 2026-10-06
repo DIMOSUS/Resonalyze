@@ -320,8 +320,7 @@ public partial class VirtualCrossoverPanel
             ? UiPalette.TextDisabled
             // Available but unticked: the plot ignores attached captures, so warn in the error colour.
             : checkBoxHybrid.Checked ? hybridToggleColor : UiPalette.Error;
-        checkBoxHybrid.AutoCheck = live;
-        checkBoxHybrid.TabStop = live;
+        checkBoxHybrid.Muted = !live;
         toolTip.SetToolTip(
             checkBoxHybrid,
             !hybridAvailable

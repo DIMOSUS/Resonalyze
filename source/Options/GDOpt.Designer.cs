@@ -33,7 +33,7 @@ namespace Resonalyze.Options
             labelFdwCycles = new Label();
             comboFdwCycles = new ThemedComboBox();
             labelGateOffset = new Label();
-            checkAutoFit = new ReleaseClickCheckBox();
+            checkAutoFit = new ToggleCheckBox();
             numericGateOffset = new ThemedNumericUpDown();
             label9 = new Label();
             labelMinFrequency = new Label();
@@ -114,7 +114,6 @@ namespace Resonalyze.Options
             //
             checkAutoFit.Appearance = Appearance.Button;
             checkAutoFit.BackColor = UiPalette.ControlSurface;
-            checkAutoFit.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
             checkAutoFit.FlatStyle = FlatStyle.Flat;
             checkAutoFit.ForeColor = UiPalette.TextPrimary;
             checkAutoFit.Location = new Point(104, 67);
@@ -372,7 +371,7 @@ namespace Resonalyze.Options
         private Label labelFdwCycles;
         private ThemedComboBox comboFdwCycles;
         private Label labelGateOffset;
-        private ReleaseClickCheckBox checkAutoFit;
+        private ToggleCheckBox checkAutoFit;
         private ThemedNumericUpDown numericGateOffset;
         private Label label9;
         private Label labelMinFrequency;

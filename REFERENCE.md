@@ -2434,7 +2434,10 @@ the two sides' crossovers, polarity and FIR filters in step while it is on (also
 and a **Mono** toggle turns a pair into a single shared driver — the typical
 one-subwoofer car layout — feeding both sides' sums. The block's toggles (the
 curve toggles, **Bypass**, **Mono**, **L+R** and **Inv**) are buttons that stay
-pressed while on. The setup grows from two up
+pressed while on — filled blue inside a bright frame, where an off one is dark with a
+faint frame. A toggle that is on but does not apply right now (a **Mono** the zone
+forces, **Hybrid** on a phase view) keeps a pale fill with the faint frame. **Sum**,
+**Hybrid**, **Lock** and the Gate dialog's **Auto** look the same way. The setup grows from two up
 to twelve pairs with **Add** and **Remove** under the block list, and **+/−**
 folds a block down to its header. **Reset** beside them starts the panel over:
 every block back to an empty default one, the list back to three, and the
@@ -3101,7 +3104,8 @@ carries no phase. The tick itself survives all of that: it says what you want
 drawn, so re-attaching a capture brings the hybrid straight back instead of
 sending you to find the checkbox again.
 
-Where it is live and **not** ticked, the label turns red. Every playing channel
+Where it is live and **not** ticked, the label turns red — on a dark button with a
+faint frame, not the blue framed fill of a ticked toggle. Every playing channel
 has an average attached and the plot is drawing one microphone position's dips
 anyway — which is a tune about to be fitted to the wrong curve, and the one state
 of this toggle worth interrupting for. It says nothing on a view that cannot draw

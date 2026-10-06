@@ -11,18 +11,24 @@ public sealed class AgentJunctionTuneReviewTests
         new(family, hz, slope);
 
     // A sub (mono, LP 80), B mid (BP 80–2000), C tweeter (HP 2000, 48 dB/oct), D rear (HP 100, own group).
+    // With gentleGap the sub stops at 100 Hz and the mid starts at 800, both first-order: a gap whose slopes cross.
     private static AgentSessionSnapshot Session(
-        bool cMeasured = true, bool cEnabled = true, bool bBypass = false, string? lastPackageId = Package)
+        bool cMeasured = true, bool cEnabled = true, bool bBypass = false, string? lastPackageId = Package,
+        bool gentleGap = false)
     {
         var a = new VirtualCrossoverChannelSettings
         {
             CrossoverKind = CrossoverKind.LowPass,
-            LowPassEdge = Edge(CrossoverFilterFamily.LinkwitzRiley, 80, 24)
+            LowPassEdge = gentleGap
+                ? Edge(CrossoverFilterFamily.Butterworth, 100, 6)
+                : Edge(CrossoverFilterFamily.LinkwitzRiley, 80, 24)
         };
         VirtualCrossoverChannelSettings B() => new()
         {
             CrossoverKind = CrossoverKind.BandPass,
-            HighPassEdge = Edge(CrossoverFilterFamily.LinkwitzRiley, 80, 24),
+            HighPassEdge = gentleGap
+                ? Edge(CrossoverFilterFamily.Butterworth, 800, 6)
+                : Edge(CrossoverFilterFamily.LinkwitzRiley, 80, 24),
             LowPassEdge = Edge(CrossoverFilterFamily.Butterworth, 2_000, 48),
             PeqBands = [new PeqBand(820, 2.1, -2.4)]
         };
@@ -103,6 +109,19 @@ public sealed class AgentJunctionTuneReviewTests
         Assert.True(left.Applicable);
         Assert.True(right.Applicable);
         Assert.Equal("A: LP LR24 80 Hz; B: HP LR24 80 Hz", left.Current);
+    }
+
+    [Fact]
+    public void Review_TakesAJunctionAcrossAWideGentleGap_AsThePanelListsIt()
+    {
+        // First-order corners at 100 and 800 Hz cross at 283 Hz, 9.5 dB down: the panel lists the junction, and the
+        // mid's nominal band lying above the octave around that crossing must not refuse it here.
+        AgentOperationVerdict verdict = AgentProposalValidator.Review(
+            Proposal(Tune("left:A-B")), Session(gentleGap: true)).Verdicts[0];
+
+        Assert.True(verdict.Applicable);
+        Assert.DoesNotContain("do not hand over", verdict.Message);
+        Assert.Equal("A: LP BW6 100 Hz; B: HP BW6 800 Hz", verdict.Current);
     }
 
     [Theory]

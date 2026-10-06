@@ -1427,7 +1427,10 @@ whose link band ends below the localization region (`IsLowPair`: band top under
    own arrival read and the cabin's geometry from the donors are named beside it in the log and nothing
    more. The scene offset is not applied: it is a localization-band instruction, and below that region
    the pair's own sum is the scene. Where the sum has no optimum (a flat sum, an optimum only at the
-   scan's edge) the arrival ladder stands.
+   scan's edge), or one that is not decisive — under `DecisiveGainDb` (0.5 dB: a side 26 dB under its
+   twin is not in the pair) or within `DecisiveLobeMarginDb` (0.5 dB) of the runner-up lobe, as two
+   unrelated records sum — the arrival ladder stands and the log says so. The archive's pairs add
+   1.6-2.7 dB with their runner-ups 1.8-2.5 dB under.
    - The optimum is unique in every archived session with a low pair (22 of 23; the FIR session has
      none), 1.54-2.26 ms in the reference car against the geometry's 1.63-1.74 and its tunes' 1.0-2.14.
    - The judge is the power ratio, not a junction loss. Scored as a junction is, by the dip-penalized

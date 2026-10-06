@@ -10,7 +10,15 @@ public sealed record StereoPairSumReading(
     double LeftLaterMs,
     double GainDb,
     double? RunnerUpMs,
-    double? RunnerUpGainDb);
+    double? RunnerUpGainDb)
+{
+    /// <summary>Whether the optimum may hold the pair: two sides that add (<see cref="StereoPairSum.DecisiveGainDb"/>) and
+    /// a lobe that stands clear of the next (<see cref="StereoPairSum.DecisiveLobeMarginDb"/>). Unrelated sides sum to a
+    /// few hundredths of a dB on a lobe no better than its neighbours, and a hard hold on such a lobe is a guess.</summary>
+    public bool IsDecisive =>
+        GainDb >= StereoPairSum.DecisiveGainDb &&
+        (RunnerUpGainDb is not { } runnerUp || GainDb - runnerUp >= StereoPairSum.DecisiveLobeMarginDb);
+}
 
 /// <summary>The L/R split a low pair asks for, read from the pair itself: its arrivals are the cabin's least reliable
 /// read, its sum is not. See docs/tech/auto-alignment.md#a-low-pair-stands-on-its-own-sum.</summary>
@@ -33,6 +41,13 @@ public static class StereoPairSum
 
     /// <summary>A pair's band is read no lower than this: below it the records hold rumble, not the pair.</summary>
     public const double FloorHz = 30.0;
+
+    /// <summary>The least the sides must add at the optimum for it to hold them: a side 26 dB under its twin adds 0.4 dB
+    /// and is not in the pair; the archive's pairs add 1.6-2.7.</summary>
+    public const double DecisiveGainDb = 0.5;
+
+    /// <summary>The least the optimum must stand above the runner-up lobe: the archive's runner-ups sit 1.8-2.5 dB under.</summary>
+    public const double DecisiveLobeMarginDb = 0.5;
 
     /// <summary>The strongest optimum of the sides' sum inside <see cref="ScanReachMs"/> of <paramref name="centreMs"/>,
     /// or null where the band holds no energy or the sum has no optimum there. <paramref name="invertRight"/> reads the

@@ -78,6 +78,31 @@ public sealed class VirtualCrossoverJunctionsTests
     }
 
     [Theory]
+    // Matched corners, and a gap whose slopes cross above the floor, hand over; fourth-order slopes 1.4 octaves apart do not.
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 24, 80, 80, true)]
+    [InlineData(CrossoverFilterFamily.Butterworth, 12, 2_500, 6_800, true)]
+    [InlineData(CrossoverFilterFamily.LinkwitzRiley, 24, 110, 290, false)]
+    // First-order slopes three octaves apart cross at 283 Hz, 9.5 dB down: a handover, although the upper driver's
+    // nominal band starts well above the octave around that crossing.
+    [InlineData(CrossoverFilterFamily.Butterworth, 6, 100, 800, true)]
+    public void HandsOver_IsTheOneRuleForAJunctionOrAHole(
+        CrossoverFilterFamily family, int slope, double lowPassHz, double highPassHz, bool expected)
+    {
+        var lower = new VirtualCrossoverChannelSettings
+        {
+            CrossoverKind = CrossoverKind.LowPass,
+            LowPassEdge = new CrossoverEdge(family, lowPassHz, slope)
+        };
+        var upper = new VirtualCrossoverChannelSettings
+        {
+            CrossoverKind = CrossoverKind.HighPass,
+            HighPassEdge = new CrossoverEdge(family, highPassHz, slope)
+        };
+
+        Assert.Equal(expected, VirtualCrossoverJunctions.HandsOver(lower, upper, 96_000));
+    }
+
+    [Theory]
     // Second-order corners at 10 and 20 kHz meet 8 dB down on a 96 kHz processor, and 14 dB down on a 48 kHz one,
     // whose high-pass the bilinear warp steepens towards Nyquist: there the gap is a hole.
     [InlineData(96_000, 14_348)]

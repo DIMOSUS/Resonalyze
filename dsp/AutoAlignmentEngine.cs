@@ -3148,25 +3148,36 @@ public static class AutoAlignmentEngine
                     leftSnapshot.ValidRange, rightSnapshot.ValidRange,
                     centreMs: -twin.DelayMs) is { } pairSum)
             {
-                // The scene offset is a localization-band instruction; below that region the pair's own sum is the scene.
-                double sumTarget = -pairSum.LeftLaterMs;
-                string ownRead = measured.Reads is { } reads
-                    ? $"; the pair's own {usedLowHz:0}-{usedHighHz:0} Hz read, " +
-                        $"{reads.Right.FirstArrivalDelayMilliseconds - reads.Left.FirstArrivalDelayMilliseconds + twin.DelayMs:+0.000;-0.000} ms, set aside"
-                    : anyLatch ? "; the pair's own arrivals latch on modes" : "; the pair's own arrivals are unmeasurable";
-                string geometry = DonorGeometry() is { Resolved.Tier: not CrossSideLockTier.None } cabin
-                    ? $"; the cabin's geometry from {cabin.Names} says {cabin.Resolved.PathSplitMs:+0.000;-0.000} ms"
-                    : "";
                 string runnerUp = pairSum.RunnerUpMs is { } second
                     ? $", runner-up {twin.DelayMs + second:+0.000;-0.000} ms at {pairSum.RunnerUpGainDb:+0.00;-0.00} dB"
                     : "";
-                log.AppendLine(
-                    $"  cross-side prior {rightChannel.Name}: target {sumTarget:0.000} ms — the pair sums best with " +
-                    $"{link.Left.Name} {twin.DelayMs + pairSum.LeftLaterMs:+0.000;-0.000} ms later " +
+                string sum = $"the pair sums best with {link.Left.Name} " +
+                    $"{twin.DelayMs + pairSum.LeftLaterMs:+0.000;-0.000} ms later " +
                     $"({pairSum.GainDb:+0.00;-0.00} dB over the sides' power sum in " +
-                    $"{Math.Max(link.BandLowHz, StereoPairSum.FloorHz):0}-{link.BandHighHz:0} Hz{runnerUp})" +
-                    $"{ownRead}{geometry}; held on its own sum");
-                return (sumTarget, true, true, true);
+                    $"{Math.Max(link.BandLowHz, StereoPairSum.FloorHz):0}-{link.BandHighHz:0} Hz{runnerUp})";
+                if (!pairSum.IsDecisive)
+                {
+                    log.AppendLine(
+                        $"  cross-side link {rightChannel.Name}: {sum} — not decisive (a hold needs " +
+                        $"{StereoPairSum.DecisiveGainDb:0.0} dB and {StereoPairSum.DecisiveLobeMarginDb:0.0} dB " +
+                        "over the runner-up); the arrival read stands");
+                }
+                else
+                {
+                    // The scene offset is a localization-band instruction; below that region the pair's own sum is the scene.
+                    double sumTarget = -pairSum.LeftLaterMs;
+                    string ownRead = measured.Reads is { } reads
+                        ? $"; the pair's own {usedLowHz:0}-{usedHighHz:0} Hz read, " +
+                            $"{reads.Right.FirstArrivalDelayMilliseconds - reads.Left.FirstArrivalDelayMilliseconds + twin.DelayMs:+0.000;-0.000} ms, set aside"
+                        : anyLatch ? "; the pair's own arrivals latch on modes" : "; the pair's own arrivals are unmeasurable";
+                    string geometry = DonorGeometry() is { Resolved.Tier: not CrossSideLockTier.None } cabin
+                        ? $"; the cabin's geometry from {cabin.Names} says {cabin.Resolved.PathSplitMs:+0.000;-0.000} ms"
+                        : "";
+                    log.AppendLine(
+                        $"  cross-side prior {rightChannel.Name}: target {sumTarget:0.000} ms — {sum}" +
+                        $"{ownRead}{geometry}; held on its own sum");
+                    return (sumTarget, true, true, true);
+                }
             }
 
             if (measured.Reads is not { } arrivals)

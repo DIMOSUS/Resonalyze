@@ -73,6 +73,31 @@ public sealed class StereoPairSumTests
     }
 
     [Fact]
+    public void Read_TwoUnrelatedSides_FindAnOptimumThatIsNotDecisive()
+    {
+        // Two noise records sum to a few hundredths of a dB on a lobe no better than its neighbours: an optimum
+        // exists, as it always does, and it may not hold the pair.
+        var random = new Random(7);
+        Complex[] Noise()
+        {
+            var ir = new Complex[SampleRate / 2];
+            for (int i = 0; i < ir.Length; i++)
+            {
+                ir[i] = random.NextDouble() - 0.5;
+            }
+
+            return ir;
+        }
+
+        StereoPairSumReading? reading = StereoPairSum.Read(Noise(), Noise(), SampleRate, 80, 175);
+
+        Assert.NotNull(reading);
+        Assert.False(reading.IsDecisive);
+        Assert.True(StereoPairSum.Read(
+            Impulses((10.0, 1.0)), Impulses((11.5, 1.0), (14.0, 4.0)), SampleRate, 80, 175)!.IsDecisive);
+    }
+
+    [Fact]
     public void Read_ASilentSide_ReadsNothing()
     {
         Assert.Null(StereoPairSum.Read(

@@ -150,17 +150,14 @@ internal static class ProcessedChannels
         for (int i = 0; i < byBand.Count - 1; i++)
         {
             int processorRate = ProcessorRateOf(byBand[i]);
-            double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
-                byBand[i].Settings, byBand[i + 1].Settings, processorRate);
-            (double bandLowHz, double bandHighHz) = VirtualCrossoverJunctions.OverlapBand(pairHz);
-            if ((!PlaysWithin(byBand[i], bandLowHz, bandHighHz) ||
-                    !PlaysWithin(byBand[i + 1], bandLowHz, bandHighHz)) &&
-                VirtualCrossoverJunctions.GapHandoverHz(
-                    byBand[i].Settings, byBand[i + 1].Settings, processorRate) == null)
+            if (!VirtualCrossoverJunctions.HandsOver(byBand[i].Settings, byBand[i + 1].Settings, processorRate))
             {
                 continue;
             }
 
+            double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
+                byBand[i].Settings, byBand[i + 1].Settings, processorRate);
+            (double bandLowHz, double bandHighHz) = VirtualCrossoverJunctions.OverlapBand(pairHz);
             pairs.Add(new AdjacentPair(
                 byBand[i],
                 byBand[i + 1],
@@ -255,10 +252,4 @@ internal static class ProcessedChannels
         [VirtualCrossoverZone.Center]
     ];
 
-    private static bool PlaysWithin(ProcessedChannel channel, double lowHz, double highHz)
-    {
-        (double channelLow, double channelHigh) =
-            VirtualCrossoverJunctions.GetChannelBand(channel.Settings);
-        return channelHigh > lowHz && channelLow < highHz;
-    }
 }

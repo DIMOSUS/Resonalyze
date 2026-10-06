@@ -207,6 +207,13 @@ by the incoherent sum of exactly the summed channels.
 - Corners closer than an octave keep the junction at the lower low-pass. Centring every unequal pair
   between its corners was measured: 22 of 46 archived sides moved, lobes and polarities among them,
   for junctions whose corners stand less than half an octave apart.
+- `HandsOver` is the one rule: both play within an octave of the pair's corner, or the slopes cross a
+  gap above the floor. `GetAdjacentPairs` and the agent's junction validator both ask it, since the
+  two had drifted: first-order corners at 100 and 800 Hz cross at 283 Hz, 9.5 dB down, and the
+  validator refused that junction because the upper driver's nominal band lies above the octave
+  around the crossing, while the panel listed it. Auto delay's own walk still builds a junction
+  between every adjacent pair of its set (the engine needs a contiguous chain); across a hole that
+  junction is the lower corner's band.
 - `IsContinuousChain`: the reference car's Rear + Sub view has two subwoofers that genuinely
   cross (below 50 Hz into 50–110 Hz) and a rear fill from 290 Hz. Per-junction figures are real;
   a total over the set is not, so no total is reported unless the set is one chain.

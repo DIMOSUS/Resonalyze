@@ -488,10 +488,11 @@ namespace Resonalyze
             {
                 UpdateAveragingParameters();
             }
-            // Warm FFT/JIT and the run's own frame buffers before the driver starts, or the first callbacks drop out;
-            // on the pool, as the frames run to 524288 samples and Start calls this on the UI thread.
+            // Warm FFT/JIT and the frame buffers before the driver starts, or the first callbacks drop out: on the pool
+            // (frames reach 524288 samples), then back on the UI thread, as an ASIO driver is an apartment-threaded
+            // COM object and opened from the pool fails with E_NOINTERFACE.
             var buffers = new SpectrumFrameBuffers();
-            await Task.Run(() => WarmUpAnalysisPath(buffers)).ConfigureAwait(false);
+            await Task.Run(() => WarmUpAnalysisPath(buffers));
 
             var reframer = new OverlapReframer(SequenceLength, hopSize);
             Task processingTask = ProcessSequencesAsync(
@@ -503,7 +504,7 @@ namespace Resonalyze
             IAudioStreamingSession? session = null;
             try
             {
-                await ready.WaitAsync(cancellationToken).ConfigureAwait(false);
+                await ready.WaitAsync(cancellationToken);
                 NoiseSignal noiseSignal = signal ??= Build(recipe);
                 AudioSessionRequest request = BuildSessionRequest();
                 AudioPlaybackSignal loopingSignal = new(
@@ -512,8 +513,7 @@ namespace Resonalyze
                     Bits,
                     PlaybackChannel,
                     Loop: true);
-                session = await audioSessionFactory
-                    .OpenStreamingAsync(request, cancellationToken).ConfigureAwait(false);
+                session = await audioSessionFactory.OpenStreamingAsync(request, cancellationToken);
                 session.FrameAvailable += HandleFrame;
                 session.InputLevelsAvailable += HandleLevels;
                 session.CaptureDiscontinuity += HandleCaptureDiscontinuity;

@@ -512,6 +512,35 @@ public sealed class AbstractedMeasurementTests
         Assert.True(opened!.Disposed);
     }
 
+    // An ASIO driver opened from the pool fails with E_NOINTERFACE: the warm-up must not leave the UI thread.
+    [Fact]
+    public void LiveSpectrumOpensTheDeviceOnTheThreadThatStartedIt()
+    {
+        StaTest.Run(() =>
+        {
+            var opened = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var factory = new FakeAudioSessionFactory(streamingFactory: _ =>
+            {
+                opened.TrySetResult(Environment.CurrentManagedThreadId);
+                return new RecordingStreamingSession(framesToRaise: 0, failAfterFrames: false);
+            });
+            using var measurement = new NoiseMeasurement(factory);
+            measurement.Init(
+                44_100, 24, 0.5, PlaybackChannel.Mono,
+                sequenceLength: 1024,
+                waveInputChannelOffset: 0,
+                waveLoopbackInputChannelOffset: 1);
+
+            Task<bool> running = measurement.RunAsync();
+            StaTest.Settle(opened.Task);
+            StaTest.Settle(measurement.AbortAsync());
+            StaTest.Settle(running);
+
+            Assert.Equal(Environment.CurrentManagedThreadId, opened.Task.Result);
+            Assert.True(running.Result, measurement.LastError?.ToString());
+        });
+    }
+
     [Theory]
     [Trait("Category", "Slow")]
     [InlineData(1.0f, true)]

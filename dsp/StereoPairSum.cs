@@ -54,9 +54,9 @@ public static class StereoPairSum
 
     /// <summary>How far from the cabin's geometry an optimum may stand, in periods of the band's centre: the sum's
     /// lobes repeat about every such period, and the archive's optima stand within 0.4 ms of the geometry.</summary>
-    public const double GeometryLobeReachPeriods = 0.5;
+    internal const double GeometryLobeReachPeriods = 0.5;
 
-    public static double GeometryLobeReachMs(double lowHz, double highHz) =>
+    internal static double GeometryLobeReachMs(double lowHz, double highHz) =>
         GeometryLobeReachPeriods * 1000.0 / Math.Sqrt(Math.Max(lowHz, FloorHz) * highHz);
 
     /// <summary>The strongest optimum of the sides' sum inside <see cref="ScanReachMs"/> of <paramref name="centreMs"/>,

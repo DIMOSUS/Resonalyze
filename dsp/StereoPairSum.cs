@@ -6,11 +6,14 @@ namespace Resonalyze.Dsp;
 /// their band, with the runner-up optimum for the log.</summary>
 /// <param name="LeftLaterMs">How much later than given the left side must play for the strongest sum.</param>
 /// <param name="GainDb">The sum over the sides' power sum there: +3 dB is two equal sides fully in phase.</param>
+/// <param name="SetAsideMs">A stronger optimum the cabin's geometry ruled out, a lobe away from it.</param>
 public sealed record StereoPairSumReading(
     double LeftLaterMs,
     double GainDb,
     double? RunnerUpMs,
-    double? RunnerUpGainDb)
+    double? RunnerUpGainDb,
+    double? SetAsideMs = null,
+    double? SetAsideGainDb = null)
 {
     /// <summary>Whether the optimum may hold the pair: two sides that add (<see cref="StereoPairSum.DecisiveGainDb"/>) and
     /// a lobe that stands clear of the next (<see cref="StereoPairSum.DecisiveLobeMarginDb"/>). Unrelated sides sum to a
@@ -49,10 +52,19 @@ public static class StereoPairSum
     /// <summary>The least the optimum must stand above the runner-up lobe: the archive's runner-ups sit 1.8-2.5 dB under.</summary>
     public const double DecisiveLobeMarginDb = 0.5;
 
+    /// <summary>How far from the cabin's geometry an optimum may stand, in periods of the band's centre: the sum's
+    /// lobes repeat about every such period, and the archive's optima stand within 0.4 ms of the geometry.</summary>
+    internal const double GeometryLobeReachPeriods = 0.5;
+
+    internal static double GeometryLobeReachMs(double lowHz, double highHz) =>
+        GeometryLobeReachPeriods * 1000.0 / Math.Sqrt(Math.Max(lowHz, FloorHz) * highHz);
+
     /// <summary>The strongest optimum of the sides' sum inside <see cref="ScanReachMs"/> of <paramref name="centreMs"/>,
     /// or null where the band holds no energy or the sum has no optimum there. <paramref name="invertRight"/> reads the
     /// right side flipped, as a side that inherits an inverted twin's polarity will play. A left side given with a delay
-    /// passes minus that delay as the centre: the scan is around the records' relation, not the render's.</summary>
+    /// passes minus that delay as the centre: the scan is around the records' relation, not the render's.
+    /// <paramref name="geometryMs"/>, the split the cabin's geometry asks for in the same terms, picks the lobe: only an
+    /// optimum within <see cref="GeometryLobeReachMs"/> of it counts.</summary>
     public static StereoPairSumReading? Read(
         Complex[] left,
         Complex[] right,
@@ -62,7 +74,8 @@ public static class StereoPairSum
         bool invertRight = false,
         ValidSampleRange leftRange = default,
         ValidSampleRange rightRange = default,
-        double centreMs = 0)
+        double centreMs = 0,
+        double? geometryMs = null)
     {
         ArgumentNullException.ThrowIfNull(left);
         ArgumentNullException.ThrowIfNull(right);
@@ -117,6 +130,15 @@ public static class StereoPairSum
             .Where(i => gains[i] > gains[i - 1] + 1e-9 && gains[i] >= gains[i + 1])
             .OrderByDescending(i => gains[i])
             .ToList();
+        int? setAside = null;
+        if (geometryMs is { } expectedMs)
+        {
+            double reachMs = GeometryLobeReachMs(lowHz, highHz);
+            List<int> onLobe = [.. optima.Where(i => Math.Abs(splits[i] - expectedMs) <= reachMs)];
+            setAside = optima.Count > 0 && (onLobe.Count == 0 || onLobe[0] != optima[0]) ? optima[0] : null;
+            optima = onLobe;
+        }
+
         if (optima.Count == 0)
         {
             return null;
@@ -126,7 +148,9 @@ public static class StereoPairSum
             splits[optima[0]],
             gains[optima[0]],
             optima.Count > 1 ? splits[optima[1]] : null,
-            optima.Count > 1 ? gains[optima[1]] : null);
+            optima.Count > 1 ? gains[optima[1]] : null,
+            setAside is { } aside ? splits[aside] : null,
+            setAside is { } asideGain ? gains[asideGain] : null);
     }
 
     // The window's last quarter fades out; the lead before the front keeps a sloped front whole.

@@ -73,6 +73,40 @@ public sealed class StereoPairSumTests
     }
 
     [Fact]
+    public void Read_TheCabinsGeometryPicksTheLobe_NotTheStrongestOptimum()
+    {
+        // Most of the right side's energy comes 3.5 ms behind its front: the strongest sum is a lobe off where the
+        // cabin's geometry puts the pair, and the geometry sets it aside for the lobe at the front.
+        Complex[] left = Impulses((10.0, 1.0));
+        Complex[] right = Impulses((11.5, 0.6), (15.0, 1.0));
+
+        StereoPairSumReading? strongest = StereoPairSum.Read(left, right, SampleRate, 80, 300);
+        StereoPairSumReading? onGeometry = StereoPairSum.Read(left, right, SampleRate, 80, 300, geometryMs: 1.3);
+
+        Assert.NotNull(strongest);
+        Assert.InRange(strongest.LeftLaterMs, 4.8, 5.3);
+        Assert.Null(strongest.SetAsideMs);
+        Assert.NotNull(onGeometry);
+        Assert.InRange(onGeometry.LeftLaterMs, 1.0, 1.8);
+        Assert.Equal(strongest.LeftLaterMs, onGeometry.SetAsideMs);
+        Assert.True(onGeometry.SetAsideGainDb > onGeometry.GainDb);
+        Assert.True(onGeometry.IsDecisive);
+    }
+
+    [Fact]
+    public void Read_AGeometryOnASidelobe_IsNotDecisive()
+    {
+        // Half a period off the pair's only lobe, the geometry finds a sidelobe the sides cancel on.
+        StereoPairSumReading? reading = StereoPairSum.Read(
+            Impulses((10.0, 1.0)), Impulses((11.5, 1.0)), SampleRate, 80, 300, geometryMs: -3.0);
+
+        Assert.Equal(0.5 * 1000.0 / Math.Sqrt(80.0 * 300.0), StereoPairSum.GeometryLobeReachMs(80, 300), 6);
+        Assert.NotNull(reading);
+        Assert.Equal(1.5, reading.SetAsideMs!.Value, 2);
+        Assert.False(reading.IsDecisive);
+    }
+
+    [Fact]
     public void Read_TwoUnrelatedSides_FindAnOptimumThatIsNotDecisive()
     {
         // Two noise records sum to a few hundredths of a dB on a lobe no better than its neighbours: an optimum

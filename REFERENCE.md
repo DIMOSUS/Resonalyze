@@ -4196,7 +4196,11 @@ is not timed by its arrivals at all but by its own sum: the run scans the two
 sides' sum over the pair's band and takes the split at which they add best
 (the log names the figure and the runner-up optimum, the pair's own arrival
 read, and the cabin's geometry from the other pairs where they read it), and
-the pair is **held** on that split through the far-side descent; the scene
+the pair is **held** on that split through the far-side descent. The sum
+repeats about every period of the band, and a cabin's modes can make the
+strongest lobe one far from where the drivers sit, so where the other pairs
+give the cabin's geometry, only a lobe within half a period of it is taken
+and a stronger one beyond is named in the log as set aside; the scene
 offset does not apply to it, since below the localization region the pair's
 own sum is the scene. The pair then
 meets its neighbours as one: the scene-preserving pass below moves both sides

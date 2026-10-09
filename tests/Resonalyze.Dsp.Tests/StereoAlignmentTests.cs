@@ -63,7 +63,8 @@ public sealed class StereoAlignmentTests
 
     /// <summary>Mono sub plus woof/mid/twr per side; the right side arrives 1.5 ms later. <paramref name="rightMidEchoMs"/> adds a stronger
     /// later lobe (correlation chases it, the scene follows the first); <paramref name="rightWoofLateCopyMs"/> puts most of the
-    /// right woofer's energy that far behind its front; <paramref name="reprocessCount"/>[0] receives the reprocess count.</summary>
+    /// right woofer's energy that far behind its front (<paramref name="rightWoofLateCopyAmplitude"/> times the front);
+    /// <paramref name="reprocessCount"/>[0] receives the reprocess count.</summary>
     private static (TestChannel Sub,
         TestChannel[] Left, TestChannel[] Right,
         Dictionary<IAlignmentChannel, AlignmentOverride> Alignment,
@@ -80,17 +81,20 @@ public sealed class StereoAlignmentTests
             int[]? reprocessCount = null,
             double globalLateMs = 0,
             bool mirrorPlan = false,
-            double rightWoofLateCopyMs = 0)
+            double rightWoofLateCopyMs = 0,
+            double rightWoofLateCopyAmplitude = 4.0)
     {
         string key = string.Join(";", new object[]
         {
             sceneOffsetMs, rightLateMs, leftTopAmplitude, rightTopAmplitude,
             linkBands == null ? "-" : string.Join(",", linkBands.Select(band => band?.ToString() ?? "null")),
-            rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan, rightWoofLateCopyMs
+            rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan, rightWoofLateCopyMs,
+            rightWoofLateCopyAmplitude
         });
         var run = StereoRuns.GetOrAdd(key, _ => new(() => RunStereoOnce(
             sceneOffsetMs, rightLateMs, leftTopAmplitude, rightTopAmplitude, linkBands,
-            rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan, rightWoofLateCopyMs))).Value;
+            rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan, rightWoofLateCopyMs,
+            rightWoofLateCopyAmplitude))).Value;
         if (reprocessCount != null)
         {
             reprocessCount[0] = run.ReprocessCount;
@@ -116,7 +120,8 @@ public sealed class StereoAlignmentTests
             double rightMidAmplitude,
             double globalLateMs,
             bool mirrorPlan,
-            double rightWoofLateCopyMs)
+            double rightWoofLateCopyMs,
+            double rightWoofLateCopyAmplitude)
     {
         int reprocessCount = 0;
         var sub = new TestChannel(
@@ -130,7 +135,7 @@ public sealed class StereoAlignmentTests
         var rightWoof = new TestChannel(
             "R woof",
             rightWoofLateCopyMs > 0
-                ? ImpulseWithEcho(1.0 + rightLateMs + globalLateMs, 1.0, rightWoofLateCopyMs, 4.0)
+                ? ImpulseWithEcho(1.0 + rightLateMs + globalLateMs, 1.0, rightWoofLateCopyMs, rightWoofLateCopyAmplitude)
                 : ImpulseAtMs(1.0 + rightLateMs + globalLateMs));
         Complex[] rightMidIr = ImpulseAtMs(
             0.4 + rightLateMs + globalLateMs,
@@ -598,6 +603,29 @@ public sealed class StereoAlignmentTests
             double delta =
                 FinalArrivalMs(left[0], 1.0, alignment) - FinalArrivalMs(right[0], 5.0, alignment);
             Assert.InRange(delta, 0.15, 0.35);
+        }
+
+        [Fact]
+        public void ComputeStereo_TheCabinsGeometryPicksALowPairsLobe_NotItsStrongestSum()
+        {
+            // The right woofer's late copy gives the pair's sum its strongest lobe more than half a period off the cabin.
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, StringBuilder log) = RunStereo(
+                    sceneOffsetMs: 0.25,
+                    rightLateMs: 2.5,
+                    linkBands: [(100, 300), (400, 2_500), (2_500, 12_000)],
+                    rightWoofLateCopyMs: 3.2,
+                    rightWoofLateCopyAmplitude: 1.5);
+
+            double delta =
+                FinalArrivalMs(left[0], 1.0, alignment) - FinalArrivalMs(right[0], 3.5, alignment);
+            Assert.InRange(delta, -0.7, 0.7);
+            string prior = Array.Find(
+                log.ToString().Split('\n', StringSplitOptions.TrimEntries),
+                line => line.StartsWith("cross-side prior R woof:"))!;
+            Assert.NotNull(prior);
+            Assert.Contains("set aside a lobe off the geometry", prior);
+            Assert.Contains("held on its own sum", prior);
         }
 
         [Fact]

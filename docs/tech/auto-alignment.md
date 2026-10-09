@@ -1422,17 +1422,20 @@ whose link band ends below the localization region (`IsLowPair`: band top under
    strongest interior optimum of L+R over the sides' power sum (+3 dB is two equal sides in phase), the
    battery's `twin` figure. The scan is centred on the records' own relation, not the render's: the
    reference side comes rendered with its descent delay (7 ms on the Passat), and a scan around that
-   found the sum's lobe a period off at −0.2 dB. Where the sum has an optimum the far side is **held**
-   on it within `SceneLockToleranceMs` through the descent, as a localization pair is on the scene; its
-   own arrival read and the cabin's geometry from the donors are named beside it in the log and nothing
-   more. The scene offset is not applied: it is a localization-band instruction, and below that region
+   found the sum's lobe a period off at −0.2 dB. Where the cabin's geometry from the donors resolves,
+   it **picks the lobe**: only an optimum within half a period of the link band's centre from it counts
+   (`GeometryLobeReachPeriods`), and a stronger one beyond is set aside and named in the log. Where the
+   sum has an optimum the far side is **held** on it within `SceneLockToleranceMs` through the descent,
+   as a localization pair is on the scene; its own arrival read is named beside it in the log and
+   nothing more. The scene offset is not applied: it is a localization-band instruction, and below that region
    the pair's own sum is the scene. Where the sum has no optimum (a flat sum, an optimum only at the
    scan's edge), or one that is not decisive — under `DecisiveGainDb` (0.5 dB: a side 26 dB under its
    twin is not in the pair) or within `DecisiveLobeMarginDb` (0.5 dB) of the runner-up lobe, as two
    unrelated records sum — the arrival ladder stands and the log says so. The archive's pairs add
    1.6-2.7 dB with their runner-ups 1.8-2.5 dB under.
    - The optimum is unique in every archived session with a low pair (22 of 23; the FIR session has
-     none), 1.54-2.26 ms in the reference car against the geometry's 1.63-1.74 and its tunes' 1.0-2.14.
+     none), 1.54-2.26 ms in the reference car against the geometry's 1.63-1.74 and its tunes' 1.0-2.14,
+     so the geometry's pick changes none of them.
    - The judge is the power ratio, not a junction loss. Scored as a junction is, by the dip-penalized
      loss, the same sum reads −8.6 dB on the reference car's latest session, where the pair stands
      0.1 ms from its saved tune, and asks for a 1.3 ms move: a narrow notch where the two sides' levels
@@ -1452,8 +1455,15 @@ whose link band ends below the localization region (`IsLowPair`: band top under
 - **Why the sum and not the geometry.** The cabin's geometry from the other pairs was tried first as
   the hold (held, the second cabin's midbass stood 0.15 ms from the owner's own estimate). It is a
   proxy: the sum is the quantity itself, measured on the pair, and was within 0.4 ms of the geometry
-  wherever both read. The geometry stays as the latch rung's fallback for lockable pairs and as a
-  cross-check in the log.
+  wherever both read. The geometry stays as the latch rung's fallback for lockable pairs, and it picks
+  the sum's lobe.
+- **Why the geometry picks the lobe.** The sum repeats about every period of the band's centre, and a
+  cabin's modes can make a lobe a period off the strongest. In a third cabin the right midbass latched
+  on modes and the pair's strongest lobe in 80-300 Hz stood at −5.95 ms (+1.25 dB), 7.2 ms from the
+  geometry's +1.27 ms, with the lobe at +1.88 ms 0.56 dB under it. Held there, the right midbass played
+  7 ms behind its mid (woofer/mid junction −2.46 / −9.69 dB), and the stereo branch moved the stack
+  above the sub 9.23 ms flipped to meet it, leaving the sub's front 12 ms behind the mids. On the
+  geometry's lobe the junction reads −0.88 / −1.90 dB and the fronts stand within 3 ms of each other.
 - **Why the pair then moves and the sides trim.** Held on the geometry with no trim, the far side's
   handover paid for the pair: in the second cabin the right midbass and mid met out of phase (direct
   coherence −0.54, the junction −1.64 / −12.22 dB against −0.81 / −2.76). Placed by both sides and

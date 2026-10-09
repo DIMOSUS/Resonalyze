@@ -3141,20 +3141,40 @@ public static class AutoAlignmentEngine
             // A low pair's own arrivals are the cabin's least reliable read; where its two sides sum best is not.
             // See docs/tech/auto-alignment.md#a-low-pair-stands-on-its-own-sum.
             AlignmentOverride twin = alignment.GetValueOrDefault(link.Left);
-            if (IsLowPair(link) &&
-                StereoPairSum.Read(
+            bool lowPair = IsLowPair(link);
+            var cabin = lowPair ? DonorGeometry() : default;
+            bool hasGeometry = lowPair && cabin.Resolved.Tier != CrossSideLockTier.None;
+            string geometry = hasGeometry
+                ? $"the cabin's geometry from {cabin.Names} says {cabin.Resolved.PathSplitMs:+0.000;-0.000} ms"
+                : "";
+            StereoPairSumReading? pairSum = lowPair
+                ? StereoPairSum.Read(
                     leftIr, rightIr, link.Left.SampleRate, link.BandLowHz, link.BandHighHz,
                     invertRight: twin.InvertPolarity,
                     leftSnapshot.ValidRange, rightSnapshot.ValidRange,
-                    centreMs: -twin.DelayMs) is { } pairSum)
+                    centreMs: -twin.DelayMs,
+                    geometryMs: hasGeometry ? cabin.Resolved.PathSplitMs - twin.DelayMs : null)
+                : null;
+            if (pairSum == null && hasGeometry)
+            {
+                log.AppendLine(
+                    $"  cross-side link {rightChannel.Name}: the pair's sum has no optimum within " +
+                    $"{StereoPairSum.GeometryLobeReachMs(link.BandLowHz, link.BandHighHz):0.00} ms of where " +
+                    $"{geometry}; the arrival read stands");
+            }
+            else if (pairSum != null)
             {
                 string runnerUp = pairSum.RunnerUpMs is { } second
                     ? $", runner-up {twin.DelayMs + second:+0.000;-0.000} ms at {pairSum.RunnerUpGainDb:+0.00;-0.00} dB"
                     : "";
+                string setAside = pairSum.SetAsideMs is { } strongest
+                    ? $"; its strongest lobe, {twin.DelayMs + strongest:+0.000;-0.000} ms at " +
+                        $"{pairSum.SetAsideGainDb:+0.00;-0.00} dB, set aside a lobe off the geometry"
+                    : "";
                 string sum = $"the pair sums best with {link.Left.Name} " +
                     $"{twin.DelayMs + pairSum.LeftLaterMs:+0.000;-0.000} ms later " +
                     $"({pairSum.GainDb:+0.00;-0.00} dB over the sides' power sum in " +
-                    $"{Math.Max(link.BandLowHz, StereoPairSum.FloorHz):0}-{link.BandHighHz:0} Hz{runnerUp})";
+                    $"{Math.Max(link.BandLowHz, StereoPairSum.FloorHz):0}-{link.BandHighHz:0} Hz{runnerUp}{setAside})";
                 if (!pairSum.IsDecisive)
                 {
                     log.AppendLine(
@@ -3170,12 +3190,9 @@ public static class AutoAlignmentEngine
                         ? $"; the pair's own {usedLowHz:0}-{usedHighHz:0} Hz read, " +
                             $"{reads.Right.FirstArrivalDelayMilliseconds - reads.Left.FirstArrivalDelayMilliseconds + twin.DelayMs:+0.000;-0.000} ms, set aside"
                         : anyLatch ? "; the pair's own arrivals latch on modes" : "; the pair's own arrivals are unmeasurable";
-                    string geometry = DonorGeometry() is { Resolved.Tier: not CrossSideLockTier.None } cabin
-                        ? $"; the cabin's geometry from {cabin.Names} says {cabin.Resolved.PathSplitMs:+0.000;-0.000} ms"
-                        : "";
                     log.AppendLine(
                         $"  cross-side prior {rightChannel.Name}: target {sumTarget:0.000} ms — {sum}" +
-                        $"{ownRead}{geometry}; held on its own sum");
+                        $"{ownRead}{(hasGeometry ? "; " + geometry : "")}; held on its own sum");
                     return (sumTarget, true, true, true);
                 }
             }

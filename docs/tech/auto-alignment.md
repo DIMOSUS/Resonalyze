@@ -1205,6 +1205,16 @@ below): the whole stack ABOVE the junction, on both sides, shifted half a period
 flipped. That operation changes the junction and nothing else — every junction above it moves rigidly,
 which is why a lone pair co-move cannot express it (the tweeter has to follow the midrange).
 
+A junction over a mono channel is not asked. Moving everything above the sub is moving the sub, and the
+mono co-move places it under a stricter rule, the [sub-band veto](#post-descent-passes) on its hops.
+Asked, the branch made the hop that rule refuses: on a Corolla it moved the stack above the sub 6.02 ms
+flipped for +1.13 / +1.83 dB at the two sub junctions, while the mono co-move vetoed the same +6.00 ms
+flipped hop for losing 2.33 dB in the 63-126 Hz half against the far midbass. The sub's front landed
+5.6-6.3 ms behind the midbasses' (−1.1 / −0.4 without it), and in the v3 archive session 4.8 ms behind
+against the owner's tune of −2.3 (+0.1 without it). The left sub junction pays 0.8 dB on the Corolla; on
+the archive's other branch moves at the sub (v2, v4, the FIR session) the co-move's own hop lands within
+0.3 ms of where the branch did.
+
 - **Finding the candidate** is an analytic scan (`StereoJunctionBranch.Read`, `SumLossEvaluator`
   rotations either way around the half period). The feasible set is searched first: the delta that
   serves the far side most is not always one the reference side can live with. The refinement step

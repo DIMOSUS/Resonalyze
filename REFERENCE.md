@@ -4154,7 +4154,9 @@ driver by driver — so a junction the near side could barely tell apart decides
 for the far side too, and the far side is the one that pays for it. So every
 junction is offered the **other branch**: the whole stack above it, on both
 sides, moved half a period and flipped (except a junction the phase placed:
-the summation that would judge the offer is what the phase overruled there).
+the summation that would judge the offer is what the phase overruled there,
+and the junction over the sub: moving everything above the sub is moving the
+sub, which the sub's own placement decides under a stricter rule).
 From 120 Hz up it is also offered a **whole period, unflipped**. A near side
 can stand a bass/mid handover a full period from where the far side's
 wavefronts meet and read it as the better lobe, and the far side is then

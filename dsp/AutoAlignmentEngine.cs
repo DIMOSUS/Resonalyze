@@ -4372,6 +4372,15 @@ public static class AutoAlignmentEngine
                 continue;
             }
 
+            // Moving the stack above a mono channel moves the mono channel: the mono co-move places it, under its own veto.
+            if (plan.MonoChannels.Contains(reference.Lower.Channel))
+            {
+                log.AppendLine(
+                    $"  stereo branch not asked at {reference.Lower.Channel.Name}/{reference.Upper.Channel.Name}: " +
+                    "the mono co-move places a mono channel.");
+                continue;
+            }
+
             // The stack above the junction moves rigidly, so every junction above it is untouched.
             List<IAlignmentChannel> above =
             [

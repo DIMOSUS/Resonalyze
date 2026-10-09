@@ -787,8 +787,9 @@ public sealed class StereoAlignmentTests
     private static (TestChannel LeftMid, TestChannel LeftTwr, TestChannel RightMid, TestChannel RightTwr,
         Dictionary<IAlignmentChannel, AlignmentOverride> Alignment, string Log)
         RunJunctionBranch(
-            double baseDelayMs = 0, bool withFieldFloor = false, int twinSamples = 12, bool phasePlaced = false) =>
-        RunJunctionBranch(out _, baseDelayMs, withFieldFloor, twinSamples, phasePlaced);
+            double baseDelayMs = 0, bool withFieldFloor = false, int twinSamples = 12, bool phasePlaced = false,
+            bool monoLower = false) =>
+        RunJunctionBranch(out _, baseDelayMs, withFieldFloor, twinSamples, phasePlaced, monoLower);
 
     /// <param name="renderedTwrDelays">Every left-tweeter delay a re-render was asked for, in order.</param>
     private static (TestChannel LeftMid, TestChannel LeftTwr, TestChannel RightMid, TestChannel RightTwr,
@@ -798,7 +799,8 @@ public sealed class StereoAlignmentTests
             double baseDelayMs = 0,
             bool withFieldFloor = false,
             int twinSamples = 12,
-            bool phasePlaced = false)
+            bool phasePlaced = false,
+            bool monoLower = false)
     {
         List<double> rendered = [];
         renderedTwrDelays = rendered;
@@ -831,16 +833,20 @@ public sealed class StereoAlignmentTests
         AlignmentSnapshot Of(TestChannel channel) =>
             initial.First(item => item.Channel == channel);
         List<AlignmentSnapshot> left = [Of(leftMid), Of(leftTwr)];
-        List<AlignmentSnapshot> right = [Of(rightMid), Of(rightTwr)];
+        // A mono lower channel is the left mid, shared by both sides.
+        List<AlignmentSnapshot> right = [Of(monoLower ? leftMid : rightMid), Of(rightTwr)];
         var plan = new StereoAlignmentPlan(
             left, [Junction(left[0], left[1], 2_500)],
             right, [Junction(right[0], right[1], 2_500)],
-            new HashSet<IAlignmentChannel>(), leftTwr, rightTwr,
+            monoLower ? new HashSet<IAlignmentChannel> { leftMid } : new HashSet<IAlignmentChannel>(),
+            leftTwr, rightTwr,
             BridgeBandLowHz: 2_500, BridgeBandHighHz: 12_000, SceneOffsetMs: 0,
-            [
-                new StereoPairLink(leftMid, rightMid, 400, 2_500),
-                new StereoPairLink(leftTwr, rightTwr, 2_500, 12_000)
-            ]);
+            monoLower
+                ? [new StereoPairLink(leftTwr, rightTwr, 2_500, 12_000)]
+                : [
+                    new StereoPairLink(leftMid, rightMid, 400, 2_500),
+                    new StereoPairLink(leftTwr, rightTwr, 2_500, 12_000)
+                ]);
         var log = new StringBuilder();
 
         AutoAlignmentEngine.RebalanceJunctionBranches(
@@ -871,6 +877,22 @@ public sealed class StereoAlignmentTests
         Assert.False(alignment.GetValueOrDefault(rightMid).InvertPolarity);
         Assert.Equal(0.0, alignment.GetValueOrDefault(leftMid).DelayMs);
         Assert.Equal(0.0, alignment.GetValueOrDefault(rightMid).DelayMs);
+    }
+
+    [Fact]
+    [Trait("Category", "Slow")]
+    public void RebalanceJunctionBranches_AMonoLowerChannel_KeepsItsJunction()
+    {
+        // The same tie and far alias over a mono channel: moving the stack above it would move the mono channel,
+        // which the mono co-move places under its own veto.
+        (_, TestChannel leftTwr, _, TestChannel rightTwr,
+            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+            RunJunctionBranch(monoLower: true);
+
+        foreach (TestChannel tweeter in new[] { leftTwr, rightTwr })
+        {
+            Assert.Equal(new AlignmentOverride(0.0, false), alignment[tweeter]);
+        }
     }
 
     [Fact]

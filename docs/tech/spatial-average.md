@@ -360,6 +360,13 @@ changed basis when the user glanced at the phase view would read as two imbalanc
 - The tick is **intent** and outlives coverage (like a pinned gate outlives its sources): a set short of
   a capture draws honest curves whether or not the box is ticked, and clearing the tick would make the
   user find it again after re-attaching.
+- **Giving a block an average ticks it** (`TickHybrid`): an attach (picked or dropped), a capture family
+  chosen in the MMM menu, and an array measurement picked as a source while the project reads arrays.
+  Users attached every capture and tuned on the point response, red label notwithstanding. The first
+  attach ticks, so the last one draws the hybrid without a further press. Restores (opening a session,
+  the autosave, relink, Undo, a side switch) keep the stored tick, so an untick stands until the next
+  attach; a point measurement replacing a block's source does not tick, since its average was not just
+  given.
 - The hybrid is magnitude-only, so the toggle is **muted, not unticked**, in other views. It is coloured
   by hand rather than through `UiStyle.SetTextEnabledLook`, which memorizes the colour it mutes (this
   toggle wears a reminder colour when live and unticked); `ToggleCheckBox.Muted` carries the disabling

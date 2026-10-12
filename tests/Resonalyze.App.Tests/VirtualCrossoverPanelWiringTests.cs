@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Windows.Forms;
 using OxyPlot;
 using OxyPlot.Axes;
@@ -172,6 +173,56 @@ public sealed class VirtualCrossoverPanelWiringTests
     }
 
     [Fact]
+    public void AnAverageDroppedOnABlock_TicksHybrid_SoTheLastOneDrawsTheSet()
+    {
+        string path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".json");
+        DroppedFileTests.BuildCapture().Save(path);
+        try
+        {
+            StaTest.Run(() =>
+            {
+                using var live = new LivePanel();
+                List<VirtualCrossoverChannel> channels = live.Session.Channels;
+
+                live.DropSpatialAverage(channels[0], path);
+                Assert.True(live.Control<CheckBox>("checkBoxHybrid").Checked);
+                Assert.DoesNotContain("Spatial average", live.Metric);
+
+                foreach (VirtualCrossoverChannel channel in channels.Skip(1))
+                {
+                    live.DropSpatialAverage(channel, path);
+                }
+
+                Assert.Contains("Spatial average", live.Metric);
+            });
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void ChoosingACaptureFamily_DrawsIt_EvenWhenTheProjectAlreadyReadsIt()
+    {
+        StaTest.Run(() =>
+        {
+            using var live = new LivePanel();
+            foreach (VirtualCrossoverChannel channel in live.Session.Channels)
+            {
+                channel.PhysicalSideState(false).SpatialAverage = FlatCapture();
+            }
+
+            live.Session.Project.SpatialAverageMode = VirtualCrossoverSpatialAverageMode.MovingMic;
+
+            live.ChooseSpatialAverageMode(VirtualCrossoverSpatialAverageMode.MovingMic);
+
+            Assert.True(live.Control<CheckBox>("checkBoxHybrid").Checked);
+            Assert.Contains("Spatial average", live.Metric);
+        });
+    }
+
+    [Fact]
     public void TheDspModes_DrawTheChainsOrListTheShownJunctions()
     {
         StaTest.Run(() =>
@@ -250,6 +301,23 @@ public sealed class VirtualCrossoverPanelWiringTests
         }
 
         public void WaitFor(Func<bool> condition, string what) => live.Wait(condition, what);
+
+        public void DropSpatialAverage(VirtualCrossoverChannel channel, string path)
+        {
+            Task drop = Panel.DropFileAsync(live.Card(channel).SpatialAverageButton, path);
+            live.Wait(() => drop.IsCompleted, "take the drop");
+            drop.GetAwaiter().GetResult();
+            live.Settle();
+        }
+
+        // The family menu pops up at the cursor, so this calls what its items call.
+        public void ChooseSpatialAverageMode(VirtualCrossoverSpatialAverageMode mode)
+        {
+            typeof(VirtualCrossoverPanel)
+                .GetMethod("ChooseSpatialAverageMode", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .Invoke(Panel, [mode]);
+            live.Settle();
+        }
 
         public void ShowLeft()
         {

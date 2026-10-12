@@ -136,6 +136,7 @@ public partial class VirtualCrossoverPanel
             {
                 OnSourceAssigned(
                     channel,
+                    targetState,
                     targetSettings,
                     new VirtualCrossoverSourceReference(
                         Path.GetFileName(path),
@@ -177,6 +178,7 @@ public partial class VirtualCrossoverPanel
             {
                 OnSourceAssigned(
                     channel,
+                    targetState,
                     targetSettings,
                     new VirtualCrossoverSourceReference(
                         entry.FileNameOrDisplayName,
@@ -258,11 +260,19 @@ public partial class VirtualCrossoverPanel
     // A silent restore skips this: the reference is stored and the bind refreshes at the end.
     private void OnSourceAssigned(
         VirtualCrossoverChannel channel,
+        VirtualCrossoverChannelState state,
         VirtualCrossoverChannelSettings settings,
         VirtualCrossoverSourceReference reference)
     {
         reference.ApplyTo(settings);
         session.SettleSpatialAverageMode();
+        // An array measurement brings its own average; a point one replacing a block's measurement leaves the tick be.
+        if (state.ArrayCapture != null &&
+            session.SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray)
+        {
+            TickHybrid();
+        }
+
         UpdateSourceButton(channel);
         UpdateSideRadioTexts();
         SaveAndRedraw();

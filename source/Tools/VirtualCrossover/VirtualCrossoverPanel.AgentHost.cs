@@ -27,25 +27,7 @@ public partial class VirtualCrossoverPanel
 
     void IAgentImportHost.SaveAndRedraw() => SaveAndRedraw();
 
-    // Mode and tick together: either alone leaves the point measurement in charge. Project events are suppressed so the import saves and redraws once.
-    void IAgentImportHost.UseSpatialAverage(VirtualCrossoverSpatialAverageMode mode)
-    {
-        bool suppressed = suppressProjectEvents;
-        suppressProjectEvents = true;
-        try
-        {
-            SetSpatialAverageMode(mode);
-            checkBoxHybrid.Checked = true;
-            session.Project.ShowHybridCurves = true;
-        }
-        finally
-        {
-            suppressProjectEvents = suppressed;
-        }
-
-        // SetSpatialAverageMode returns early on an unchanged mode; the tick alone still changes what can be drawn.
-        RefreshHybridAvailability();
-    }
+    void IAgentImportHost.UseSpatialAverage(VirtualCrossoverSpatialAverageMode mode) => UseSpatialAverage(mode);
 
     bool IVirtualCrossoverWorkHost.IsGone => IsDisposed;
 

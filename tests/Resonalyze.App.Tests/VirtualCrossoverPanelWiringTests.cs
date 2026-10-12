@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Windows.Forms;
 using OxyPlot;
 using OxyPlot.Axes;
@@ -215,7 +214,7 @@ public sealed class VirtualCrossoverPanelWiringTests
 
             live.Session.Project.SpatialAverageMode = VirtualCrossoverSpatialAverageMode.MovingMic;
 
-            live.ChooseSpatialAverageMode(VirtualCrossoverSpatialAverageMode.MovingMic);
+            live.ChooseFromSpatialAverageMenu(live.Session.Channels[0], "Use attached captures");
 
             Assert.True(live.Control<CheckBox>("checkBoxHybrid").Checked);
             Assert.Contains("Spatial average", live.Metric);
@@ -310,13 +309,10 @@ public sealed class VirtualCrossoverPanelWiringTests
             live.Settle();
         }
 
-        // The family menu pops up at the cursor, so this calls what its items call.
-        public void ChooseSpatialAverageMode(VirtualCrossoverSpatialAverageMode mode)
+        public void ChooseFromSpatialAverageMenu(VirtualCrossoverChannel channel, string item)
         {
-            typeof(VirtualCrossoverPanel)
-                .GetMethod("ChooseSpatialAverageMode", BindingFlags.NonPublic | BindingFlags.Instance)!
-                .Invoke(Panel, [mode]);
-            live.Settle();
+            live.Card(channel).SpatialAverageButton.PerformClick();
+            live.ClickMenu(item);
         }
 
         public void ShowLeft()

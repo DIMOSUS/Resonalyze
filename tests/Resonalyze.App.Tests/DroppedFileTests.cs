@@ -162,7 +162,7 @@ public sealed class DroppedFileTests : IDisposable
         Assert.Equal(openable, DroppedFile.HasOpenableExtension(name));
     }
 
-    private static LiveCaptureDocument BuildCapture()
+    internal static LiveCaptureDocument BuildCapture()
     {
         const int sampleRate = 48_000;
         const int sequenceLength = 32_768;

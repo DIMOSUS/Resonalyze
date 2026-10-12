@@ -3121,6 +3121,15 @@ carries no phase. The tick itself survives all of that: it says what you want
 drawn, so re-attaching a capture brings the hybrid straight back instead of
 sending you to find the checkbox again.
 
+You rarely press it yourself: giving a channel an average ticks it. That is
+**Attach capture...** or a capture dropped on the **MMM** button, choosing a capture
+family in that button's menu, and picking an array measurement as a channel's
+source while the project reads arrays. It ticks with the first capture, greyed
+until every playing channel has one, so the last attach draws the hybrid on its
+own. Opening a session keeps the tick it was saved with, and switching the hybrid
+off keeps it off until you attach again; replacing a channel's point measurement
+does not tick it.
+
 Where it is live and **not** ticked, the label turns red — on a dark button with a
 faint frame, not the blue framed fill of a ticked toggle. Every playing channel
 has an average attached and the plot is drawing one microphone position's dips

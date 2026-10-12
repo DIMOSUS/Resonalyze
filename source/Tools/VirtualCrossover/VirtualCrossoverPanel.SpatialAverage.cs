@@ -24,6 +24,56 @@ public partial class VirtualCrossoverPanel
         OnViewChanged();
     }
 
+    // Choosing a capture family asks for it to be drawn; choosing none leaves the tick, which is intent.
+    private void ChooseSpatialAverageMode(VirtualCrossoverSpatialAverageMode mode)
+    {
+        if (mode == VirtualCrossoverSpatialAverageMode.Off)
+        {
+            SetSpatialAverageMode(mode);
+            return;
+        }
+
+        UseSpatialAverage(mode);
+        SaveAndRedraw();
+    }
+
+    // Mode and tick together: either alone leaves the point measurement in charge. The caller saves and redraws once.
+    private void UseSpatialAverage(VirtualCrossoverSpatialAverageMode mode)
+    {
+        bool suppressed = suppressProjectEvents;
+        suppressProjectEvents = true;
+        try
+        {
+            SetSpatialAverageMode(mode);
+            TickHybrid();
+        }
+        finally
+        {
+            suppressProjectEvents = suppressed;
+        }
+
+        // SetSpatialAverageMode returns early on an unchanged mode; the tick alone still changes what can be drawn.
+        RefreshHybridAvailability();
+    }
+
+    // An average the user just gave a block is meant to be drawn; the caller saves and redraws.
+    // See docs/tech/spatial-average.md#hybrid-toggle.
+    private void TickHybrid()
+    {
+        bool suppressed = suppressProjectEvents;
+        suppressProjectEvents = true;
+        try
+        {
+            checkBoxHybrid.Checked = true;
+        }
+        finally
+        {
+            suppressProjectEvents = suppressed;
+        }
+
+        session.Project.ShowHybridCurves = true;
+    }
+
     private void ShowSpatialAverageMenu(VirtualCrossoverChannel channel)
     {
         var menu = new ContextMenuStrip();
@@ -41,7 +91,7 @@ public partial class VirtualCrossoverPanel
                 CheckOnClick = false
             };
             VirtualCrossoverSpatialAverageMode chosen = mode;
-            item.Click += (_, _) => SetSpatialAverageMode(chosen);
+            item.Click += (_, _) => ChooseSpatialAverageMode(chosen);
             menu.Items.Add(item);
         }
 
@@ -74,7 +124,7 @@ public partial class VirtualCrossoverPanel
             menu.Items.Add(detachItem);
         }
 
-        DropDownMenu.ShowAt(this, menu, Cursor.Position);
+        ShowMenu(ControlFor(channel).SpatialAverageButton, menu);
     }
 
     private void ChooseSpatialAverage(VirtualCrossoverChannel channel)
@@ -126,6 +176,7 @@ public partial class VirtualCrossoverPanel
             settings.SpatialAveragePath = path;
             // The relative path names the previously imported capture; left standing it would steer the next search to it.
             settings.SpatialAverageRelativePath = null;
+            TickHybrid();
             OnSpatialAverageChanged(channel);
         }
         catch (Exception exception)

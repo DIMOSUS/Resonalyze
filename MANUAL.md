@@ -990,15 +990,18 @@ or none. A channel measured with a single microphone in an array project reads p
 **Array** and is drawn from its point measurement, and the panel says how many channels
 that is; below the cabin's first mode a point and an average are the same, so a
 subwoofer loses little. Keep **Mic cal** on **Own (as measured)** — with an array each
-position is a different capsule with its own file — and press **Hybrid**, as below.
+position is a different capsule with its own file. **Hybrid** switches itself on when
+you pick an array measurement as a channel's source while the project reads the arrays,
+or choose the arrays in that menu.
 
 **Took MMM captures?** On each card press **MMM**, choose **Attach capture...** and select
 that driver's capture — both sides for a stereo pair, once for a mono channel. The
 button reads **MMM** for none, **MMM ✓** when one is attached, **MMM ⚠** when the session
-refers to one it cannot read. When every playing channel has a capture and the captures
-form one set, the **Hybrid** toggle under the graph becomes available — and turns
-**red** until you press it, because until then the plot is still drawing one microphone
-position while the averages sit unused. Press it.
+refers to one it cannot read. The first capture switches the **Hybrid** toggle under
+the graph on; it stays grey until every playing channel has a capture and the captures
+form one set, and then the plot draws the averages. If you switch it off, its label
+turns **red**: the plot is drawing one microphone position again while the averages sit
+unused.
 
 ![Each channel's MMM button, and the Hybrid toggle they enable](assets/images/manual/hybrid-enable.png)
 

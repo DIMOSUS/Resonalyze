@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Numerics;
 using MigraDoc.DocumentObjectModel;
 using MigraDoc.DocumentObjectModel.Tables;
@@ -38,29 +37,53 @@ internal static class VirtualCrossoverSheetPdf
         int sampleRate,
         PeqQConvention qConvention = PeqQConvention.Rbj)
     {
-        using PdfSheet sheet = Build(project, metricLine, sampleRate, qConvention);
+        ArgumentNullException.ThrowIfNull(project);
+
+        using PdfSheet sheet = Build(
+            project, metricLine, sampleRate, qConvention, ProjectName(project, filePath));
         sheet.Save(filePath);
     }
+
+    /// <summary>What every page is headed with: the session's name, or the sheet's own file name while the session has none.</summary>
+    internal static string? ProjectName(VirtualCrossoverProjectFile project, string filePath) =>
+        project.SessionName ??
+        (Path.GetFileNameWithoutExtension(filePath) is { Length: > 0 } stem ? stem : null);
 
     // Unrendered so tests can walk the MigraDoc document model. The caller owns disposal.
     internal static PdfSheet Build(
         VirtualCrossoverProjectFile project,
         string? metricLine,
         int sampleRate,
-        PeqQConvention qConvention = PeqQConvention.Rbj)
+        PeqQConvention qConvention = PeqQConvention.Rbj,
+        string? projectName = null,
+        DateTime? generatedAt = null)
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        string subtitleText =
-            $"Generated {DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}";
+        DateTime now = generatedAt ?? DateTime.Now;
+        string subtitleText = $"Generated {PdfSheet.Stamp(now)}";
         subtitleText += $"   ·   Q: {PeqQConventions.Describe(qConvention)}";
         if (!string.IsNullOrWhiteSpace(metricLine))
         {
             subtitleText += $"   ·   {metricLine}";
         }
 
-        var sheet = new PdfSheet("Virtual DSP", subtitleText, qConvention);
+        var sheet = new PdfSheet("Virtual DSP", subtitleText, qConvention, projectName, now);
+        // A sheet that fails half-way still owns temp images; only Dispose deletes them.
+        try
+        {
+            Fill(sheet, project, sampleRate);
+            return sheet;
+        }
+        catch
+        {
+            sheet.Dispose();
+            throw;
+        }
+    }
 
+    private static void Fill(PdfSheet sheet, VirtualCrossoverProjectFile project, int sampleRate)
+    {
         // One run per zone in DSP typing order, each with its own graph (a dozen channels on one graph is a tangle); single-zone stays flat.
         IReadOnlyList<(VirtualCrossoverZone Zone, IReadOnlyList<int> PairIndices)>
             sections = VirtualCrossoverSheetGroups.Sections(project);
@@ -82,7 +105,7 @@ internal static class VirtualCrossoverSheetPdf
                 AddPairOrChannelSections(sheet, project, i);
             }
 
-            return sheet;
+            return;
         }
 
         // Sub chains reappear pale on the front graph: the bass handover cannot be judged from one side of it.
@@ -110,8 +133,6 @@ internal static class VirtualCrossoverSheetPdf
                 AddPairOrChannelSections(sheet, project, i);
             }
         }
-
-        return sheet;
     }
 
     private static List<SheetEntry> Participants(

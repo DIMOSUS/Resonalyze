@@ -27,16 +27,58 @@ internal static class TuningSheetPdf
         double fitMaxHz,
         double sampleRateHz,
         EqTuneStats? stats,
-        PeqQConvention qConvention = PeqQConvention.Rbj)
+        PeqQConvention qConvention = PeqQConvention.Rbj,
+        string? projectName = null)
+    {
+        using PdfSheet sheet = Build(
+            title, curve, fitMinHz, fitMaxHz, sampleRateHz, stats, qConvention, projectName);
+        sheet.Save(filePath);
+    }
+
+    // Unrendered so tests can walk the MigraDoc document model. The caller owns disposal.
+    internal static PdfSheet Build(
+        string title,
+        EqualizationCurve curve,
+        double fitMinHz,
+        double fitMaxHz,
+        double sampleRateHz,
+        EqTuneStats? stats,
+        PeqQConvention qConvention = PeqQConvention.Rbj,
+        string? projectName = null,
+        DateTime? generatedAt = null)
     {
         ArgumentNullException.ThrowIfNull(curve);
 
-        using var sheet = new PdfSheet(
+        DateTime now = generatedAt ?? DateTime.Now;
+        var sheet = new PdfSheet(
             string.IsNullOrWhiteSpace(title) ? "Tuning sheet" : title,
-            $"Generated {DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}" +
+            $"Generated {PdfSheet.Stamp(now)}" +
             $"   ·   Fit range {Number(fitMinHz, "0")}–{Number(fitMaxHz, "0")} Hz" +
             $"   ·   Q: {PeqQConventions.Describe(qConvention)}",
-            qConvention);
+            qConvention,
+            projectName,
+            now);
+        // A sheet that fails half-way still owns temp images; only Dispose deletes them.
+        try
+        {
+            Fill(sheet, curve, fitMinHz, fitMaxHz, sampleRateHz, stats);
+            return sheet;
+        }
+        catch
+        {
+            sheet.Dispose();
+            throw;
+        }
+    }
+
+    private static void Fill(
+        PdfSheet sheet,
+        EqualizationCurve curve,
+        double fitMinHz,
+        double fitMaxHz,
+        double sampleRateHz,
+        EqTuneStats? stats)
+    {
         Section section = sheet.Section;
 
         sheet.AddImage(
@@ -55,8 +97,6 @@ internal static class TuningSheetPdf
         preamp.AddFormattedText($"{Signed(curve.PreampDb)} dB", TextFormat.Bold);
 
         sheet.AddFilterTable(curve.Bands);
-
-        sheet.Save(filePath);
     }
 
     private static void AddStatsTable(Section section, EqTuneStats stats)

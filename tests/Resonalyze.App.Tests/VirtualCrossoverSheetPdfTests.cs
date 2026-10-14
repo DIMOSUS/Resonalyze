@@ -1,5 +1,6 @@
 using System.Text;
 using MigraDoc.DocumentObjectModel;
+using MigraDoc.DocumentObjectModel.Fields;
 using MigraDoc.DocumentObjectModel.Tables;
 using Resonalyze;
 using Resonalyze.Dsp;
@@ -405,6 +406,46 @@ public sealed class VirtualCrossoverSheetPdfTests
         Assert.All(headings.Skip(1), heading =>
             Assert.True(heading.Format.PageBreakBefore));
     }
+
+    [Fact]
+    public void Build_HeadsEveryPageWithTheProjectName_TheTimeAndThePageCount()
+    {
+        using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(
+            new VirtualCrossoverProjectFile(), null, 48_000, projectName: "bmw-f30",
+            generatedAt: new DateTime(2026, 10, 14, 18, 38, 0));
+
+        Paragraph header = PageHeader(sheet.Document);
+        var text = new StringBuilder();
+        AppendParagraphText(header, text);
+        Assert.Equal("bmw-f30   ·   Virtual DSP   ·   2026-10-14 18:38Page  of ", text.ToString());
+        Assert.Single(header.Elements.Cast<DocumentObject>(), element => element is PageField);
+        Assert.Single(header.Elements.Cast<DocumentObject>(), element => element is NumPagesField);
+        Assert.Equal("bmw-f30   ·   Virtual DSP", sheet.Document.Info.Title);
+    }
+
+    [Fact]
+    public void Build_WithoutAProjectName_HeadsThePagesWithTheTitleAlone()
+    {
+        using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(
+            new VirtualCrossoverProjectFile(), null, 48_000);
+
+        var text = new StringBuilder();
+        AppendParagraphText(PageHeader(sheet.Document), text);
+        Assert.StartsWith("Virtual DSP   ·   20", text.ToString());
+    }
+
+    [Fact]
+    public void ProjectName_IsTheSessionFilesStem_OrTheSheetsOwnWhileTheSessionHasNone()
+    {
+        var named = new VirtualCrossoverProjectFile { SessionFilePath = @"D:\cars\bmw-f30.json" };
+        var unnamed = new VirtualCrossoverProjectFile();
+
+        Assert.Equal("bmw-f30", VirtualCrossoverSheetPdf.ProjectName(named, @"D:\out\sheet-v2.pdf"));
+        Assert.Equal("sheet-v2", VirtualCrossoverSheetPdf.ProjectName(unnamed, @"D:\out\sheet-v2.pdf"));
+    }
+
+    private static Paragraph PageHeader(Document document) =>
+        Assert.IsType<Paragraph>(document.LastSection.Headers.Primary.Elements[0]);
 
     private static List<Paragraph> GroupHeadings(Document document)
     {

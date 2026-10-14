@@ -186,7 +186,8 @@ public partial class VirtualCrossoverPanel
                 maxHz,
                 // Bands were not necessarily fitted here; no invented statistics.
                 Stats: null,
-                session.ProcessorProfile.QConvention));
+                session.ProcessorProfile.QConvention,
+                session.Project.SessionName));
         if (!result.Success)
         {
             ShowError("PEQ could not be exported.", result.Exception!.Message);

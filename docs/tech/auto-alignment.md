@@ -895,9 +895,12 @@ sub-leading lobe stood. A trailing pick the rule found no lead for leaves the vo
 
 **The stand outlives the descent.** The reference-side walk records the mono channel's stand
 (`SubPrecedenceStand`: the searched channel, its neighbour, the fronts' anchor relative to the
-neighbour, the lead sign), and the [mono co-move](#post-descent-passes) judges its moves against it:
-a move that would leave the sub trailing the fronts must beat the best move that keeps the lead by
-`SubPrecedenceMarginDb`, the descent's own margin. Without it the co-move undid the rule in four
+neighbour, the lead sign) once every witness has had its say on the pick and the pick still leads:
+a direct-coherence or phase verdict that moved it behind the fronts leaves no stand. The
+[mono co-move](#post-descent-passes) judges its moves against it: a move that would leave the sub
+trailing the fronts must beat the best move that keeps the lead by `SubPrecedenceMarginDb`, the
+descent's own margin, and the in-lobe polish a refused hop falls back to is held to the lead too,
+so a refusal never lands the sub further behind than it stands. Without it the co-move undid the rule in four
 archived cabins and in a Corolla run: its full-band sum prefers the sub on the midbass's late energy,
 and a half-period hop with a flip (+6.2…+7.5 ms) took it there for 0.15-1.7 dB, leaving the sub's
 front 4-5 ms behind the woofer's where the hand tunes hold it 1.7-2.8 ms ahead (v4 +4.38 → −1.84,

@@ -1146,7 +1146,6 @@ public static class AutoAlignmentEngine
             double predictionDisagreementMs = arrivals.PredictionDisagreementMs;
             bool arrivalReanchored = arrivals.ArrivalReanchored;
             bool unreplacedLatch = arrivals.UnreplacedLatch;
-            frontAnchorMs[pair] = upperArrival - lowerArrival + (PairChainArrivalSkewMs(pair) ?? 0.0);
 
             // Seed from the dominant GCC-PHAT extremum of either sign (position only). See docs/tech/auto-alignment.md#seed-selection.
             // Timeline stores (upper − lower); the extremum is the delay to add to the upper channel, i.e. that negated.
@@ -1202,6 +1201,9 @@ public static class AutoAlignmentEngine
                     phat = Correlate(centerLagMs);
                 }
             }
+
+            // Read once the arrivals are final: a re-anchored pair's fronts are its predicted ones.
+            frontAnchorMs[pair] = upperArrival - lowerArrival + (PairChainArrivalSkewMs(pair) ?? 0.0);
 
             CorrelationDelayCandidate seed = phat.BestByMagnitude;
             CorrelationDelayCandidate? sameSignRival =
@@ -1963,6 +1965,10 @@ public static class AutoAlignmentEngine
             // Set where sub precedence rules and the pick stands by it: a later vote may only choose among picks it would
             // let stand. A trailing pick it found no lead for leaves the vote free.
             Func<AlignmentCandidate, bool>? subPrecedenceAdmits = null;
+            // The lead as read against the fronts, kept for the stand the final pick may leave to the co-move.
+            Func<AlignmentCandidate, bool>? standLeads = null;
+            double standAnchorMs = 0;
+            double standLeadSign = 0;
             // Sub precedence (see SubPrecedenceMarginDb): pool spans fine and wide sets on the prior-free score; bounded to one period past the anchor.
             if (monoChannels != null &&
                 sceneLockToleranceMs == null && onsetAnchorMs == null)
@@ -2016,16 +2022,10 @@ public static class AutoAlignmentEngine
                     if (leadsTheStack(chosen))
                     {
                         subPrecedenceAdmits = leadsTheStack;
-                        // The stand outlives the descent: the mono co-move keeps the lead. See docs/tech/auto-alignment.md#sub-precedence.
-                        if (subPrecedence != null)
-                        {
-                            subPrecedence[subSearched ? channel : neighborChannel] =
-                                new SubPrecedenceStand(
-                                    channel, neighborChannel,
-                                    precedenceAnchorMs - alignment.GetValueOrDefault(neighborChannel).DelayMs,
-                                    leadSign);
-                        }
                     }
+                    standLeads = leadsTheStack;
+                    standAnchorMs = precedenceAnchorMs;
+                    standLeadSign = leadSign;
                 }
             }
 
@@ -2410,6 +2410,17 @@ public static class AutoAlignmentEngine
                     lowPolarityDetail = FormattableString.Invariant(
                         $"low-junction polarity unsettled: the crests meet {phase}, the summation the opposite");
                 }
+            }
+
+            // The stand outlives the descent, read on the pick every witness has had its say on: the mono co-move keeps
+            // the lead it stood with. See docs/tech/auto-alignment.md#sub-precedence.
+            if (subPrecedence != null && standLeads != null && standLeads(chosen))
+            {
+                subPrecedence[monoChannels!.Contains(channel) ? channel : neighborChannel] =
+                    new SubPrecedenceStand(
+                        channel, neighborChannel,
+                        standAnchorMs - alignment.GetValueOrDefault(neighborChannel).DelayMs,
+                        standLeadSign);
             }
 
             double newDelay = chosen.DelayMs;
@@ -4744,7 +4755,9 @@ public static class AutoAlignmentEngine
                     bestDelta = deltaMs;
                     bestFlip = flip;
                 }
-                if (IsPolish(deltaMs, flip) && score > bestPolishScore)
+                // The polish is also what a refused hop falls back to, so it may not trail either.
+                if (IsPolish(deltaMs, flip) && (keepsTheLead?.Invoke(deltaMs) ?? true) &&
+                    score > bestPolishScore)
                 {
                     bestPolishScore = score;
                     bestPolishDelta = deltaMs;

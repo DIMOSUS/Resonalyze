@@ -1255,11 +1255,15 @@ public sealed class StereoAlignmentTests
             alignment[sub].DelayMs - alignment[leftWoof].DelayMs, -2.5, 2.5);
     }
 
-    [Fact]
-    public void ComoveMonoChannels_AHopThatLeavesTheSubTrailingItsFront_IsHeldToTheLead()
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(-0.7)]
+    public void ComoveMonoChannels_AHopThatLeavesTheSubTrailingItsFront_IsHeldToTheLead(double frontsMeetMs)
     {
-        // Both woofers carry a stronger copy of their front 5 ms behind it: the full-band sum wants the sub on the copies,
-        // behind the fronts; where the descent stood the sub leading, the co-move may not leave it trailing for that.
+        // Both woofers carry a copy of their front half a period behind it, a tenth stronger: the full-band sum wants the
+        // sub on the copies, behind the fronts; where the descent stood the sub leading, the co-move may not leave it
+        // trailing for that. With the fronts meeting at -0.7 ms the field has shifted since the stand and the sub as it
+        // stands already trails: the hop is still refused, and the sub is not taken further behind.
         Complex[] WooferIr() => ImpulseWithEcho(8.0, 1.0, 6.25, 1.1);
         var sub = new TestChannel("sub", ImpulseAtMs(8.0));
         var leftWoof = new TestChannel("L woof", WooferIr());
@@ -1299,7 +1303,7 @@ public sealed class StereoAlignmentTests
                     ? new Dictionary<IAlignmentChannel, AutoAlignmentEngine.SubPrecedenceStand>(
                         ReferenceEqualityComparer.Instance)
                     {
-                        [sub] = new(sub, leftWoof, AnchorRelativeMs: 0, LeadSign: -1)
+                        [sub] = new(sub, leftWoof, AnchorRelativeMs: frontsMeetMs, LeadSign: -1)
                     }
                     : null);
             return (alignment[sub].DelayMs - alignment[leftWoof].DelayMs, log.ToString());
@@ -1309,7 +1313,9 @@ public sealed class StereoAlignmentTests
         (double held, string heldLog) = Run(stood: true);
 
         Assert.True(free > 3.0, $"without the stand the sum did not take the sub behind the fronts ({free:0.00} ms):\n{freeLog}");
-        Assert.True(held <= 0.5, $"the stand did not keep the sub leading ({held:0.00} ms):\n{heldLog}");
+        Assert.True(
+            held <= Math.Max(frontsMeetMs + 0.5, 0.0),
+            $"the stand let the sub behind the fronts ({held:0.00} ms):\n{heldLog}");
     }
 
     [Fact]

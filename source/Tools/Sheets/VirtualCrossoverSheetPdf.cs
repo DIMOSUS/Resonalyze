@@ -69,7 +69,21 @@ internal static class VirtualCrossoverSheetPdf
         }
 
         var sheet = new PdfSheet("Virtual DSP", subtitleText, qConvention, projectName);
+        // A sheet that fails half-way still owns temp images; only Dispose deletes them.
+        try
+        {
+            Fill(sheet, project, sampleRate);
+            return sheet;
+        }
+        catch
+        {
+            sheet.Dispose();
+            throw;
+        }
+    }
 
+    private static void Fill(PdfSheet sheet, VirtualCrossoverProjectFile project, int sampleRate)
+    {
         // One run per zone in DSP typing order, each with its own graph (a dozen channels on one graph is a tangle); single-zone stays flat.
         IReadOnlyList<(VirtualCrossoverZone Zone, IReadOnlyList<int> PairIndices)>
             sections = VirtualCrossoverSheetGroups.Sections(project);
@@ -91,7 +105,7 @@ internal static class VirtualCrossoverSheetPdf
                 AddPairOrChannelSections(sheet, project, i);
             }
 
-            return sheet;
+            return;
         }
 
         // Sub chains reappear pale on the front graph: the bass handover cannot be judged from one side of it.
@@ -119,8 +133,6 @@ internal static class VirtualCrossoverSheetPdf
                 AddPairOrChannelSections(sheet, project, i);
             }
         }
-
-        return sheet;
     }
 
     private static List<SheetEntry> Participants(

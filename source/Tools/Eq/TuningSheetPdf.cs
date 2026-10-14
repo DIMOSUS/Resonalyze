@@ -55,6 +55,27 @@ internal static class TuningSheetPdf
             $"   ·   Q: {PeqQConventions.Describe(qConvention)}",
             qConvention,
             projectName);
+        // A sheet that fails half-way still owns temp images; only Dispose deletes them.
+        try
+        {
+            Fill(sheet, curve, fitMinHz, fitMaxHz, sampleRateHz, stats);
+            return sheet;
+        }
+        catch
+        {
+            sheet.Dispose();
+            throw;
+        }
+    }
+
+    private static void Fill(
+        PdfSheet sheet,
+        EqualizationCurve curve,
+        double fitMinHz,
+        double fitMaxHz,
+        double sampleRateHz,
+        EqTuneStats? stats)
+    {
         Section section = sheet.Section;
 
         sheet.AddImage(
@@ -73,7 +94,6 @@ internal static class TuningSheetPdf
         preamp.AddFormattedText($"{Signed(curve.PreampDb)} dB", TextFormat.Bold);
 
         sheet.AddFilterTable(curve.Bands);
-        return sheet;
     }
 
     private static void AddStatsTable(Section section, EqTuneStats stats)

@@ -13,13 +13,15 @@ public sealed class TuningSheetPdfTests
         var curve = new EqualizationCurve(new[] { new PeqBand(1000, 1.0, 3.0) }, preampDb: 0);
 
         using PdfSheet sheet = TuningSheetPdf.Build(
-            "Channel Front (L)", curve, 20, 20_000, 48_000, null, projectName: "bmw-f30");
+            "Channel Front (L)", curve, 20, 20_000, 48_000, null, projectName: "bmw-f30",
+            generatedAt: new DateTime(2026, 10, 14, 18, 38, 0));
 
         Paragraph header = Assert.IsType<Paragraph>(
             sheet.Document.LastSection.Headers.Primary.Elements[0]);
         List<DocumentObject> elements = header.Elements.Cast<DocumentObject>().ToList();
         FormattedText name = Assert.IsType<FormattedText>(elements[0]);
         Assert.Equal("bmw-f30   ·   Channel Front (L)", Assert.IsType<Text>(name.Elements[0]).Content);
+        Assert.Contains(elements, element => element is Text { Content: "   ·   2026-10-14 18:38" });
         Assert.Contains(elements, element => element is PageField);
         Assert.Contains(elements, element => element is NumPagesField);
     }

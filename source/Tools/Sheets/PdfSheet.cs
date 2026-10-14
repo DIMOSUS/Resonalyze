@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using MigraDoc.DocumentObjectModel;
 using MigraDoc.DocumentObjectModel.Tables;
@@ -35,11 +36,13 @@ internal sealed class PdfSheet : IDisposable
     internal Document Document => document;
 
     /// <param name="projectName">Heads every page beside the title; the title alone when null or the same.</param>
+    /// <param name="generatedAt">Heads every page beside the page number; the caller's subtitle states the same moment.</param>
     public PdfSheet(
         string title,
         string subtitleText,
         PeqQConvention qConvention = PeqQConvention.Rbj,
-        string? projectName = null)
+        string? projectName = null,
+        DateTime? generatedAt = null)
     {
         this.qConvention = qConvention;
         document = new Document();
@@ -60,7 +63,7 @@ internal sealed class PdfSheet : IDisposable
             ? title
             : $"{projectName}   ·   {title}";
         document.Info.Title = headerText;
-        AddPageHeader(headerText);
+        AddPageHeader(headerText, Stamp(generatedAt ?? DateTime.Now));
 
         byte[]? banner = LoadBanner();
         if (banner != null)
@@ -81,8 +84,11 @@ internal sealed class PdfSheet : IDisposable
         subtitle.Format.SpaceAfter = Unit.FromMillimeter(4);
     }
 
-    // Every page names its project and its place in the set: sheets of several cars, once shuffled, are told apart by this line alone.
-    private void AddPageHeader(string text)
+    public static string Stamp(DateTime at) => at.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+
+    // Every page names its project, its moment and its place in the set: sheets of several cars, or of one car over a
+    // day, once shuffled, are told apart by this line alone.
+    private void AddPageHeader(string text, string stamp)
     {
         Paragraph header = Section.Headers.Primary.AddParagraph();
         header.Format.Font.Size = 9;
@@ -92,6 +98,7 @@ internal sealed class PdfSheet : IDisposable
         header.Format.Borders.Bottom.Color = CardBorderColor;
         header.Format.Borders.DistanceFromBottom = Unit.FromMillimeter(1);
         header.AddFormattedText(text, TextFormat.Bold);
+        header.AddText($"   ·   {stamp}");
         header.AddTab();
         header.AddText("Page ");
         header.AddPageField();

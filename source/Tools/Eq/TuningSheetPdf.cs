@@ -44,17 +44,20 @@ internal static class TuningSheetPdf
         double sampleRateHz,
         EqTuneStats? stats,
         PeqQConvention qConvention = PeqQConvention.Rbj,
-        string? projectName = null)
+        string? projectName = null,
+        DateTime? generatedAt = null)
     {
         ArgumentNullException.ThrowIfNull(curve);
 
+        DateTime now = generatedAt ?? DateTime.Now;
         var sheet = new PdfSheet(
             string.IsNullOrWhiteSpace(title) ? "Tuning sheet" : title,
-            $"Generated {DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}" +
+            $"Generated {PdfSheet.Stamp(now)}" +
             $"   ·   Fit range {Number(fitMinHz, "0")}–{Number(fitMaxHz, "0")} Hz" +
             $"   ·   Q: {PeqQConventions.Describe(qConvention)}",
             qConvention,
-            projectName);
+            projectName,
+            now);
         // A sheet that fails half-way still owns temp images; only Dispose deletes them.
         try
         {

@@ -408,15 +408,16 @@ public sealed class VirtualCrossoverSheetPdfTests
     }
 
     [Fact]
-    public void Build_HeadsEveryPageWithTheProjectNameAndThePageCount()
+    public void Build_HeadsEveryPageWithTheProjectName_TheTimeAndThePageCount()
     {
         using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(
-            new VirtualCrossoverProjectFile(), null, 48_000, projectName: "bmw-f30");
+            new VirtualCrossoverProjectFile(), null, 48_000, projectName: "bmw-f30",
+            generatedAt: new DateTime(2026, 10, 14, 18, 38, 0));
 
         Paragraph header = PageHeader(sheet.Document);
         var text = new StringBuilder();
         AppendParagraphText(header, text);
-        Assert.Equal("bmw-f30   ·   Virtual DSPPage  of ", text.ToString());
+        Assert.Equal("bmw-f30   ·   Virtual DSP   ·   2026-10-14 18:38Page  of ", text.ToString());
         Assert.Single(header.Elements.Cast<DocumentObject>(), element => element is PageField);
         Assert.Single(header.Elements.Cast<DocumentObject>(), element => element is NumPagesField);
         Assert.Equal("bmw-f30   ·   Virtual DSP", sheet.Document.Info.Title);
@@ -430,7 +431,7 @@ public sealed class VirtualCrossoverSheetPdfTests
 
         var text = new StringBuilder();
         AppendParagraphText(PageHeader(sheet.Document), text);
-        Assert.StartsWith("Virtual DSPPage", text.ToString());
+        Assert.StartsWith("Virtual DSP   ·   20", text.ToString());
     }
 
     [Fact]

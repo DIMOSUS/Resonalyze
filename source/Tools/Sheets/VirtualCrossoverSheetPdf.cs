@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Numerics;
 using MigraDoc.DocumentObjectModel;
 using MigraDoc.DocumentObjectModel.Tables;
@@ -56,19 +55,20 @@ internal static class VirtualCrossoverSheetPdf
         string? metricLine,
         int sampleRate,
         PeqQConvention qConvention = PeqQConvention.Rbj,
-        string? projectName = null)
+        string? projectName = null,
+        DateTime? generatedAt = null)
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        string subtitleText =
-            $"Generated {DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}";
+        DateTime now = generatedAt ?? DateTime.Now;
+        string subtitleText = $"Generated {PdfSheet.Stamp(now)}";
         subtitleText += $"   ·   Q: {PeqQConventions.Describe(qConvention)}";
         if (!string.IsNullOrWhiteSpace(metricLine))
         {
             subtitleText += $"   ·   {metricLine}";
         }
 
-        var sheet = new PdfSheet("Virtual DSP", subtitleText, qConvention, projectName);
+        var sheet = new PdfSheet("Virtual DSP", subtitleText, qConvention, projectName, now);
         // A sheet that fails half-way still owns temp images; only Dispose deletes them.
         try
         {

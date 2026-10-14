@@ -4217,7 +4217,20 @@ own sum is the scene. The pair then
 meets its neighbours as one: the scene-preserving pass below moves both sides
 by one shared delta for the best of both sides' junctions, and each side may
 afterwards trim on its own for its junction with the mid, by the same eighth
-of a period the far-side polish allows; the mono sub follows both. Half a
+of a period the far-side polish allows; the mono sub follows both. At the
+sub's own junction a near-tie between the lobe that leaves the sub ahead of
+the midbass's front and the one that leaves it behind is decided for the
+leading one, within 1 dB of summation: the first wavefront binds the bass to
+the midbass transient, so a slightly leading sub reads as bass up front and a
+trailing one as sluggish. "Ahead" is read against where the two fronts meet,
+with each chain's own shift taken out, not against the correlation's extremum:
+in a cabin whose midbass carries most of its low-band energy 5-15 ms behind
+its front the extremum sits on that late energy itself, and so does the sum,
+which is what the sub following both sides would otherwise be pulled onto, a
+half period behind the fronts for a few tenths of a dB. The following move
+keeps the lead the search gave: a move that would leave the sub behind the
+fronts must win by more than that same 1 dB, and the log names the move it
+held (`sub precedence holds the mono co-move`). Half a
 period of freedom around a wrong arrival figure had put one cabin's far
 midbass 2.3 ms ahead of its twin, the two sides a third of a turn apart
 through 125-180 Hz. The price can be the far side's own handover: where the

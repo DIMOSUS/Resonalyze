@@ -868,7 +868,7 @@ stack and the one that leaves it leading is not acoustically resolvable, but it 
 one-sided. The first wavefront binds the bass to the localizable midbass transient (precedence), so
 a slightly leading sub reads as "bass up front" and a trailing one as sluggish and detached.
 
-`PreferSubLeading` replaces a pick that leaves the sub trailing the envelope anchor by more than
+`PreferSubLeading` replaces a pick that leaves the sub trailing the fronts by more than
 `SubPrecedenceSlackMs` (0.5 ms) with the anchor-nearest candidate that does not, within
 `SubPrecedenceMarginDb` (1 dB).
 The margin sits above the near-tie scale and just under the ~1.4 dB comb-noise ceiling within which
@@ -878,10 +878,34 @@ fine and wide sets on the prior-free score, because the prior is what keeps park
 the trailing lobe. The lead is bounded to one period past the anchor: a sub leading by whole periods
 is detached the other way. The rule does not apply under a scene or onset lock.
 
+**The anchor is where the fronts meet, not the seed.** `BuildArrivalTimeline` keeps, per junction,
+the processed band-limited arrivals' difference with the pair's [chain skew](#chain-skew) taken out
+(`frontAnchorMs`), and the rule reads a lead against it. The seed cannot serve: it is the
+correlation's extremum, and in a cabin whose midbass carries most of its low-band energy 5-15 ms
+behind its front (a Corolla's left door: half the 30-114 Hz energy by 18 ms, front at 3.5 ms) the
+seed sits on that late energy itself, so a pick a period behind the front read as "leading" by
+half a millisecond and the rule never spoke. On the v4 cabin the seed sat at +1.48 ms where the
+fronts met at −2.96, and the hand tune holds the sub's front 2.7 ms ahead of the woofer's; against
+the fronts the rule takes the −5.66 ms lobe the tune sits on, against the seed it kept +0.67 inv.
+
 Where the pick stands by this rule, the [low-junction polarity](#low-junction-polarity) vote that
 follows chooses only among picks the rule lets stand: its pool spans a period around the pick, which
 still holds the trailing one, and a tie handed it straight back while the decision text said the
 sub-leading lobe stood. A trailing pick the rule found no lead for leaves the vote free.
+
+**The stand outlives the descent.** The reference-side walk records the mono channel's stand
+(`SubPrecedenceStand`: the searched channel, its neighbour, the fronts' anchor relative to the
+neighbour, the lead sign) once every witness has had its say on the pick and the pick still leads:
+a direct-coherence or phase verdict that moved it behind the fronts leaves no stand. The
+[mono co-move](#post-descent-passes) judges its moves against it: a move that would leave the sub
+trailing the fronts must beat the best move that keeps the lead by `SubPrecedenceMarginDb`, the
+descent's own margin, and the in-lobe polish a refused hop falls back to is held to the lead too,
+so a refusal never lands the sub further behind than it stands. Without it the co-move undid the rule in four
+archived cabins and in a Corolla run: its full-band sum prefers the sub on the midbass's late energy,
+and a half-period hop with a flip (+6.2…+7.5 ms) took it there for 0.15-1.7 dB, leaving the sub's
+front 4-5 ms behind the woofer's where the hand tunes hold it 1.7-2.8 ms ahead (v4 +4.38 → −1.84,
+v6_synth_array +5.27 → −1.10, both sides alike). The [sub-band veto](#post-descent-passes) catches
+such a hop only when the halves disagree, which they need not: the late energy is broadband.
 
 ## Direct-coherence witness
 
@@ -1618,6 +1642,9 @@ preferred the flip partner a third of a period away.
   - The reference is the better of in-lobe polish and the incumbent. On a mode-dominated junction
     the polish itself can slide onto a modal trade (an 80 Hz reproduction polished to −2.45 ms,
     where the clean lower half reads −6.6 dB).
+- **Sub precedence.** Where the descent stood the mono channel leading the fronts, a move that
+  would leave it trailing must beat the best move that keeps the lead by `SubPrecedenceMarginDb`;
+  see [Sub precedence](#sub-precedence) for the archive it was read on.
 - **Relative move.** Results below zero rebase the rest of the field.
 
 **Far-side polish** (`PolishFarSideJunctions`). Each far channel may leave its scene position to

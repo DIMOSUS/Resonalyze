@@ -640,6 +640,19 @@ public static class AutoAlignmentEngine
         double GapMs,
         double CapMs);
 
+    /// <summary>Where sub precedence stood a mono channel's reference-side junction: the searched channel's delay less its
+    /// neighbour's, against the anchor in the same frame, so the summing passes below can keep the sub leading when the
+    /// field has shifted since. See docs/tech/auto-alignment.md#sub-precedence.</summary>
+    internal sealed record SubPrecedenceStand(
+        IAlignmentChannel Searched,
+        IAlignmentChannel Neighbor,
+        double AnchorRelativeMs,
+        double LeadSign)
+    {
+        public bool Leads(double searchedLessNeighborMs) =>
+            LeadSign * (searchedLessNeighborMs - AnchorRelativeMs) >= -SubPrecedenceSlackMs;
+    }
+
     private static void Compute(
         IReadOnlyList<AlignmentSnapshot> channelsByBand,
         IReadOnlyList<AlignmentJunction> pairs,
@@ -649,7 +662,8 @@ public static class AutoAlignmentEngine
         Dictionary<AlignmentJunction, OnsetLockState>? onsetLocks,
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
         IReadOnlyCollection<IAlignmentChannel>? monoChannels = null,
-        HashSet<AlignmentJunction>? phasePlaced = null)
+        HashSet<AlignmentJunction>? phasePlaced = null,
+        Dictionary<IAlignmentChannel, SubPrecedenceStand>? subPrecedence = null)
     {
         ArgumentNullException.ThrowIfNull(channelsByBand);
         ArgumentNullException.ThrowIfNull(pairs);
@@ -677,7 +691,8 @@ public static class AutoAlignmentEngine
                 byBand, pairs, log,
                 CrossoverSettlesJunctionPolarity,
                 out HashSet<AlignmentJunction> untrustedSeeds,
-                out Dictionary<AlignmentJunction, double> seedPartnerReach);
+                out Dictionary<AlignmentJunction, double> seedPartnerReach,
+                out Dictionary<AlignmentJunction, double> frontAnchors);
 
         // The top of the chain anchors the walk, so the channel the image follows — and the one a stereo run bridges
         // the sides on — is never the last link of an inherited chain. See docs/tech/auto-alignment.md#walk-order.
@@ -704,7 +719,9 @@ public static class AutoAlignmentEngine
                 onsetLocks: onsetLocks,
                 decisions: decisions,
                 monoChannels: monoChannels,
-                phasePlaced: phasePlaced);
+                phasePlaced: phasePlaced,
+                subPrecedence: subPrecedence,
+                frontAnchorMs: frontAnchors);
         }
     }
 
@@ -1063,13 +1080,19 @@ public static class AutoAlignmentEngine
         StringBuilder log,
         Func<AlignmentJunction, SettledJunctionPolarity?> settledPolarity,
         out HashSet<AlignmentJunction> untrustedSeedJunctions,
-        out Dictionary<AlignmentJunction, double> seedPartnerDistanceMs)
+        out Dictionary<AlignmentJunction, double> seedPartnerDistanceMs,
+        out Dictionary<AlignmentJunction, double> frontAnchorMs)
     {
         ArgumentNullException.ThrowIfNull(settledPolarity);
         // Untrusted-seed junctions may be a half period off, so they get the half-period window. Keyed by junction: it is a property of the relation.
         untrustedSeedJunctions =
             new HashSet<AlignmentJunction>(ReferenceEqualityComparer.Instance);
         seedPartnerDistanceMs =
+            new Dictionary<AlignmentJunction, double>(
+                ReferenceEqualityComparer.Instance);
+        // Where the fronts meet, lower delay less upper, with the chains' non-common shift taken out: the anchor sub
+        // precedence reads a lead against. See docs/tech/auto-alignment.md#sub-precedence.
+        frontAnchorMs =
             new Dictionary<AlignmentJunction, double>(
                 ReferenceEqualityComparer.Instance);
         var timeline = new Dictionary<IAlignmentChannel, double>
@@ -1123,6 +1146,7 @@ public static class AutoAlignmentEngine
             double predictionDisagreementMs = arrivals.PredictionDisagreementMs;
             bool arrivalReanchored = arrivals.ArrivalReanchored;
             bool unreplacedLatch = arrivals.UnreplacedLatch;
+            frontAnchorMs[pair] = upperArrival - lowerArrival + (PairChainArrivalSkewMs(pair) ?? 0.0);
 
             // Seed from the dominant GCC-PHAT extremum of either sign (position only). See docs/tech/auto-alignment.md#seed-selection.
             // Timeline stores (upper − lower); the extremum is the delay to add to the upper channel, i.e. that negated.
@@ -1508,7 +1532,9 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
         IReadOnlyCollection<IAlignmentChannel>? monoChannels = null,
         IReadOnlyDictionary<AlignmentJunction, double>? seedPartnerDistanceMs = null,
-        HashSet<AlignmentJunction>? phasePlaced = null)
+        HashSet<AlignmentJunction>? phasePlaced = null,
+        Dictionary<IAlignmentChannel, SubPrecedenceStand>? subPrecedence = null,
+        IReadOnlyDictionary<AlignmentJunction, double>? frontAnchorMs = null)
     {
         // Untrusted seed across this junction (or its secondary): the base may be a half period off.
         bool wideSeed = untrustedSeedJunctions != null &&
@@ -1947,13 +1973,19 @@ public static class AutoAlignmentEngine
                 double leadSign = subNeighbor ? 1.0 : -1.0;
                 if (subSearched ^ subNeighbor)
                 {
+                    // The lead is read against the fronts, not the seed: a seed can sit on the late energy itself.
+                    double precedenceAnchorMs = frontAnchorMs != null &&
+                        frontAnchorMs.TryGetValue(pair, out double front)
+                        ? alignment.GetValueOrDefault(neighborChannel).DelayMs +
+                            (channel == pair.Lower.Channel ? front : -front)
+                        : anchorMs;
                     Func<AlignmentCandidate, bool> leadsTheStack = item =>
-                        leadSign * (item.DelayMs - anchorMs) >= -SubPrecedenceSlackMs;
+                        leadSign * (item.DelayMs - precedenceAnchorMs) >= -SubPrecedenceSlackMs;
                     AlignmentCandidate leading = AlignmentSelection.PreferSubLeading(
                         candidates.Concat(wide),
                         chosen,
                         AcousticScore,
-                        anchorMs,
+                        precedenceAnchorMs,
                         leadSign,
                         SubPrecedenceMarginDb,
                         SubPrecedenceSlackMs,
@@ -1968,13 +2000,31 @@ public static class AutoAlignmentEngine
                             $"leads the stack) over {chosen.DelayMs:0.000} ms" +
                             $"{(chosen.InvertPolarity ? " inv" : "")} — behind by " +
                             $"{subPrecedenceBehindDb:0.00} dB, " +
-                            $"within the {SubPrecedenceMarginDb:0.00} dB precedence margin.");
+                            $"within the {SubPrecedenceMarginDb:0.00} dB precedence margin " +
+                            $"(fronts meet at {precedenceAnchorMs:0.000} ms).");
                         chosen = leading;
+                    }
+                    else
+                    {
+                        log.AppendLine(
+                            $"  sub precedence: {chosen.DelayMs:0.000} ms" +
+                            $"{(chosen.InvertPolarity ? " inv" : "")} " +
+                            $"{(leadsTheStack(chosen) ? "leads" : "trails, no lead within the margin")} " +
+                            $"(fronts meet at {precedenceAnchorMs:0.000} ms).");
                     }
 
                     if (leadsTheStack(chosen))
                     {
                         subPrecedenceAdmits = leadsTheStack;
+                        // The stand outlives the descent: the mono co-move keeps the lead. See docs/tech/auto-alignment.md#sub-precedence.
+                        if (subPrecedence != null)
+                        {
+                            subPrecedence[subSearched ? channel : neighborChannel] =
+                                new SubPrecedenceStand(
+                                    channel, neighborChannel,
+                                    precedenceAnchorMs - alignment.GetValueOrDefault(neighborChannel).DelayMs,
+                                    leadSign);
+                        }
                     }
                 }
             }
@@ -2678,9 +2728,13 @@ public static class AutoAlignmentEngine
         // Reference-side junctions the phase stood on a lobe: the summing passes below leave them where they are.
         var phasePlaced = new HashSet<AlignmentJunction>(ReferenceEqualityComparer.Instance);
 
+        // Mono channels sub precedence stood leading on the reference side: the co-move keeps them there.
+        var subPrecedence = new Dictionary<IAlignmentChannel, SubPrecedenceStand>(
+            ReferenceEqualityComparer.Instance);
+
         Compute(
             plan.LeftChannelsByBand, plan.LeftPairs, reprocess, alignment, log,
-            onsetLocks, decisions, plan.MonoChannels, phasePlaced);
+            onsetLocks, decisions, plan.MonoChannels, phasePlaced, subPrecedence);
 
         // Scope of every uniform shift from here on: one side alone would break the bridge's offset.
         var allChannels = new List<AlignmentSnapshot>(plan.LeftChannelsByBand);
@@ -2850,7 +2904,8 @@ public static class AutoAlignmentEngine
                 pair => InheritedJunctionPolarity(
                     pair, plan.MonoChannels, plan.PairLinks, alignment),
                 out HashSet<AlignmentJunction> rightUntrustedSeeds,
-                out Dictionary<AlignmentJunction, double> rightSeedPartnerReach);
+                out Dictionary<AlignmentJunction, double> rightSeedPartnerReach,
+                out Dictionary<AlignmentJunction, double> rightFrontAnchors);
 
         // Delay landing the right arrival the scene offset ahead of its left twin: the search prior and the scene-lock pin.
         // Coarse pins only the lobe; TightLock (quarter period) only from corroborated donor geometry; OwnSum holds a low
@@ -3318,7 +3373,7 @@ public static class AutoAlignmentEngine
                 rightTimeline, allChannels, reprocess, alignment, log,
                 secondary, secondaryPair, crossTarget, sceneLock, inheritedPolarity,
                 rightUntrustedSeeds, onsetLocks, decisions, plan.MonoChannels,
-                rightSeedPartnerReach);
+                rightSeedPartnerReach, frontAnchorMs: rightFrontAnchors);
         }
         for (int i = bridgeIndex - 1; i >= 0; i--)
         {
@@ -3340,7 +3395,8 @@ public static class AutoAlignmentEngine
 
         // Mono channels are scene-invariant: this is the first pass where their right junction votes.
         ComoveMonoChannels(
-            plan, reprocess, alignment, log, allChannels, maxDelayMs, decisions);
+            plan, reprocess, alignment, log, allChannels, maxDelayMs, decisions,
+            subPrecedence: subPrecedence);
 
         // The polish moves the far side (and both sides of a pair on its own sum) under the mono channels' junctions; a
         // mono channel that followed may release a trim the polish refused for its sake, so the two alternate while
@@ -3357,7 +3413,8 @@ public static class AutoAlignmentEngine
                     plan, rightByBand, allChannels, reprocess, alignment, log,
                     maxDelayMs, decisions, polishSpentMs, ownSumHeld) &&
                 ComoveMonoChannels(
-                    plan, reprocess, alignment, log, allChannels, maxDelayMs, decisions, afterPolish: true);
+                    plan, reprocess, alignment, log, allChannels, maxDelayMs, decisions, afterPolish: true,
+                    subPrecedence: subPrecedence);
             if (!followed)
             {
                 break;
@@ -4566,7 +4623,8 @@ public static class AutoAlignmentEngine
         IReadOnlyList<AlignmentSnapshot> shiftScope,
         double maxDelayMs = DefaultMaxDelayMs,
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
-        bool afterPolish = false)
+        bool afterPolish = false,
+        IReadOnlyDictionary<IAlignmentChannel, SubPrecedenceStand>? subPrecedence = null)
     {
         bool moved = false;
         foreach (IAlignmentChannel mono in plan.MonoChannels)
@@ -4656,11 +4714,28 @@ public static class AutoAlignmentEngine
             double polishReachMs = Math.Min(PairComoveSearchRangeMs, halfPeriodMs);
             bool IsPolish(double deltaMs, bool flip) =>
                 !flip && Math.Abs(deltaMs) <= polishReachMs + 1e-9;
+            // Sub precedence stood this channel leading on the reference side: a move that leaves it trailing there must
+            // beat the best move that keeps the lead by the precedence margin, as in the descent. See docs/tech/auto-alignment.md#sub-precedence.
+            Func<double, bool>? keepsTheLead = null;
+            if (subPrecedence != null &&
+                subPrecedence.TryGetValue(mono, out SubPrecedenceStand? stand))
+            {
+                double relativeMs = alignment.GetValueOrDefault(stand.Searched).DelayMs
+                    - alignment.GetValueOrDefault(stand.Neighbor).DelayMs;
+                double sign = stand.Searched == mono ? 1.0 : -1.0;
+                keepsTheLead = deltaMs => stand.Leads(relativeMs + sign * deltaMs);
+            }
+
             double bestDelta = 0;
             bool bestFlip = false;
             double bestScore = baseline;
             double bestPolishDelta = 0;
             double bestPolishScore = baseline;
+            double bestLeadDelta = 0;
+            bool bestLeadFlip = false;
+            double bestLeadScore = keepsTheLead?.Invoke(0) == false
+                ? double.NegativeInfinity
+                : baseline;
             void Consider(double deltaMs, bool flip, double score)
             {
                 if (score > bestScore)
@@ -4673,6 +4748,12 @@ public static class AutoAlignmentEngine
                 {
                     bestPolishScore = score;
                     bestPolishDelta = deltaMs;
+                }
+                if (keepsTheLead != null && keepsTheLead(deltaMs) && score > bestLeadScore)
+                {
+                    bestLeadScore = score;
+                    bestLeadDelta = deltaMs;
+                    bestLeadFlip = flip;
                 }
             }
 
@@ -4689,7 +4770,7 @@ public static class AutoAlignmentEngine
             foreach (double step in new[] { 0.1, 0.02 })
             {
                 foreach ((double center, bool flip) in
-                    new[] { (bestDelta, bestFlip), (bestPolishDelta, false) }.Distinct())
+                    new[] { (bestDelta, bestFlip), (bestPolishDelta, false), (bestLeadDelta, bestLeadFlip) }.Distinct())
                 {
                     double refineReach = step * 5;
                     for (double delta = Math.Max(minDelta, center - refineReach);
@@ -4699,6 +4780,21 @@ public static class AutoAlignmentEngine
                         Consider(delta, flip, Score(delta, flip));
                     }
                 }
+            }
+
+            if (keepsTheLead != null && !keepsTheLead(bestDelta) &&
+                !double.IsNegativeInfinity(bestLeadScore) &&
+                bestLeadScore >= bestScore - SubPrecedenceMarginDb)
+            {
+                log.AppendLine(
+                    $"  sub precedence holds the mono co-move for {mono.Name}: " +
+                    $"{bestDelta:+0.00;-0.00} ms{(bestFlip ? " flipped" : "")} would leave the sub " +
+                    $"trailing its reference-side junction; {bestLeadDelta:+0.00;-0.00} ms" +
+                    $"{(bestLeadFlip ? " flipped" : "")} keeps the lead, behind by " +
+                    $"{bestScore - bestLeadScore:0.00} dB, within the {SubPrecedenceMarginDb:0.00} dB precedence margin.");
+                bestScore = bestLeadScore;
+                bestDelta = bestLeadDelta;
+                bestFlip = bestLeadFlip;
             }
 
             bool hop = bestFlip || Math.Abs(bestDelta) > polishReachMs + 1e-9;

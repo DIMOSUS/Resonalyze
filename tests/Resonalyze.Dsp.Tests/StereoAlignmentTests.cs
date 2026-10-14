@@ -374,6 +374,23 @@ public sealed class StereoAlignmentTests
         }
 
         [Fact]
+        public void ComputeStereo_TheSubLeadsTheWoofersFront_NotTheCopyTheSumPrefers()
+        {
+            // Both woofers carry a copy of their front half a period behind it, a tenth stronger: the sum and the
+            // correlation seed both sit on the copies, the fronts say the sub should arrive with the woofer's front.
+            (TestChannel sub, TestChannel[] left, _,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) = RunStereo(
+                    sceneOffsetMs: 0.25,
+                    leftWoofLateCopyMs: 5.0,
+                    rightWoofLateCopyMs: 5.0,
+                    woofLateCopyAmplitude: 1.1);
+
+            double subBehindWoofMs =
+                FinalArrivalMs(sub, 2.0, alignment) - FinalArrivalMs(left[0], 1.0, alignment);
+            Assert.InRange(subBehindWoofMs, -6.5, 0.5);
+        }
+
+        [Fact]
         public void ComputeStereo_RefusesAnUnmeasurableBridgeWithoutTouchingTheRightSide()
         {
             // A silent top would time the whole side by garbage: refuse, with no applicable proposals.
@@ -1236,6 +1253,63 @@ public sealed class StereoAlignmentTests
         Assert.False(alignment[sub].InvertPolarity);
         Assert.InRange(
             alignment[sub].DelayMs - alignment[leftWoof].DelayMs, -2.5, 2.5);
+    }
+
+    [Fact]
+    public void ComoveMonoChannels_AHopThatLeavesTheSubTrailingItsFront_IsHeldToTheLead()
+    {
+        // Both woofers carry a stronger copy of their front 5 ms behind it: the full-band sum wants the sub on the copies,
+        // behind the fronts; where the descent stood the sub leading, the co-move may not leave it trailing for that.
+        Complex[] WooferIr() => ImpulseWithEcho(8.0, 1.0, 6.25, 1.1);
+        var sub = new TestChannel("sub", ImpulseAtMs(8.0));
+        var leftWoof = new TestChannel("L woof", WooferIr());
+        var rightWoof = new TestChannel("R woof", WooferIr());
+        TestChannel[] all = [sub, leftWoof, rightWoof];
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(channel =>
+                Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+        List<AlignmentSnapshot> snapshots = all
+            .Select(channel => Snapshot(channel, default))
+            .ToList();
+        var plan = new StereoAlignmentPlan(
+            [snapshots[0], snapshots[1]],
+            [Junction(snapshots[0], snapshots[1], 80)],
+            [snapshots[0], snapshots[2]],
+            [Junction(snapshots[0], snapshots[2], 80)],
+            new HashSet<IAlignmentChannel> { sub },
+            leftWoof,
+            rightWoof,
+            40,
+            160,
+            SceneOffsetMs: 0);
+
+        (double SubBehindWoofMs, string Log) Run(bool stood)
+        {
+            var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+            {
+                [sub] = new(0, false),
+                [leftWoof] = new(0, false),
+                [rightWoof] = new(0, false)
+            };
+            var log = new StringBuilder();
+            AutoAlignmentEngine.ComoveMonoChannels(
+                plan, Reprocess, alignment, log, snapshots,
+                subPrecedence: stood
+                    ? new Dictionary<IAlignmentChannel, AutoAlignmentEngine.SubPrecedenceStand>(
+                        ReferenceEqualityComparer.Instance)
+                    {
+                        [sub] = new(sub, leftWoof, AnchorRelativeMs: 0, LeadSign: -1)
+                    }
+                    : null);
+            return (alignment[sub].DelayMs - alignment[leftWoof].DelayMs, log.ToString());
+        }
+
+        (double free, string freeLog) = Run(stood: false);
+        (double held, string heldLog) = Run(stood: true);
+
+        Assert.True(free > 3.0, $"without the stand the sum did not take the sub behind the fronts ({free:0.00} ms):\n{freeLog}");
+        Assert.True(held <= 0.5, $"the stand did not keep the sub leading ({held:0.00} ms):\n{heldLog}");
     }
 
     [Fact]

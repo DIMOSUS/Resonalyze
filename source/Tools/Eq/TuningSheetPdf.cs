@@ -27,16 +27,34 @@ internal static class TuningSheetPdf
         double fitMaxHz,
         double sampleRateHz,
         EqTuneStats? stats,
-        PeqQConvention qConvention = PeqQConvention.Rbj)
+        PeqQConvention qConvention = PeqQConvention.Rbj,
+        string? projectName = null)
+    {
+        using PdfSheet sheet = Build(
+            title, curve, fitMinHz, fitMaxHz, sampleRateHz, stats, qConvention, projectName);
+        sheet.Save(filePath);
+    }
+
+    // Unrendered so tests can walk the MigraDoc document model. The caller owns disposal.
+    internal static PdfSheet Build(
+        string title,
+        EqualizationCurve curve,
+        double fitMinHz,
+        double fitMaxHz,
+        double sampleRateHz,
+        EqTuneStats? stats,
+        PeqQConvention qConvention = PeqQConvention.Rbj,
+        string? projectName = null)
     {
         ArgumentNullException.ThrowIfNull(curve);
 
-        using var sheet = new PdfSheet(
+        var sheet = new PdfSheet(
             string.IsNullOrWhiteSpace(title) ? "Tuning sheet" : title,
             $"Generated {DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}" +
             $"   ·   Fit range {Number(fitMinHz, "0")}–{Number(fitMaxHz, "0")} Hz" +
             $"   ·   Q: {PeqQConventions.Describe(qConvention)}",
-            qConvention);
+            qConvention,
+            projectName);
         Section section = sheet.Section;
 
         sheet.AddImage(
@@ -55,8 +73,7 @@ internal static class TuningSheetPdf
         preamp.AddFormattedText($"{Signed(curve.PreampDb)} dB", TextFormat.Bold);
 
         sheet.AddFilterTable(curve.Bands);
-
-        sheet.Save(filePath);
+        return sheet;
     }
 
     private static void AddStatsTable(Section section, EqTuneStats stats)

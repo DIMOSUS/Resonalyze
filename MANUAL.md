@@ -1380,7 +1380,9 @@ delays, polarities and PEQ, as they go into the real DSP. The sheet prints by gr
 Sub, Front, Rear, Center, the order you enter them in — each under a graph of its
 filters, every group after the first on a page of its own; the front group's graph shows
 the subwoofers' summed filter shape in a pale tone, so the bass handover is visible
-where you dial it in. Blocks keep their panel letters.
+where you dial it in. Blocks keep their panel letters. Every page is headed with the
+session's name and its number, so the sheets of several cars can be told apart once
+they are shuffled.
 
 If the project names a **Custom** processor, Resonalyze first asks which Q convention
 the PEQ columns should be stated in:

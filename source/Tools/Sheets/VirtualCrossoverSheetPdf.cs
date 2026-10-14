@@ -38,16 +38,25 @@ internal static class VirtualCrossoverSheetPdf
         int sampleRate,
         PeqQConvention qConvention = PeqQConvention.Rbj)
     {
-        using PdfSheet sheet = Build(project, metricLine, sampleRate, qConvention);
+        ArgumentNullException.ThrowIfNull(project);
+
+        using PdfSheet sheet = Build(
+            project, metricLine, sampleRate, qConvention, ProjectName(project, filePath));
         sheet.Save(filePath);
     }
+
+    /// <summary>What every page is headed with: the session's name, or the sheet's own file name while the session has none.</summary>
+    internal static string? ProjectName(VirtualCrossoverProjectFile project, string filePath) =>
+        project.SessionName ??
+        (Path.GetFileNameWithoutExtension(filePath) is { Length: > 0 } stem ? stem : null);
 
     // Unrendered so tests can walk the MigraDoc document model. The caller owns disposal.
     internal static PdfSheet Build(
         VirtualCrossoverProjectFile project,
         string? metricLine,
         int sampleRate,
-        PeqQConvention qConvention = PeqQConvention.Rbj)
+        PeqQConvention qConvention = PeqQConvention.Rbj,
+        string? projectName = null)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -59,7 +68,7 @@ internal static class VirtualCrossoverSheetPdf
             subtitleText += $"   ·   {metricLine}";
         }
 
-        var sheet = new PdfSheet("Virtual DSP", subtitleText, qConvention);
+        var sheet = new PdfSheet("Virtual DSP", subtitleText, qConvention, projectName);
 
         // One run per zone in DSP typing order, each with its own graph (a dozen channels on one graph is a tangle); single-zone stays flat.
         IReadOnlyList<(VirtualCrossoverZone Zone, IReadOnlyList<int> PairIndices)>

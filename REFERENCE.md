@@ -2264,7 +2264,10 @@ ordinary empty slots).
 car: the banner, a title, the date and fit range, an EQ preview graph with the
 fit window shaded, the tuning statistics, the preamp, and one card per filter.
 The statistics are the bank's, the one the cards print, even while **Bypass**
-draws the source without it.
+draws the source without it. Every page is headed with the sheet's name and its
+number ("Page 2 of 3"); a sheet exported from a Virtual DSP channel puts the
+session's name before the channel's, so pages of several cars can be told apart
+once shuffled.
 
 ### DSP Q convention
 
@@ -4387,7 +4390,10 @@ tune is actually built in:
   text): for every side of every pair (a mono pair prints once) the gain, delay in
   ms and mm, polarity, crossover filters, and PEQ bands down to the all-pass.
   Once the session has a file (see **Save session...** below), the sheet is
-  offered under the same name, beside it.
+  offered under the same name, beside it. Every page of the PDF is headed with
+  the session's name (the PDF's own while the session has no file) and its
+  number ("Page 2 of 3"), so pages of several cars can be told apart once
+  shuffled.
   An installation spanning several zones prints **by group**, in the order a
   tune is typed into a DSP — Sub, then Front, then Rear, then Center — each
   group led by its name and (on the PDF) a graph of its own DSP chains instead

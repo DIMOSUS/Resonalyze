@@ -1188,6 +1188,10 @@ public sealed class VirtualCrossoverProjectFile
         return (Directory.Exists(folder) ? folder : null, name);
     }
 
+    /// <summary>The session's name as a tuning sheet prints it: its file's stem; null while it has no file.</summary>
+    internal string? SessionName =>
+        Path.GetFileNameWithoutExtension(SessionFilePath) is { Length: > 0 } stem ? stem : null;
+
     private static string? SafeDirectoryOf(string path) =>
         SafeFullPathOf(path) is { } fullPath ? Path.GetDirectoryName(fullPath) : null;
 

@@ -1,3 +1,5 @@
+using MigraDoc.DocumentObjectModel;
+using MigraDoc.DocumentObjectModel.Fields;
 using Resonalyze;
 using Resonalyze.Dsp;
 
@@ -5,6 +7,38 @@ namespace Resonalyze.App.Tests;
 
 public sealed class TuningSheetPdfTests
 {
+    [Fact]
+    public void Build_HeadsEveryPageWithTheProjectAndTheChannel_AndNumbersThePages()
+    {
+        var curve = new EqualizationCurve(new[] { new PeqBand(1000, 1.0, 3.0) }, preampDb: 0);
+
+        using PdfSheet sheet = TuningSheetPdf.Build(
+            "Channel Front (L)", curve, 20, 20_000, 48_000, null, projectName: "bmw-f30");
+
+        Paragraph header = Assert.IsType<Paragraph>(
+            sheet.Document.LastSection.Headers.Primary.Elements[0]);
+        List<DocumentObject> elements = header.Elements.Cast<DocumentObject>().ToList();
+        FormattedText name = Assert.IsType<FormattedText>(elements[0]);
+        Assert.Equal("bmw-f30   ·   Channel Front (L)", Assert.IsType<Text>(name.Elements[0]).Content);
+        Assert.Contains(elements, element => element is PageField);
+        Assert.Contains(elements, element => element is NumPagesField);
+    }
+
+    [Fact]
+    public void Build_NamesTheProjectOnce_WhenTheTitleAlreadyIsItsName()
+    {
+        // The wizard's own export is titled after the file, which is the only name it has.
+        var curve = new EqualizationCurve(new[] { new PeqBand(1000, 1.0, 3.0) }, preampDb: 0);
+
+        using PdfSheet sheet = TuningSheetPdf.Build(
+            "bmw-f30", curve, 20, 20_000, 48_000, null, projectName: "bmw-f30");
+
+        Paragraph header = Assert.IsType<Paragraph>(
+            sheet.Document.LastSection.Headers.Primary.Elements[0]);
+        FormattedText name = Assert.IsType<FormattedText>(header.Elements[0]);
+        Assert.Equal("bmw-f30", Assert.IsType<Text>(name.Elements[0]).Content);
+    }
+
     [Fact]
     public void Export_WritesAValidPdfFile()
     {

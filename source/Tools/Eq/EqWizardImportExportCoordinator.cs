@@ -25,7 +25,8 @@ internal sealed class EqWizardImportExportCoordinator
                 request.MaxHz,
                 request.SampleRate,
                 request.Stats,
-                request.QConvention))
+                request.QConvention,
+                request.ProjectName))
     {
     }
 
@@ -107,7 +108,8 @@ internal sealed class EqWizardImportExportCoordinator
                     request.MaxHz,
                     request.SampleRate,
                     request.Stats,
-                    request.QConvention));
+                    request.QConvention,
+                    request.ProjectName));
             }
             else
             {
@@ -280,7 +282,9 @@ internal sealed record EqWizardExportRequest(
     double MaxHz,
     EqTuneStats? Stats,
     // Tuning sheet only: profile formats are read by RBJ-Q software, so restating Q would corrupt them.
-    PeqQConvention QConvention = PeqQConvention.Rbj)
+    PeqQConvention QConvention = PeqQConvention.Rbj,
+    // Tuning sheet only: heads every page. Null for the wizard's own bank, whose title is already the file's name.
+    string? ProjectName = null)
 {
     /// <summary>The bank as the session holds it, realised at its processor's rate, titled after the file.</summary>
     public static EqWizardExportRequest For(
@@ -311,7 +315,8 @@ internal sealed record EqWizardTuningSheetRequest(
     double MaxHz,
     double SampleRate,
     EqTuneStats? Stats,
-    PeqQConvention QConvention = PeqQConvention.Rbj);
+    PeqQConvention QConvention = PeqQConvention.Rbj,
+    string? ProjectName = null);
 
 internal sealed record EqWizardFileResult(bool Success, Exception? Exception)
 {

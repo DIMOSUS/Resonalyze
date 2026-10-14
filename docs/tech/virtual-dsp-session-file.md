@@ -392,8 +392,11 @@ throw, and a file holding such a gate would have been set aside as unusable at t
 
 `SessionFilePath` is the file Save session offers again: the one last loaded (`LoadFrom`) or written (`SaveTo`),
 opened in its folder while that folder exists. The tuning sheet export opens there too, on the same name without
-its extension, which the dialog adds for the format chosen (PDF or text). It belongs to the session, so the
-autosave carries it across restarts and Reset forgets it with the tune; a failed write keeps the previous name.
+its extension, which the dialog adds for the format chosen (PDF or text). The same stem (`SessionName`) heads
+every page of the PDF beside the page number, with the PDF's own name standing in while the session has no file
+(`VirtualCrossoverSheetPdf.ProjectName`); a PEQ sheet exported from a channel carries it too. It belongs to the
+session, so the autosave carries it across restarts and Reset forgets it with the tune; a failed write keeps the
+previous name.
 
 Only the application's own files write it, the autosave and the reset backup. An export never names itself: the
 path is wrong wherever the file is copied to, and its location already answers. `LoadFrom` keeps a stored value

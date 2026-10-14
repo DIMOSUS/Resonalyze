@@ -12,6 +12,9 @@ internal sealed class PdfSheet : IDisposable
 {
     public const int FiltersPerTableBlock = 10;
 
+    // A4 less the side margins: where the page header's right-aligned tab sits.
+    private static readonly Unit TextWidth = Unit.FromCentimeter(18);
+
     // Every block declares all columns even when part-filled, so continuation blocks keep the same width.
     private static readonly Unit FilterLabelColumnWidth = Unit.FromCentimeter(2.8);
     private static readonly Unit FilterValueColumnWidth = Unit.FromCentimeter(1.44);
@@ -31,10 +34,12 @@ internal sealed class PdfSheet : IDisposable
 
     internal Document Document => document;
 
+    /// <param name="projectName">Heads every page beside the title; the title alone when null or the same.</param>
     public PdfSheet(
         string title,
         string subtitleText,
-        PeqQConvention qConvention = PeqQConvention.Rbj)
+        PeqQConvention qConvention = PeqQConvention.Rbj,
+        string? projectName = null)
     {
         this.qConvention = qConvention;
         document = new Document();
@@ -45,10 +50,17 @@ internal sealed class PdfSheet : IDisposable
         Section = document.AddSection();
         PageSetup pageSetup = Section.PageSetup!;
         pageSetup.PageFormat = PageFormat.A4;
-        pageSetup.TopMargin = Unit.FromCentimeter(1.2);
+        pageSetup.TopMargin = Unit.FromCentimeter(1.6);
+        pageSetup.HeaderDistance = Unit.FromCentimeter(0.6);
         pageSetup.BottomMargin = Unit.FromCentimeter(1.2);
         pageSetup.LeftMargin = Unit.FromCentimeter(1.5);
         pageSetup.RightMargin = Unit.FromCentimeter(1.5);
+
+        string headerText = string.IsNullOrWhiteSpace(projectName) || projectName == title
+            ? title
+            : $"{projectName}   ·   {title}";
+        document.Info.Title = headerText;
+        AddPageHeader(headerText);
 
         byte[]? banner = LoadBanner();
         if (banner != null)
@@ -67,6 +79,24 @@ internal sealed class PdfSheet : IDisposable
         subtitle.Format.Font.Size = 9;
         subtitle.Format.Font.Color = Colors.Gray;
         subtitle.Format.SpaceAfter = Unit.FromMillimeter(4);
+    }
+
+    // Every page names its project and its place in the set: sheets of several cars, once shuffled, are told apart by this line alone.
+    private void AddPageHeader(string text)
+    {
+        Paragraph header = Section.Headers.Primary.AddParagraph();
+        header.Format.Font.Size = 9;
+        header.Format.Font.Color = CaptionColor;
+        header.Format.TabStops.AddTabStop(TextWidth, MigraDoc.DocumentObjectModel.TabAlignment.Right);
+        header.Format.Borders.Bottom.Width = 0.5;
+        header.Format.Borders.Bottom.Color = CardBorderColor;
+        header.Format.Borders.DistanceFromBottom = Unit.FromMillimeter(1);
+        header.AddFormattedText(text, TextFormat.Bold);
+        header.AddTab();
+        header.AddText("Page ");
+        header.AddPageField();
+        header.AddText(" of ");
+        header.AddNumPagesField();
     }
 
     public void AddImage(byte[] pngBytes, Unit width)

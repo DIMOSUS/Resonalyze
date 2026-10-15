@@ -298,8 +298,11 @@ the queued recreation runs, a synchronous `Update()` paints nothing on the old o
 `AcceleratedPlotView.GpuAllowed`) switches the GPU path off for a driver that draws wrong without failing; a change
 recreates the handle at once, and turning it back on gives a failed GPU another try. `DrawToBitmap`
 (WM_PRINTCLIENT) always takes the GDI+ path, since a GL frame never reaches a GDI bitmap; screen grabs
-(`CopyFromScreen`) see the GL frame. The other plots in the app are stock `PlotView`s: they are small, and PNG and PDF
-exports keep their GDI+ `PngExporter`.
+(`CopyFromScreen`) see the GL frame. The EQ Wizard's plot and Virtual DSP's main plot are `AcceleratedPlotView`s too
+(`Form1.ApplyPlotAcceleration` hands all three the setting): both fill the window, and dragging a band handle in the
+wizard rebuilds and repaints its model per mouse move, which GDI+ with the deviation fills and seven or more curves
+could not keep up with. The other plots in the app are stock `PlotView`s: they are small, and PNG and PDF exports keep
+their GDI+ `PngExporter`.
 
 `SkiaPlotRenderContext` draws text itself rather than through OxyPlot's Skia text, for layout parity with GDI+:
 GDI+ reads a font size as `0.8 × size` points at the window's DPI where Skia reads pixels, GDI+ aligns a multi-line

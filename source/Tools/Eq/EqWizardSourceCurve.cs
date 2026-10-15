@@ -35,10 +35,12 @@ internal static class EqWizardSourceCurve
     }
 
     /// <summary>Captured on the UI thread so the render touches no control and no mutable state.</summary>
+    /// <param name="withSumLoss">Render the side's Sum loss from the same processed response (see <see cref="SumLossRequest"/>).</param>
     public static EqWizardGatedPreviewRequest GatedPreviewRequest(
         EqWizardSession session,
         EqWizardCurveSource source,
-        EqualizationCurve? bank) =>
+        EqualizationCurve? bank,
+        bool withSumLoss = false) =>
         new(
             source.PreviewImpulseResponse!,
             source.PreviewChain!,
@@ -51,7 +53,45 @@ internal static class EqWizardSourceCurve
             session.SourceSmoothingInverseOctaves,
             new MeasuredBand(
                 source.Measurement.LowestMeasuredFrequencyHz,
-                source.Measurement.HighestMeasuredFrequencyHz));
+                source.Measurement.HighestMeasuredFrequencyHz),
+            withSumLoss ? SumLossRequest(session, source, bank) : null,
+            Magnitude: source.IsGated);
+
+    /// <summary>The Sum loss render's inputs: the gated preview's channel, gate and anchor, plus the sum's other members.
+    /// Under the panel's Direct window the junction phase gate is the wizard's current one; without a phase context it
+    /// reads the full window.</summary>
+    public static EqWizardSumLossRequest SumLossRequest(
+        EqWizardSession session,
+        EqWizardCurveSource source,
+        EqualizationCurve? bank)
+    {
+        EqWizardSumLossContext context = source.SumLossContext!;
+        EqWizardDirectLossGate? direct = null;
+        if (context.Window == SumLossWindow.Direct && session.PhaseContext is { } phase)
+        {
+            direct = new EqWizardDirectLossGate(
+                phase.PinnedOffset ? phase.GateOffsetMs : null,
+                phase.Gate.LeftMs,
+                phase.Gate.PlateauMs,
+                phase.Gate.RightMs);
+        }
+
+        return new EqWizardSumLossRequest(
+            source.PreviewImpulseResponse!,
+            source.PreviewChain!,
+            bank,
+            source.Measurement!.PeakIndex,
+            source.Measurement.SampleRate,
+            session.ProcessorSampleRateHz,
+            source.GateSettings!,
+            new MeasuredBand(
+                source.Measurement.LowestMeasuredFrequencyHz,
+                source.Measurement.HighestMeasuredFrequencyHz),
+            session.ResolveCalibration(),
+            context.Others,
+            session.SourceSmoothingInverseOctaves,
+            direct);
+    }
 
     /// <summary>
     /// Channel magnitude from its spatial average through its chain, with the edited bank substituted INTO the chain

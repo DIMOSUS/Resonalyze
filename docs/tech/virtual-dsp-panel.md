@@ -612,6 +612,11 @@ then refuses the bank if the panel meanwhile draws a hybrid.
   and is null when the render is stale. The gate travels as the user has it (detrend mode included) while the
   curves render as Manual against one τ; a pinned gate stays pinned; the source responses travel so the wizard
   can re-resolve placements when its own window changes; the channel colour travels.
+- `VirtualCrossoverEqHandoff.SumLossContext` freezes the OTHER channels of the sum the plot's view quotes a loss for
+  (`VirtualCrossoverFrame.Summed`, so the wizard's curve describes the structure the screen draws), as processed IRs
+  with their bands and calibrations (`SumLossMember`), with the Sum loss selector's window (Disable hands Full). Null
+  for a raw handoff, a stale render, a headless fit, or a view with no junction. See
+  docs/tech/eq-auto-tuner.md#sum-loss.
 - PEQ export reuses `EqWizardImportExportCoordinator` so there is one exporter; sheets state the processor's
   rate and Q convention, not the measurement rate, and carry no invented fit statistics.
 - An imported FIR file clears `FirDesign` (taps only); export writes at the processor's rate.

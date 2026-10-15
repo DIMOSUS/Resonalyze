@@ -113,7 +113,8 @@ public partial class VirtualCrossoverPanel
                 return;
             }
 
-            if (eqHandoff.Request(channel, withChain, hybridRequested, read) is { } request)
+            if (eqHandoff.Request(channel, withChain, hybridRequested, read, view: CaptureViewState())
+                is { } request)
             {
                 requested(request);
             }

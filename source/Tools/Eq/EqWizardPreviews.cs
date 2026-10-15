@@ -11,9 +11,9 @@ internal sealed record EqWizardPhaseCurves(
 
 /// <summary>
 /// The curves too heavy to build per frame, rendered off the UI thread for the session's current bank: a gated
-/// source's corrected magnitude and the edited channel's measured phase. Keyed by bank, newest wins, and the last landed
-/// curve stays shown while a newer one renders so the plot does not strobe. The session invalidates them when what they
-/// read changes; a request made after that starts over.
+/// source's corrected magnitude with the side's Sum loss, and the edited channel's measured phase. Keyed by bank, newest
+/// wins, and the last landed curve stays shown while a newer one renders so the plot does not strobe. The session
+/// invalidates them when what they read changes; a request made after that starts over.
 /// </summary>
 internal sealed class EqWizardPreviews
 {
@@ -22,6 +22,7 @@ internal sealed class EqWizardPreviews
     private readonly EqWizardPhaseOrchestrator phaseOrchestrator;
 
     private PeqBankState? gatedPreviewBank;
+    private bool gatedPreviewWithSumLoss;
     private bool gatedPreviewInFlight;
 
     // The edited channel re-renders per bank; neighbours and the bare curve change only with the gate.
@@ -49,31 +50,42 @@ internal sealed class EqWizardPreviews
     /// <summary>The gated source's corrected magnitude, as plot points aligned with the bare curve; null until one lands.</summary>
     public IReadOnlyList<DataPoint>? GatedPreview { get; private set; }
 
+    /// <summary>The side's Sum loss with the last rendered bank in the chain; null until one lands, or where none exists.</summary>
+    public IReadOnlyList<DataPoint>? SumLoss { get; private set; }
+
     public bool Rendering => gatedPreviewInFlight || phaseRenderInFlight;
 
     /// <summary>
-    /// Starts rendering the gated corrected curve for this bank, unless one is rendering or this bank's has landed. The
+    /// Starts rendering the gated corrected curve, and the Sum loss while it is drawn, for this bank, unless one is
+    /// rendering or this bank's has landed. One job for both: the chain is applied once and the plot redrawn once. The
     /// task finishes on the caller's context, after which the plot is redrawn: that also starts the render an
     /// invalidation dropped, which the redraw that caused it could not start while this one was in flight.
     /// </summary>
     public Task? RequestGatedPreview(EqualizationCurve eq)
     {
         ArgumentNullException.ThrowIfNull(eq);
-        if (session.Source is not { IsGated: true } gated)
+        if (session.Source is not { PreviewImpulseResponse: not null, GateSettings: not null } source)
+        {
+            return null;
+        }
+
+        bool withSumLoss = session.SumLossDrawn;
+        if (!source.IsGated && !withSumLoss)
         {
             return null;
         }
 
         var bank = new PeqBankState(eq.Bands, eq.PreampDb);
-        if (gatedPreviewInFlight || bank.Equals(gatedPreviewBank))
+        if (gatedPreviewInFlight ||
+            (bank.Equals(gatedPreviewBank) && withSumLoss == gatedPreviewWithSumLoss))
         {
             return null;
         }
 
         EqWizardGatedPreviewRequest request =
-            EqWizardSourceCurve.GatedPreviewRequest(session, gated, eq);
+            EqWizardSourceCurve.GatedPreviewRequest(session, source, eq, withSumLoss);
         gatedPreviewInFlight = true;
-        return RenderGatedPreviewAsync(request, bank, EqWizardSourceCurve.KeepsGaps(gated));
+        return RenderGatedPreviewAsync(request, bank, EqWizardSourceCurve.KeepsGaps(source));
     }
 
     /// <summary>The phase view's curves for the current gate; builds the bank-independent ones on first use.</summary>
@@ -139,6 +151,15 @@ internal sealed class EqWizardPreviews
         phaseCurveBank = null;
         barePhaseCurve = null;
         neighbourPhaseCurves = null;
+        // A direct-window Sum loss reads the phase gate, so a landed one is re-rendered with its preview.
+        if (gatedPreviewWithSumLoss)
+        {
+            gatedOrchestrator.Invalidate();
+            gatedPreviewBank = null;
+        }
+
+        SumLoss = null;
+        gatedPreviewWithSumLoss = false;
     }
 
     private async Task RenderGatedPreviewAsync(
@@ -146,19 +167,31 @@ internal sealed class EqWizardPreviews
     {
         try
         {
-            IReadOnlyList<SignalPoint>? points =
-                await gatedOrchestrator.RenderLatestAsync(request);
+            EqWizardGatedRender? landed = await gatedOrchestrator.RenderLatestAsync(request);
             // Null = dropped by an invalidation: nothing to keep.
-            if (points != null)
+            if (landed != null)
             {
-                // Same conversion as the bare curve, so both keep the same points.
-                GatedPreview = EqWizardSourceCurve.ToPlotPoints(points, keepGaps);
+                if (landed.Magnitude != null)
+                {
+                    // Same conversion as the bare curve, so both keep the same points.
+                    GatedPreview = EqWizardSourceCurve.ToPlotPoints(landed.Magnitude, keepGaps);
+                }
+
+                if (request.SumLoss != null)
+                {
+                    // A landed null (one member, mixed rates) is this bank's answer.
+                    SumLoss = landed.SumLoss == null
+                        ? null
+                        : EqWizardSourceCurve.ToPlotPoints(landed.SumLoss, keepGaps: true);
+                }
+
                 gatedPreviewBank = bank;
+                gatedPreviewWithSumLoss = request.SumLoss != null;
             }
         }
         catch (Exception exception)
         {
-            // A failed preview leaves the curve as it was; the bank stays exportable.
+            // A failed preview leaves the curves as they were; the bank stays exportable.
             System.Diagnostics.Debug.WriteLine($"EQ Wizard preview failed: {exception}");
         }
         finally

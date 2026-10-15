@@ -30,7 +30,8 @@ Where the code lives:
 | The chain the bank runs in and its headroom (read through the shared `ChainHeadroomReader`) | `EqWizardHeadroom` |
 | What Auto Tune is given; kept bands (locked, all-pass) | `EqWizardFit` |
 | The phase context a source opens with, a gate edited in the dialog, one render's request | `EqWizardPhase` |
-| Gated magnitude and measured phase rendered off the UI thread, keyed by bank | `EqWizardPreviews` |
+| Gated magnitude, measured phase and the side's Sum loss rendered off the UI thread, keyed by bank | `EqWizardPreviews` |
+| The Sum loss curve: the other summed channels frozen at handoff, one render's request, the render | `EqWizardSumLossContext`, `EqWizardSumLossRequest`, `EqWizardSumLossRender` (over `SumLossCurves`) |
 | The plot model: axes, window marks, curves, deviation shading, the selected band | `EqWizardPlot` |
 | Controls, strips, menus, dialogs, the Auto Tune run; binding only | `EqWizardPanel` partials |
 
@@ -643,6 +644,48 @@ deviation stats are magnitude ideas and leave the plot, though the stats keep be
   keeps the axis fixed. The grid is 1500 points so a Q=20 all-pass (most of 360° inside 1/20 octave) still gets several
   points per wrap and seam detection cannot mistake a fast turn for a wrap. Wrap verticals are drawn only for the curve
   under edit: with every curve marking them the HF turns into a picket fence.
+
+## Sum loss
+
+The **Sum loss** checkbox draws, on the EQ axis, the Virtual DSP side's Sum loss with the edited bank in the channel's
+chain — a bank changes phase, so it moves the summation at the junctions, and the wizard is where the bank is edited.
+Only a chain handoff has one: `VirtualCrossoverEqHandoff.SumLossContext` freezes the OTHER channels of the sum the
+panel's view quotes a loss for (`VirtualCrossoverFrame.Summed`, so a centre or a compared group is left out as on the
+panel) as processed IRs with their measured bands and calibrations (`SumLossMember`), plus the window the panel's Sum
+loss selector showed; its **Disable** hands **Full**, the read the column keeps. A raw handoff, a stale render or a
+view with no junction hands none, and the checkbox is disabled. The choice is per session, never saved: a diagnostic
+curve starts off with every launch.
+
+- **Same arithmetic as the panel.** `EqWizardSumLossRender` runs the channel's original measurement through its chain
+  with the bank substituted (the gated preview's path), then `SumLossCurves.Full` (every member through the handoff's
+  magnitude gate at the handoff's anchor) or `SumLossCurves.Direct` (per-member 8-cycle windows rotated into one
+  frame, as `VirtualCrossoverMetrics.BuildDirectLossCurve`, which delegates to it). Anchor and window are the handoff's,
+  never re-read per render, so the curve cannot slide under the bank; the wizard's smoothing applies to the ratio.
+- **Direct reads the wizard's phase gate.** The panel's FDW-8 loss is built from the junction phase block's gate, so
+  the wizard's is read from its `EqWizardPhaseContext` (lengths and pin), and an edit in the Phase gate dialog moves
+  it; without a phase context it falls back to the full window.
+- **Rendering.** Part of the gated preview's job (`EqWizardGatedPreview.RenderAll`), not a render of its own: the
+  chain is applied once for the corrected magnitude and the loss, and both land in one redraw, so a fader drag pays
+  what it paid before the curve existed plus the loss arithmetic. That is small under Full (two gated FFTs; the
+  frozen members hit the spectrum cache) and about 90 ms under Direct (the edited channel's FDW gating), which the
+  corrected curve then waits for. A first version rendered the loss separately and landed it with a full redraw:
+  during a drag the Direct render landed every ~120 ms, and a redraw per landing on top of the edit's own and the
+  preview's made the panel stutter. The job is keyed by bank and by whether the loss is drawn, so ticking the box
+  re-renders the current bank with it; a hybrid handoff renders the loss alone (its magnitude is the average); the
+  loss is dropped with the source, the calibration and the phase gate. The curve is dashed in the panel's loss
+  colour, below 0 dB on the EQ axis, whose nominal range extends to hold it and whose title names it.
+
+## Redraw pacing
+
+A band edit from a strip, the preamp or a handle drag asks for a redraw (`EqWizardPanel.RequestRedraw`) instead of
+redrawing: the request sets a flag and arms a 1 ms WinForms timer, and one `Redraw` runs on its tick. Windows
+synthesizes WM_TIMER only once the posted and input messages are gone, after WM_PAINT, so a burst of events costs
+one model rebuild and the frame before it reaches the screen. A Tracy capture of the owner's drag showed why this
+matters: 127 redraws a second (one per mouse move at the mouse's polling rate), each about 6 ms
+(`EqWizard.Stats` 2.9 ms, `RenderSet` 1.8 ms, `PlotDraw` 1.3 ms), which kept the UI thread three quarters busy and
+starved the paint, so the plot visibly updated a few times a second while the strips kept moving; the wheel on a
+gain field did the same at 96 a second. The fit is orphaned at the request, not at the redraw, or a result landing in
+between would overwrite the edit. Toggles, loads and landed renders still redraw at once.
 
 ## Band shapes
 

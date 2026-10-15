@@ -21,12 +21,14 @@ internal sealed class VirtualCrossoverEqHandoff(
     /// <summary>Null when the side has no measurement.</summary>
     /// <param name="targetLevelDb">A level the fit is run against instead of the project's; the project keeps its own
     /// until the fit lands.</param>
+    /// <param name="view">The plot's view, for the Sum loss the wizard may draw; null (a headless fit) hands none.</param>
     public VirtualDspEqHandoffRequest? Request(
         VirtualCrossoverChannel channel,
         bool withChain,
         bool hybridRequested,
         (LiveCaptureDocument? Capture, double OffsetDb) spatialAverage,
-        double? targetLevelDb = null)
+        double? targetLevelDb = null,
+        VirtualCrossoverViewState? view = null)
     {
         MagnitudeGateSnapshot snapshot = session.MagnitudeGate;
         // Only a render describing the CURRENT settings may place the window; stale -> the builder reads the channel's front.
@@ -57,12 +59,40 @@ internal sealed class VirtualCrossoverEqHandoff(
                 spatialAverage.OffsetDb,
                 hybridRequested &&
                     session.SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray &&
-                    spatialAverage.Capture == null);
+                    spatialAverage.Capture == null,
+                view == null ? null : SumLossContext(channel, view.GroupView, view.LossWindow));
         }
         catch (InvalidOperationException)
         {
             return null;
         }
+    }
+
+    /// <summary>The other channels of the sum this view quotes a loss for, frozen as processed IRs; null when the render is
+    /// stale, the view quotes no junction, or the channel is not summed. Disable hands the Full window: its read-out keeps that read.</summary>
+    public EqWizardSumLossContext? SumLossContext(
+        VirtualCrossoverChannel channel,
+        VirtualCrossoverGroupView groupView,
+        SumLossWindow lossWindow)
+    {
+        if (CurrentRender is not { } render)
+        {
+            return null;
+        }
+
+        var frame = VirtualCrossoverFrame.Of(render.Channels, groupView);
+        if (!frame.QuotesJunctions ||
+            !frame.Summed.Any(item => ReferenceEquals(item.Channel, channel)))
+        {
+            return null;
+        }
+
+        return new EqWizardSumLossContext(
+            frame.Summed
+                .Where(item => !ReferenceEquals(item.Channel, channel))
+                .Select(metrics.SumLossMember)
+                .ToList(),
+            lossWindow == SumLossWindow.Off ? SumLossWindow.Full : lossWindow);
     }
 
     /// <summary>Other drivers as processed IRs (not drawn curves, so the wizard can re-gate), plus window and τ.</summary>

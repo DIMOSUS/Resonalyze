@@ -27,6 +27,7 @@ namespace Resonalyze
                 // Created in code (see EqWizardPanel.Bank.cs), so it is not in the
                 // designer container either.
                 bankEditTimer.Dispose();
+                redrawTimer.Dispose();
             }
 
             base.Dispose(disposing);
@@ -40,7 +41,7 @@ namespace Resonalyze
         /// </summary>
         private void InitializeComponent()
         {
-            plotWizard = new OxyPlot.WindowsForms.PlotView();
+            plotWizard = new AcceleratedPlotView();
             panelPEQ = new Panel();
             labelBands = new Label();
             buttonSource = new ReleaseClickButton();
@@ -65,6 +66,7 @@ namespace Resonalyze
             checkBoxBypass = new ReleaseClickCheckBox();
             checkBoxEqPhase = new ReleaseClickCheckBox();
             checkBoxEqCurve = new ReleaseClickCheckBox();
+            checkBoxSumLoss = new ReleaseClickCheckBox();
             comboBoxBoosts = new ThemedComboBox();
             labelBoosts = new Label();
             checkBoxShelves = new ReleaseClickCheckBox();
@@ -440,6 +442,19 @@ namespace Resonalyze
             checkBoxEqCurve.TabIndex = 67;
             checkBoxEqCurve.Text = "EQ curve";
             checkBoxEqCurve.UseVisualStyleBackColor = true;
+            //
+            // checkBoxSumLoss
+            //
+            checkBoxSumLoss.AutoSize = true;
+            checkBoxSumLoss.Enabled = false;
+            checkBoxSumLoss.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxSumLoss.ForeColor = UiPalette.TextDefault;
+            checkBoxSumLoss.Location = new Point(108, 246);
+            checkBoxSumLoss.Name = "checkBoxSumLoss";
+            checkBoxSumLoss.Size = new Size(72, 19);
+            checkBoxSumLoss.TabIndex = 69;
+            checkBoxSumLoss.Text = "Sum loss";
+            checkBoxSumLoss.UseVisualStyleBackColor = true;
             // 
             // comboBoxBoosts
             // 
@@ -732,6 +747,7 @@ namespace Resonalyze
             Controls.Add(checkBoxBypass);
             Controls.Add(checkBoxEqPhase);
             Controls.Add(checkBoxEqCurve);
+            Controls.Add(checkBoxSumLoss);
             Controls.Add(buttonPhaseGate);
             Controls.Add(labelGain);
             Controls.Add(NumericGain);
@@ -761,7 +777,7 @@ namespace Resonalyze
         }
 
         #endregion
-        private OxyPlot.WindowsForms.PlotView plotWizard;
+        private AcceleratedPlotView plotWizard;
         private Panel panelPEQ;
         private Label labelBands;
         private ReleaseClickButton buttonSource;
@@ -786,6 +802,7 @@ namespace Resonalyze
         private ReleaseClickCheckBox checkBoxBypass;
         private ReleaseClickCheckBox checkBoxEqPhase;
         private ReleaseClickCheckBox checkBoxEqCurve;
+        private ReleaseClickCheckBox checkBoxSumLoss;
         private ThemedComboBox comboBoxBoosts;
         private Label labelBoosts;
         private ReleaseClickCheckBox checkBoxShelves;

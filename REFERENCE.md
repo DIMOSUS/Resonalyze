@@ -4198,8 +4198,9 @@ disagreement is something no single-side read-out can show you.
 
 With stereo pairs, Auto delay tunes **both sides in one run**, and an
 **LHD / RHD** toggle says which seat you are tuning for. The driver's side is
-the reference: it aligns first, the top pair is bridged to it by band-limited
-envelope arrivals, and the far side descends junction by junction. Each far
+the reference: it aligns first, the pair that plays the most of 1–2 kHz is
+bridged to it by band-limited envelope arrivals, and the far side walks
+junction by junction up and down from that pair. Each far
 channel's search is aimed at its **cross-side target** — the delay that lands
 its band-limited arrival the scene offset ahead of its settled twin's — and
 for a pair whose shared band is centred below 300 Hz that arrival is the
@@ -4261,10 +4262,12 @@ entered the same way, as a cut on the near side. The gain balance itself is
 **off by default**: a run writes delays and polarity and leaves every level
 alone until you tick **Balance channel gains (cut-only)**. Pairs whose shared band
 reaches the localization region are pinned to the scene, because the image
-outranks the handover there; a final scene-preserving pass may then shift both
+outranks the handover there — a pair above the bridge (the tweeters over a
+midrange bridge) only to within a quarter of its crossover's period, so it
+meets the bridge at their junction; a final scene-preserving pass may then shift both
 sides of a pair by one shared delta to recover what the pin cost, except a pair
 at a junction the phase placed, which stays where the phase put it. Each far-side
-channel below the bridge may also leave its own scene position to buy back its
+channel off the bridge may also leave its own scene position to buy back its
 junctions' summation, by an eighth of the period of its highest crossover: a
 few hundredths of a millisecond for a midrange under a 2 kHz split, half a
 millisecond for a midbass under a 200 Hz one, where the image does not

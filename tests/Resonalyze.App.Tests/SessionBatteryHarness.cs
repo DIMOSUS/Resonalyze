@@ -665,7 +665,8 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
             reprocessor.Reprocess,
             alignment,
             log,
-            decisions);
+            decisions,
+            reference: ordered.PickReference());
         return alignment;
     }
 

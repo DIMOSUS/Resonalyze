@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Text;
 using Resonalyze.Dsp;
 
@@ -30,7 +30,7 @@ internal static class VirtualCrossoverAutoDelay
         GatePlacementVerdict? gatePlacement,
         Func<bool>? consentToBroadWindow)
     {
-        // Stereo when some non-mono pair has both sides resolved (the highest becomes the L/R bridge).
+        // Stereo when some non-mono pair has both sides resolved (the one playing the most of 1-2 kHz becomes the L/R bridge).
         (List<VirtualCrossoverSideAlignmentChannel> leftSide, List<VirtualCrossoverSideAlignmentChannel> rightSide) =
             CollectStereoSides(session.Channels);
         VirtualCrossoverSideAlignmentChannel? bridgeRight = PickStereoBridge(leftSide, rightSide);
@@ -78,7 +78,7 @@ internal static class VirtualCrossoverAutoDelay
             null);
     }
 
-    // Driver's side first, then the L/R bridge at the top pair, then the far side (AutoAlignmentEngine.ComputeStereo).
+    // Driver's side first, then the L/R bridge at the 1-2 kHz pair, then the far side (AutoAlignmentEngine.ComputeStereo).
     private static (AutoDelayPlan? Plan, AutoDelayRefusal? Refusal) PrepareStereo(
         VirtualCrossoverSession session,
         List<VirtualCrossoverSideAlignmentChannel> leftSide,
@@ -113,7 +113,7 @@ internal static class VirtualCrossoverAutoDelay
             return (null, new AutoDelayRefusal(
                 "the stereo bridge has no usable shared band",
                 "The stereo bridge has no usable shared band.",
-                $"The top pair's crossover bands barely overlap: " +
+                $"The bridge pair's crossover bands barely overlap: " +
                 $"{bridgeLeft.Name} plays {leftBandLowHz:0}-{leftBandHighHz:0} Hz, " +
                 $"{bridgeRight.Name} plays {rightBandLowHz:0}-{rightBandHighHz:0} Hz. " +
                 "Align the pair's crossover settings so the sides share at " +
@@ -208,18 +208,39 @@ internal static class VirtualCrossoverAutoDelay
     }
 
     // A mono block appears once (as its left instance), so a centre is found exactly once.
-    /// <summary>Top front-chain pair resolved on both sides, or null where the run cannot be a stereo one.
-    /// The bridge must be a front-chain pair, or the scene anchors to the rear fill.</summary>
+    /// <summary>Front-chain pair resolved on both sides that plays the most of 1-2 kHz, counted over both sides so LHD and RHD
+    /// bridge on the same pair whatever the side lock (the higher on a tie), or null where the run cannot be a stereo one.
+    /// A pair whose sides share a band outranks one that does not, which is picked only to be refused by name.
+    /// The bridge must be a front-chain pair, or the scene anchors to the rear fill. See docs/tech/auto-alignment.md#walk-order.</summary>
     internal static VirtualCrossoverSideAlignmentChannel? PickStereoBridge(
         List<VirtualCrossoverSideAlignmentChannel> leftSide,
         List<VirtualCrossoverSideAlignmentChannel> rightSide) =>
         rightSide
-            .Where(item => item.RightSide &&
-                InFrontChain(item) &&
-                leftSide.Any(left =>
-                    left.Runtime == item.Runtime && !left.RightSide))
-            .OrderBy(item => VirtualCrossoverJunctions.BandCenterHz(item.Settings))
+            .Where(item => item.RightSide && InFrontChain(item))
+            .Select(right => (Right: right, Left: leftSide.FirstOrDefault(left =>
+                left.Runtime == right.Runtime && !left.RightSide)))
+            .Where(pair => pair.Left != null)
+            .OrderBy(pair => StereoBridgeBand(pair.Left!, pair.Right) != null)
+            .ThenBy(pair => ReferenceBandCoverage(pair.Left!.Settings) + ReferenceBandCoverage(pair.Right.Settings))
+            .ThenBy(pair => VirtualCrossoverJunctions.BandCenterHz(pair.Left!.Settings) *
+                VirtualCrossoverJunctions.BandCenterHz(pair.Right.Settings))
+            .Select(pair => pair.Right)
             .LastOrDefault();
+
+    /// <summary>The channel playing the most of 1-2 kHz by its crossover settings, the higher on a tie: the walk's
+    /// reference in a single-side run and the bridge in a stereo one. See docs/tech/auto-alignment.md#walk-order.</summary>
+    internal static T? PickReference<T>(this IEnumerable<T> channels)
+        where T : class, IVirtualCrossoverAlignmentChannel =>
+        channels
+            .OrderBy(item => ReferenceBandCoverage(item.Settings))
+            .ThenBy(item => VirtualCrossoverJunctions.BandCenterHz(item.Settings))
+            .LastOrDefault();
+
+    private static double ReferenceBandCoverage(VirtualCrossoverChannelSettings settings)
+    {
+        (double lowHz, double highHz) = VirtualCrossoverJunctions.GetChannelBand(settings);
+        return AutoAlignmentEngine.ReferenceBandCoverageOctaves(lowHz, highHz);
+    }
 
     /// <summary>Bridge band = INTERSECTION of both sides' playing bands; null where they barely overlap.</summary>
     internal static (double LowHz, double HighHz)? StereoBridgeBand(
@@ -532,7 +553,10 @@ internal static class VirtualCrossoverAutoDelay
             alignment,
             log,
             decisions,
-            maxDelayMs: maxDelayMs);
+            maxDelayMs: maxDelayMs,
+            reference: walked
+                .Select(snapshot => (IVirtualCrossoverAlignmentChannel)snapshot.Channel)
+                .PickReference());
         return reprocessor;
     }
 

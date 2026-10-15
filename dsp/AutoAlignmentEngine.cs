@@ -82,7 +82,7 @@ public sealed record StereoAlignmentPlan(
     double SceneOffsetMs,
     IReadOnlyList<StereoPairLink>? PairLinks = null);
 
-/// <summary>L/R pair below the bridge with its shared band; aims the right descent's prior at the delay giving the scene-offset Δ.</summary>
+/// <summary>L/R pair off the bridge with its shared band; aims the right walk's prior at the delay giving the scene-offset Δ.</summary>
 public sealed record StereoPairLink(
     IAlignmentChannel Left,
     IAlignmentChannel Right,
@@ -94,8 +94,8 @@ public delegate IReadOnlyList<AlignmentSnapshot> AlignmentReprocessor(
     IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides);
 
 /// <summary>
-/// Two-stage auto time alignment: band-limited arrivals give coarse delays, then a pairwise summation-loss search walks out from the
-/// top channel of the chain, the fixed reference; a later-arriving lower channel shifts the settled stack instead.
+/// Two-stage auto time alignment: band-limited arrivals give coarse delays, then a pairwise summation-loss search walks up and down
+/// from the channel playing the most of 1-2 kHz, the fixed reference; a later-arriving channel shifts the settled ones instead.
 /// See docs/tech/auto-alignment.md#walk-order.
 /// </summary>
 public static class AutoAlignmentEngine
@@ -249,7 +249,8 @@ public static class AutoAlignmentEngine
 
     /// <summary>
     /// <paramref name="pairs"/>[i] joins channels i and i+1 of <paramref name="channelsByBand"/>. Snapshots are override-free;
-    /// the proposal is absolute. <paramref name="maxDelayMs"/> bounds every pass (device ceiling).
+    /// the proposal is absolute. <paramref name="maxDelayMs"/> bounds every pass (device ceiling). A null
+    /// <paramref name="reference"/> is picked from the junctions' crossovers.
     /// </summary>
     public static void Compute(
         IReadOnlyList<AlignmentSnapshot> channelsByBand,
@@ -258,7 +259,8 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
-        double maxDelayMs = DefaultMaxDelayMs)
+        double maxDelayMs = DefaultMaxDelayMs,
+        IAlignmentChannel? reference = null)
     {
         // Arrival reads repeat on identical input across the run; see AlignmentRunMemo.
         using AlignmentRunMemo.Scope runMemo = AlignmentRunMemo.Begin();
@@ -270,7 +272,7 @@ public static class AutoAlignmentEngine
         alignment.Clear();
         decisions?.Clear();
         Compute(channelsByBand, pairs, reprocess, alignment, log,
-            onsetLocks: null, decisions);
+            onsetLocks: null, decisions, reference: reference);
         NormalizeAndVerifyFeasibility(
             channelsByBand.ToList(), alignment, log, maxDelayMs);
         NormalizePolarityPresentation(channelsByBand, alignment, log);
@@ -664,7 +666,8 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
         IReadOnlyCollection<IAlignmentChannel>? monoChannels = null,
         HashSet<AlignmentJunction>? phasePlaced = null,
-        Dictionary<IAlignmentChannel, SubPrecedenceStand>? subPrecedence = null)
+        Dictionary<IAlignmentChannel, SubPrecedenceStand>? subPrecedence = null,
+        IAlignmentChannel? reference = null)
     {
         ArgumentNullException.ThrowIfNull(channelsByBand);
         ArgumentNullException.ThrowIfNull(pairs);
@@ -695,10 +698,17 @@ public static class AutoAlignmentEngine
                 out Dictionary<AlignmentJunction, double> seedPartnerReach,
                 out Dictionary<AlignmentJunction, double> frontAnchors);
 
-        // The top of the chain anchors the walk, so the channel the image follows — and the one a stereo run bridges
-        // the sides on — is never the last link of an inherited chain. See docs/tech/auto-alignment.md#walk-order.
-        AlignmentSnapshot top = byBand[^1];
-        IAlignmentChannel reference = top.Channel;
+        // The channel that plays the most of 1-2 kHz anchors the walk, so the junctions the image follows are the first
+        // links of both chains, and a stereo run bridges the sides on it. See docs/tech/auto-alignment.md#walk-order.
+        int referenceIndex = reference != null
+            ? byBand.FindIndex(item => item.Channel == reference)
+            : PickReferenceIndex(pairs);
+        if (referenceIndex < 0)
+        {
+            throw new ArgumentException(
+                "The reference must be a member of the walk.", nameof(reference));
+        }
+        reference = byBand[referenceIndex].Channel;
         log.AppendLine($"Reference: {reference.Name}");
         if (decisions != null)
         {
@@ -707,13 +717,12 @@ public static class AutoAlignmentEngine
                 "reference (others align to it)");
         }
 
-        // Stage 2 descends from it band by band; each window is sized by its own junction, and a low-junction error
-        // moves the group below it together. A channel that arrives later than the top needs a negative delay, which
-        // ShiftAllExcept turns into a uniform shift of everything settled so far.
-        for (int i = byBand.Count - 2; i >= 0; i--)
-        {
+        // Stage 2 climbs from it, then descends, band by band; each window is sized by its own junction, and an error
+        // moves the group beyond it together. A channel that arrives later than the settled ones needs a negative
+        // delay, which ShiftAllExcept turns into a uniform shift of everything settled so far.
+        void Align(int searched, int neighbor, AlignmentJunction pair) =>
             AlignChannelAtJunction(
-                byBand[i].Channel, byBand[i + 1].Channel, pairs[i],
+                byBand[searched].Channel, byBand[neighbor].Channel, pair,
                 timeline, byBand, reprocess, alignment, log,
                 untrustedSeedJunctions: untrustedSeeds,
                 seedPartnerDistanceMs: seedPartnerReach,
@@ -723,7 +732,52 @@ public static class AutoAlignmentEngine
                 phasePlaced: phasePlaced,
                 subPrecedence: subPrecedence,
                 frontAnchorMs: frontAnchors);
+        for (int i = referenceIndex + 1; i < byBand.Count; i++)
+        {
+            Align(i, i - 1, pairs[i - 1]);
         }
+        for (int i = referenceIndex - 1; i >= 0; i--)
+        {
+            Align(i, i + 1, pairs[i]);
+        }
+    }
+
+    /// <summary>The band the reference is chosen by: where the image is localized and a tweeter's 0.01 ms matters.</summary>
+    internal const double ReferenceBandLowHz = 1_000;
+    internal const double ReferenceBandHighHz = 2_000;
+
+    /// <summary>How much of 1-2 kHz a channel playing <paramref name="lowHz"/>-<paramref name="highHz"/> covers, in octaves;
+    /// a channel clear of it scores minus its distance in octaves, so the nearest wins where none covers it.
+    /// See docs/tech/auto-alignment.md#walk-order.</summary>
+    public static double ReferenceBandCoverageOctaves(double lowHz, double highHz)
+    {
+        double overlap = Math.Log2(
+            Math.Min(highHz, ReferenceBandHighHz) / Math.Max(lowHz, ReferenceBandLowHz));
+        return overlap >= 0
+            ? overlap
+            : -Math.Max(
+                Math.Log2(lowHz / ReferenceBandHighHz),
+                Math.Log2(ReferenceBandLowHz / highHz));
+    }
+
+    /// <summary>Index of the channel covering the most of 1-2 kHz, each channel playing between its junctions' crossovers;
+    /// a tie goes to the higher channel.</summary>
+    internal static int PickReferenceIndex(IReadOnlyList<AlignmentJunction> pairs)
+    {
+        int best = 0;
+        double bestCoverage = double.NegativeInfinity;
+        for (int i = 0; i <= pairs.Count; i++)
+        {
+            double coverage = ReferenceBandCoverageOctaves(
+                i > 0 ? pairs[i - 1].CrossoverHz : 20,
+                i < pairs.Count ? pairs[i].CrossoverHz : 20_000);
+            if (coverage >= bestCoverage)
+            {
+                best = i;
+                bestCoverage = coverage;
+            }
+        }
+        return best;
     }
 
     /// <summary>Polarity settled before the search: by the crossover on polarity-searching walks, inherited on the far-side descent. Stage 1 must use the same.</summary>
@@ -2692,8 +2746,9 @@ public static class AutoAlignmentEngine
     }
 
     /// <summary>
-    /// Stereo cascade: left side like <see cref="Compute"/> (mono channels final), bridge right top to left top by envelope arrivals with the scene offset,
-    /// right side descends skipping mono channels, then the union is rebased to zero. Every uniform shift spans both sides.
+    /// Stereo cascade: left side like <see cref="Compute"/> from the left bridge (mono channels final), bridge right to left by envelope arrivals
+    /// with the scene offset, right side walks up and down from its bridge skipping mono channels, then the union is rebased to zero. Every
+    /// uniform shift spans both sides.
     /// See docs/tech/auto-alignment.md#stereo-cascade.
     /// </summary>
     public static void ComputeStereo(
@@ -2758,7 +2813,8 @@ public static class AutoAlignmentEngine
 
         Compute(
             plan.LeftChannelsByBand, plan.LeftPairs, reprocess, alignment, log,
-            onsetLocks, decisions, plan.MonoChannels, phasePlaced, subPrecedence);
+            onsetLocks, decisions, plan.MonoChannels, phasePlaced, subPrecedence,
+            reference: plan.BridgeLeft);
 
         // Scope of every uniform shift from here on: one side alone would break the bridge's offset.
         var allChannels = new List<AlignmentSnapshot>(plan.LeftChannelsByBand);
@@ -2808,7 +2864,7 @@ public static class AutoAlignmentEngine
                     ? $"SNR {rightBridge.SignalToNoiseDecibels:0.0} dB"
                     : "has no energy in the band") +
                 $" (minimum {MinimumArrivalSnrDb:0} dB). " +
-                "Check the top pair's sources and crossover band.");
+                "Check the bridge pair's sources and crossover band.");
         }
 
         // Honesty certificate on the read that times a whole side: disagreement refuses; unmeasurable upper half caps confidence at Low.
@@ -2855,7 +2911,7 @@ public static class AutoAlignmentEngine
                             $"{bridgeProbeLowHz:0}-{plan.BridgeBandHighHz:0} Hz half. " +
                             "The arrival is not a clean direct front, so timing the " +
                             "whole far side from it would be unreliable. Check the " +
-                            "top pair's measurements for early reflections.");
+                            "bridge pair's measurements for early reflections.");
                     case ArrivalCertificate.Unverified:
                         bridgeVerified = false;
                         break;
@@ -2879,10 +2935,10 @@ public static class AutoAlignmentEngine
             $"(SNR {leftBridge.SignalToNoiseDecibels:0.0} / " +
             $"{rightBridge.SignalToNoiseDecibels:0.0} dB), " +
             $"scene offset {plan.SceneOffsetMs:+0.000;-0.000} ms " +
-            $"(positive: the far side leads) -> far-top delay {bridgeDelay:0.000} ms");
+            $"(positive: the far side leads) -> far-bridge delay {bridgeDelay:0.000} ms");
         if (bridgeDelay < 0)
         {
-            // The right top cannot be advanced: delay everything settled by the deficit and start it at zero.
+            // The right bridge cannot be advanced: delay everything settled by the deficit and start it at zero.
             double shift = -bridgeDelay;
             ShiftAllExcept(allChannels, plan.BridgeRight, shift, alignment, log);
             bridgeDelay = 0;
@@ -2917,7 +2973,7 @@ public static class AutoAlignmentEngine
                     : ", arrival not certified by the upper-half probe"));
         }
 
-        // Polarity belongs to the driver: the right top inherits the left top's sign before the right walk; reverse wiring is a manual flip.
+        // Polarity belongs to the driver: the right bridge inherits the left bridge's sign before the right walk; reverse wiring is a manual flip.
         InheritBridgePolarity(plan, alignment, log, decisions);
 
         // Stage R: the stage-2 walk referenced to the bridge; mono channels are final and only measured.
@@ -3380,12 +3436,12 @@ public static class AutoAlignmentEngine
             double? sceneLock = cross is not { } resolved
                 ? null
                 : heldOnOwnSum || (lockable && !resolved.Coarse)
-                    ? SceneLockToleranceMs
+                    ? SceneTickLockMs(aboveBridge: index > bridgeIndex, pair.CrossoverHz)
                     : (resolved.TightLock ? 250.0 : 500.0) / Math.Max(
                         pair.CrossoverHz,
                         secondaryPair?.CrossoverHz ?? pair.CrossoverHz);
 
-            // Right channels inherit their left twin's sign (per-driver asymmetric inversion is impossible); the right top's sign comes from the bridge.
+            // Right channels inherit their left twin's sign (per-driver asymmetric inversion is impossible); the right bridge's sign comes from the left one.
             bool? inheritedPolarity = channelLink == null
                 ? null
                 : alignment.TryGetValue(channelLink.Left, out AlignmentOverride leftSide)
@@ -3399,13 +3455,13 @@ public static class AutoAlignmentEngine
                 rightUntrustedSeeds, onsetLocks, decisions, plan.MonoChannels,
                 rightSeedPartnerReach, frontAnchorMs: rightFrontAnchors);
         }
-        for (int i = bridgeIndex - 1; i >= 0; i--)
-        {
-            AlignRight(i, i + 1, plan.RightPairs[i]);
-        }
         for (int i = bridgeIndex + 1; i < rightByBand.Count; i++)
         {
             AlignRight(i, i - 1, plan.RightPairs[i - 1]);
+        }
+        for (int i = bridgeIndex - 1; i >= 0; i--)
+        {
+            AlignRight(i, i + 1, plan.RightPairs[i]);
         }
 
         // Shared per-pair delta keeps the scene while trading junction loss between sides; a pair on its own sum is placed here.
@@ -3603,6 +3659,18 @@ public static class AutoAlignmentEngine
     // Scene lock tolerance for localization-band pairs; low pairs lock only to the lobe. See docs/tech/auto-alignment.md#scene-lock.
     private const double SceneLockToleranceMs = 0.05;
 
+    // A quarter period of the junction under a pair above the bridge: inside its lobe, so the scene keeps the lobe while
+    // the junction with the bridge picks the delay. See docs/tech/auto-alignment.md#scene-lock.
+    private const double AboveBridgeSceneLockPeriods = 0.25;
+
+    /// <summary>How far a scene-pinned pair may leave its cross-side target: 0.05 ms, or for a pair above the bridge, which
+    /// follows the bridge through its junction, a quarter of that junction's period but never less than 0.05 ms (the
+    /// floor wins above 5 kHz). See docs/tech/auto-alignment.md#scene-lock.</summary>
+    internal static double SceneTickLockMs(bool aboveBridge, double junctionHz) =>
+        aboveBridge
+            ? Math.Max(SceneLockToleranceMs, AboveBridgeSceneLockPeriods * 1_000.0 / junctionHz)
+            : SceneLockToleranceMs;
+
     // Generous: rejects a lone donor dominated by its own DSP asymmetry, accepts shared offsets (v3: mids +1.37, tweeters +1.41).
     private const double CrossSideDonorAgreementMs = 0.6;
 
@@ -3795,7 +3863,7 @@ public static class AutoAlignmentEngine
         return null;
     }
 
-    // No sum-loss polarity guess for the bridge top: two separated tops comb-filter and would invert one tweeter alone.
+    // No sum-loss polarity guess for the bridge: two separated same-band drivers comb-filter and would invert one alone.
     private static void InheritBridgePolarity(
         StereoAlignmentPlan plan,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
@@ -3803,12 +3871,12 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         bool leftInvert = alignment.GetValueOrDefault(plan.BridgeLeft).InvertPolarity;
-        AlignmentOverride top = alignment.GetValueOrDefault(plan.BridgeRight);
-        alignment[plan.BridgeRight] = top with { InvertPolarity = leftInvert };
+        AlignmentOverride bridge = alignment.GetValueOrDefault(plan.BridgeRight);
+        alignment[plan.BridgeRight] = bridge with { InvertPolarity = leftInvert };
         log.AppendLine(
             $"  bridge polarity: {(leftInvert ? "inverted" : "normal")} " +
             $"(inherited from {plan.BridgeLeft.Name}; auto delay keeps L/R polarity symmetric)");
-        if (leftInvert != top.InvertPolarity)
+        if (leftInvert != bridge.InvertPolarity)
         {
             AmendDecision(
                 decisions, plan.BridgeRight,

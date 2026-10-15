@@ -1253,8 +1253,10 @@ steering-wheel position.
 
 Auto delay works in stages rather than treating the car as one chain:
 
-1. it aligns **Front + Sub** first, anchoring on the highest front driver and walking
-   each real junction down to the subwoofer;
+1. it aligns **Front + Sub** first, anchoring on the front driver that plays the most
+   of **1–2 kHz** (the midrange in a three-way front, the woofer in a two-way crossed
+   above 2 kHz) and walking each real junction up to the tweeter and down to the
+   subwoofer;
 2. it aligns the drivers inside a multi-way **Rear** or **Center** group with each
    other;
 3. it places each rear side against the front on that side, and the mono centre

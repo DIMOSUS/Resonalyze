@@ -35,12 +35,13 @@ filter responses of the polarity rule, a FIR kernel's delay); everything measure
 1. **Stage 1, arrival timeline (`BuildArrivalTimeline`).** A band-limited arrival per junction side,
    graded by the honesty probes, refined by a whitened-correlation (GCC-PHAT) seed where that seed is
    trustworthy. The result is a coarse relative delay per channel.
-2. **Stage 2, fine alignment (`AlignChannelAtJunction`).** The top channel of the chain is the
-   fixed reference and the walk descends from it (see [Walk order](#walk-order)); each channel is
-   searched against its already-settled upper neighbour only, inside their pair band. Each window
-   is therefore sized by its own junction: a mid channel's low-junction window is not squeezed to
-   the period of its high junction. An error at a low junction moves the whole group below it
-   together, which a per-channel search against all fixed channels could not do.
+2. **Stage 2, fine alignment (`AlignChannelAtJunction`).** The channel that plays the most of
+   1-2 kHz is the fixed reference, and the walk climbs from it to the top, then descends from it to
+   the bottom (see [Walk order](#walk-order)); each channel is searched against its already-settled
+   neighbour on the reference's side only, inside their pair band. Each window is therefore sized by
+   its own junction: a mid channel's low-junction window is not squeezed to the period of its high
+   junction. An error at a junction moves the whole group beyond it together, which a per-channel
+   search against all fixed channels could not do.
 3. **Polarity presentation (`NormalizePolarityPresentation`).** A global flip changes no relation.
    When a proposal inverts more channels than it keeps, the field is flipped, so an inverted
    sub/stack relation reads as one inverted sub rather than three inverted stack channels. Exactly
@@ -65,25 +66,40 @@ a transferability gate, not an operating region.
 
 ## Walk order
 
-`Compute` anchors the walk on the top channel of the chain (`byBand[^1]`) and descends junction by
-junction; there is no upward leg. The anchor used to be the latest-arriving channel, chosen so that
-every delay came out non-negative by construction, and the walk went outward from it in both
-directions. On a typical car (sub last, tweeter first) that made the sub the anchor and the tweeter
-the last link of a chain of three inherited junction errors, while a stereo run then bridged the
-sides on that same tweeter, transporting the chain's error to the far side. The weighting is the
-owner's: the top junction wants 0.01 ms, the sub junction cannot hear 1 ms, and the far side is
-bridged on the top, so the top is where the walk must start.
+`Compute` anchors the walk on the channel that plays the most of 1-2 kHz, climbs junction by
+junction to the top of the chain, then descends to the bottom. A channel's band runs between its
+junctions' crossovers (20 Hz and 20 kHz at the ends); `ReferenceBandCoverageOctaves` counts the
+octaves of 1-2 kHz inside it, so neighbours split that octave between them and a tie is exact, broken
+toward the higher channel. A three-way front anchors on the midrange, a two-way crossed above 2 kHz on
+the woofer, below 1.41 kHz on the tweeter. A stereo run bridges the sides on the same pair: the panel
+picks it from the crossover settings (`PickStereoBridge`, scoring each band the same way, the nearer
+one winning where a gap leaves 1-2 kHz to nobody) and hands it to the reference side's walk. A pair
+scores the sum over both sides, so sides crossed apart (side lock off) bridge on the same pair in
+LHD and RHD; the single-side run, the staged groups and the battery use the same `PickReference`.
 
-Non-negativity is served elsewhere and always was: a lower channel that arrives later than the
-settled stack above it needs a negative delay, which `ShiftAllExcept` turns into a uniform shift of
-everything settled so far, and `NormalizeAndVerifyFeasibility` rebases the union at the end. In a
-two-channel proposal that means a late woofer reads as a delayed tweeter, and the inversion of a
-pair is attributed to the searched (lower) member; both are relations, not per-channel facts.
+The owner's concept: 1-2 kHz is where the image is localized, so the drivers that play it are the
+ones every other driver tunes to, and the error a chain accumulates grows outward from them, up to
+the tweeter as well as down to the sub. It replaced an anchor on the top channel, which had replaced
+the latest-arriving one. The latest arrival made non-negative delays by construction, but on a
+typical car it was the sub, which left the tweeter the last link of three inherited junction errors,
+and a stereo run bridged the sides on that tweeter. The top anchor fixed that and walked down only;
+it made the midrange inherit the tweeter junction's error on both sides and bridged the image on a
+driver that plays above where it is localized.
 
-Measured on the archive the day it changed (stereo battery, 29 sides): the top junction's metric is
-unchanged on 21 sides, average −0.004 dB; the dip moved −0.32 dB, all of it on two v6 and two v4
-rows. The gain is structural, not metric: on v6 session 11 the tweeter went from a Low-confidence
-last link to the reference, and the unresolved junction is reported where it is, at B/C.
+Non-negativity is served elsewhere and always was: a channel that arrives later than the settled
+ones needs a negative delay, which `ShiftAllExcept` turns into a uniform shift of everything settled
+so far, and `NormalizeAndVerifyFeasibility` rebases the union at the end. In a two-channel proposal
+that means a late woofer reads as a delayed tweeter, and the inversion of a pair is attributed to the
+searched member; both are relations, not per-channel facts.
+
+Measured on the archive the day it changed, with the tweeters' looser scene pin
+([Scene lock](#scene-lock)) (stereo battery, 18 sessions, 94 side junctions): every session with a
+three-way front moved its bridge from the tweeter to the midrange. The summation metric does not
+move, junction average −0.001 dB and dip −0.01 (10 better, 13 worse). The centre judge, both sides'
+whole sum, reads +0.08 dB mean (16 better, 12 worse), most of it at the mid/tweeter junction
+(v9 +1.2, v6-4 +1.1, v5_exp +0.7); its worst losses are the same junction on the Fiesta (−0.6),
+v4 (−0.35) and v6-16 (−0.3). The change is the owner's
+weighting of where the image lives, which the summation cannot see, not a metric gain.
 
 ## Arrival detector
 
@@ -260,7 +276,7 @@ The credit must be earned carefully:
   swallowed a genuine late mode. The predictions read a bypassed response that may itself carry the
   mode, and no conviction factor protects this credit.
 - **Graded with the override delay taken out.** The prediction excludes bulk delay, so a read taken
-  through a settled channel's delay (the bridge's reference top, a cross-side link's settled side
+  through a settled channel's delay (the bridge's reference twin, a cross-side link's settled side
   and its donors) is shifted back before grading. Graded as read, a 20 ms delay turns every such
   prediction Latched and silently drops the credit, and a chain-explained skew then refuses the run.
 
@@ -1171,15 +1187,19 @@ sub inverted against its woofer on a tie is the outcome the owner asked the engi
 
 `ComputeStereo` aligns two sides that never meet at a crossover:
 
-1. **Left side** exactly like `Compute`. Mono channels (typically the shared sub) are part of that
-   walk and final afterwards.
-2. **Bridge.** The right top channel is fitted to the settled left top by band-limited envelope
-   arrivals in the top band, honouring `SceneOffsetMs`. It is not a cross-correlation: same-band L/R
+1. **Left side** exactly like `Compute`, anchored on the left bridge channel. Mono channels
+   (typically the shared sub) are part of that walk and final afterwards.
+2. **Bridge.** The right bridge channel, the pair that plays the most of 1-2 kHz (see
+   [Walk order](#walk-order)), is fitted to its settled left twin by band-limited envelope
+   arrivals in the whole band the two share, honouring `SceneOffsetMs`. Reading it from 500 Hz up
+   (above the cabin's modes) was tried and lost on the archive: the centre judge read −0.10 dB mean,
+   11 sessions better and 18 worse, because a mid timed in a narrower band than its tweeter's scene
+   link split the far side's mid/tweeter junction (v9 F30_v2: −2 dB there). It is not a cross-correlation: same-band L/R
    drivers sit at different spots with different room paths, their HF correlation is lobe-ambiguous
    noise (r ~0.3, dominance ~0.01 on real cars), and the envelope arrival is what the image follows
    up there. A positive offset makes the plan's Right (far) side lead, pulling the image toward the
    dash centre; right-hand-drive callers pass the plan mirrored.
-3. **Right descent** junction by junction from the bridged top (the same walk as stage 2), skipping
+3. **Right walk** junction by junction up and down from the bridge (the same walk as stage 2), skipping
    mono channels whose right junction is only measured (`MeasureFixedJunction` logs the price of
    sharing one sub). Settled polarity is inherited, not read from the crossover.
 4. **Post-descent passes**, then a rebase of the union to zero.
@@ -1216,12 +1236,12 @@ trusted:
   confidence capped at Low.
 - Bridge confidence is the weaker side's SNR (Low within ~6 dB of the floor, High from
   `BridgeHighSnrDb` 30 dB).
-- A right top that needs to be advanced makes everything settled so far be delayed by the deficit.
+- A right bridge that needs to be advanced makes everything settled so far be delayed by the deficit.
 
-**Polarity** belongs to the driver. The right top inherits the left top's sign before the descent,
+**Polarity** belongs to the driver. The right bridge inherits the left bridge's sign before the walk,
 and each right channel inherits its left twin's, so asymmetric per-driver inversion is structurally
-impossible. There is no sum-loss polarity guess for the tops: two separated tops comb-filter, and
-the guess would invert an identical off-axis tweeter alone. `EnforcePolaritySymmetry` restates the
+impossible. There is no sum-loss polarity guess for the bridge: two separated same-band drivers comb-filter,
+and the guess would invert an identical off-axis driver alone. `EnforcePolaritySymmetry` restates the
 invariant in one testable place. Reverse-wired drivers are a manual flip.
 
 ## Stereo branch check
@@ -1546,6 +1566,16 @@ Right channels whose pair band reaches the localization region are pinned to a n
 cross-side target within `SceneLockToleranceMs` (0.05 ms): the image outranks the junction handover.
 A Coarse target pins only the lobe, as for low pairs below.
 
+- **Above the bridge** (the tweeters over a midrange bridge) the pin is a quarter of the junction's
+  period (`AboveBridgeSceneLockPeriods`), 0.1 ms at a 2.5 kHz split, never under the 0.05 ms pin the
+  pairs below keep (`SceneTickLockMs`; the floor wins above 5 kHz and, like the pin it always was,
+  exceeds half a period above 10 kHz, where no tweeter junction sits): the scene keeps the lobe and the
+  junction with the bridge places the delay inside it. Each pair is timed in its own band, the
+  bridge in the midrange's, the tweeters' scene link in theirs; at 0.05 ms the two reads' small
+  disagreement went whole to the far side's mid/tweeter junction. The far-side polish already let a
+  tweeter trim an eighth of that period past the 0.05 ms pin, so the reach barely grows (0.05 ms +
+  T/8 against T/4, equal at 2.5 kHz): what changed is which pass places it, the junction search
+  rather than the polish and its half-band veto. On the archive that moved four sessions only.
 - **Localization band.** The target is measured only in the sub-band above
   `SceneLockLocalizationLowHz` (300 Hz), because low soft envelopes carry no localization. At least
   a third of an octave above that edge is required (80-310 Hz is not lockable).
@@ -1669,8 +1699,8 @@ recover its own far-side junctions, by an eighth of the period of its highest ju
   the scene position: each channel's spent trim is carried across the rounds below. Spent per round,
   the second round walked the Passat's mid 0.13 ms at a 0.125 ms leash and its 1 kHz split read
   0.14 dB worse (0.49 on the dip).
-- **The bridge has no reach.** It IS the scene: the far top stands at the user's delta to its twin, and
-  the chain below it is what gets polished.
+- **The bridge has no reach.** It IS the scene: the far bridge stands at the user's delta to its twin, and
+  the chain above and below it is what gets polished.
 - **Both sides of a pair on its own sum** are polished, the reference member after the far channels
   (`Reference-side polish`), each by its junction with the stereo neighbour alone
   ([A low pair stands on its own sum](#a-low-pair-stands-on-its-own-sum)).
@@ -1691,7 +1721,7 @@ recover its own far-side junctions, by an eighth of the period of its highest ju
   `DirectSeedMinCrossoverHz` takes the tick inside the same reach where that junction's phase score is
   best, not the summation's (see [Phase lobe](#phase-lobe)); where the junction reads no phase the
   summation trims as below.
-- **Order.** Band order from the bridge down. Mono channels never move here; they follow in the mono
+- **Order.** By each channel's highest junction, from the top down. Mono channels never move here; they follow in the mono
   co-move this pass alternates with (below).
 - **Grid.** Absolute ticks of the DSP's 0.01 ms grid, since gains between its points are unrealizable: the
   exact move to a tick is scored and that tick is written. The channel may stand off the grid when the

@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Globalization;
 using System.Numerics;
 using System.Text;
@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>Stereo cascade: reference side, then the top-pair bridge with the scene offset (positive = far side leads), then the far-side descent.</summary>
+/// <summary>Stereo cascade: reference side, then the bridge with the scene offset (positive = far side leads), then the far-side walk.</summary>
 public sealed class StereoAlignmentTests
 {
     private const int SampleRate = 48_000;
@@ -59,13 +59,15 @@ public sealed class StereoAlignmentTests
     private static readonly ConcurrentDictionary<string, Lazy<(TestChannel Sub,
         TestChannel[] Left, TestChannel[] Right,
         Dictionary<IAlignmentChannel, AlignmentOverride> Alignment,
-        StringBuilder Log, int ReprocessCount)>> StereoRuns = new();
+        StringBuilder Log, int ReprocessCount,
+        Dictionary<IAlignmentChannel, AlignmentDecision> Decisions)>> StereoRuns = new();
 
     /// <summary>Mono sub plus woof/mid/twr per side; the right side arrives 1.5 ms later. <paramref name="rightMidEchoMs"/> adds a stronger
     /// later lobe (correlation chases it, the scene follows the first); <paramref name="rightWoofLateCopyMs"/> puts most of the
     /// right woofer's energy that far behind its front, <paramref name="leftWoofLateCopyMs"/> the left one's, each copy
     /// <paramref name="woofLateCopyAmplitude"/> times the front;
-    /// <paramref name="reprocessCount"/>[0] receives the reprocess count.</summary>
+    /// <paramref name="reprocessCount"/>[0] receives the reprocess count; <paramref name="bridgeOnMid"/> bridges on the mids instead of the tweeters;
+    /// <paramref name="decisions"/> receives the run's decisions.</summary>
     private static (TestChannel Sub,
         TestChannel[] Left, TestChannel[] Right,
         Dictionary<IAlignmentChannel, AlignmentOverride> Alignment,
@@ -84,22 +86,31 @@ public sealed class StereoAlignmentTests
             bool mirrorPlan = false,
             double rightWoofLateCopyMs = 0,
             double leftWoofLateCopyMs = 0,
-            double woofLateCopyAmplitude = 4.0)
+            double woofLateCopyAmplitude = 4.0,
+            bool bridgeOnMid = false,
+            Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         string key = string.Join(";", new object[]
         {
             sceneOffsetMs, rightLateMs, leftTopAmplitude, rightTopAmplitude,
             linkBands == null ? "-" : string.Join(",", linkBands.Select(band => band?.ToString() ?? "null")),
             rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan, rightWoofLateCopyMs,
-            leftWoofLateCopyMs, woofLateCopyAmplitude
+            leftWoofLateCopyMs, woofLateCopyAmplitude, bridgeOnMid
         });
         var run = StereoRuns.GetOrAdd(key, _ => new(() => RunStereoOnce(
             sceneOffsetMs, rightLateMs, leftTopAmplitude, rightTopAmplitude, linkBands,
             rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan, rightWoofLateCopyMs,
-            leftWoofLateCopyMs, woofLateCopyAmplitude))).Value;
+            leftWoofLateCopyMs, woofLateCopyAmplitude, bridgeOnMid))).Value;
         if (reprocessCount != null)
         {
             reprocessCount[0] = run.ReprocessCount;
+        }
+        if (decisions != null)
+        {
+            foreach ((IAlignmentChannel channel, AlignmentDecision decision) in run.Decisions)
+            {
+                decisions[channel] = decision;
+            }
         }
 
         // Copies: the run is shared by tests in parallel classes, and none may change another's.
@@ -110,7 +121,8 @@ public sealed class StereoAlignmentTests
     private static (TestChannel Sub,
         TestChannel[] Left, TestChannel[] Right,
         Dictionary<IAlignmentChannel, AlignmentOverride> Alignment,
-        StringBuilder Log, int ReprocessCount)
+        StringBuilder Log, int ReprocessCount,
+        Dictionary<IAlignmentChannel, AlignmentDecision> Decisions)
         RunStereoOnce(
             double sceneOffsetMs,
             double rightLateMs,
@@ -124,7 +136,8 @@ public sealed class StereoAlignmentTests
             bool mirrorPlan,
             double rightWoofLateCopyMs,
             double leftWoofLateCopyMs,
-            double woofLateCopyAmplitude)
+            double woofLateCopyAmplitude,
+            bool bridgeOnMid)
     {
         int reprocessCount = 0;
         var sub = new TestChannel(
@@ -211,6 +224,7 @@ public sealed class StereoAlignmentTests
 
         var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
         var log = new StringBuilder();
+        var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
         AutoAlignmentEngine.ComputeStereo(
             new StereoAlignmentPlan(
                 mirrorPlan ? rightSnapshots : leftSnapshots,
@@ -218,20 +232,21 @@ public sealed class StereoAlignmentTests
                 mirrorPlan ? leftSnapshots : rightSnapshots,
                 mirrorPlan ? leftPairs : rightPairs,
                 new HashSet<IAlignmentChannel> { sub },
-                mirrorPlan ? rightTwr : leftTwr,
-                mirrorPlan ? leftTwr : rightTwr,
-                BridgeBandLowHz: 2_500,
-                BridgeBandHighHz: 12_000,
+                bridgeOnMid ? (mirrorPlan ? rightMid : leftMid) : (mirrorPlan ? rightTwr : leftTwr),
+                bridgeOnMid ? (mirrorPlan ? leftMid : rightMid) : (mirrorPlan ? leftTwr : rightTwr),
+                BridgeBandLowHz: bridgeOnMid ? 400 : 2_500,
+                BridgeBandHighHz: bridgeOnMid ? 2_500 : 12_000,
                 SceneOffsetMs: sceneOffsetMs,
                 pairLinks),
             Reprocess,
             alignment,
-            log);
+            log,
+            decisions);
 
         return (sub,
             [leftWoof, leftMid, leftTwr],
             [rightWoof, rightMid, rightTwr],
-            alignment, log, reprocessCount);
+            alignment, log, reprocessCount, decisions);
     }
 
     private static double FinalArrivalMs(
@@ -256,6 +271,46 @@ public sealed class StereoAlignmentTests
             double leftTop = FinalArrivalMs(left[2], 0.0, alignment);
             double rightTop = FinalArrivalMs(right[2], 1.5, alignment);
             Assert.InRange(leftTop - rightTop, 0.20, 0.30);
+        }
+
+        [Fact]
+        public void ComputeStereo_BridgeOnTheMids_AnchorsTheLeftWalkThereAndWalksTheFarSideBothWays()
+        {
+            // The left walk starts on the bridge, and the far side climbs to its tweeter and descends to its woofer from it.
+            var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+                RunStereo(sceneOffsetMs: 0.25, bridgeOnMid: true, decisions: decisions);
+
+            Assert.Equal(AlignmentDecisionKind.Reference, decisions[left[1]].Kind);
+            Assert.Equal(AlignmentDecisionKind.Bridge, decisions[right[1]].Kind);
+            Assert.InRange(
+                FinalArrivalMs(left[1], 0.4, alignment) - FinalArrivalMs(right[1], 1.9, alignment),
+                0.20, 0.30);
+            double[] naturals = [1.0, 0.4, 0.0];
+            for (int i = 0; i < 2; i++)
+            {
+                Assert.InRange(
+                    Math.Abs(
+                        FinalArrivalMs(left[i], naturals[i], alignment) -
+                        FinalArrivalMs(left[i + 1], naturals[i + 1], alignment)),
+                    0, 0.1);
+                Assert.InRange(
+                    Math.Abs(
+                        FinalArrivalMs(right[i], naturals[i] + 1.5, alignment) -
+                        FinalArrivalMs(right[i + 1], naturals[i + 1] + 1.5, alignment)),
+                    0, 0.2);
+            }
+        }
+
+        [Fact]
+        public void ComputeStereo_LeftWalkAnchorsOnTheBridge_WhereAnotherDriverPlaysMoreOf1To2kHz()
+        {
+            // The mids play 400-2500 Hz, so the engine's own pick would be the mid; the plan bridges on the tweeters.
+            var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
+            (_, TestChannel[] left, _, _, _) = RunStereo(sceneOffsetMs: 0.25, decisions: decisions);
+
+            Assert.Equal(AlignmentDecisionKind.Reference, decisions[left[2]].Kind);
         }
 
         [Fact]

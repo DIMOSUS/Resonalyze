@@ -484,6 +484,16 @@ public partial class VirtualCrossoverPanel
     }
 
     // Read once per frame; the Target curve travels only when it is shown.
+    /// <summary>The main plot follows Settings' hardware-accelerated graphs, like the analyzer's.</summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool GpuAllowed
+    {
+        get => mainPlotView.GpuAllowed;
+        set => mainPlotView.GpuAllowed = value;
+    }
+
     private VirtualCrossoverViewState CaptureViewState() => new(
         CurrentAcousticView(),
         SelectedGroupView,

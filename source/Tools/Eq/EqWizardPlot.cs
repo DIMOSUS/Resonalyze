@@ -17,6 +17,7 @@ internal sealed class EqWizardPlot
     public const string EqGainAxisKey = "eq-wizard:gain";
 
     private const string WizardSeriesTag = "eq-wizard:curve";
+    private const string SumLossSeriesTag = "eq-wizard:sum-loss";
     private const string WizardTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.00} dB";
     private const string PhaseTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.0} °";
 
@@ -25,6 +26,7 @@ internal sealed class EqWizardPlot
     private static readonly OxyColor AboveTargetFill = OxyColor.FromAColor(72, UiPalette.CurveAboveTarget.ToOxy());
     private static readonly OxyColor BelowTargetFill = OxyColor.FromAColor(104, UiPalette.CurveBelowTarget.ToOxy());
     private static readonly OxyColor BandShapeFill = OxyColor.FromAColor(36, UiPalette.CurveBandOverlay.ToOxy());
+    private static readonly OxyColor SumLossColor = VirtualCrossoverColors.Loss;
 
     private readonly PlotWatermarkAnnotation hint;
     private readonly LineAnnotation fromMarker;
@@ -36,6 +38,9 @@ internal sealed class EqWizardPlot
 
     // Last nominal range armed on the EQ axis, to tell the wizard's range from the user's zoom.
     private (double Lower, double Upper)? eqAxisNominal;
+
+    // The bank curve's reach from the last Draw, for ShowSumLoss.
+    private (double Min, double Max)? eqReach;
 
     public EqWizardPlot()
     {
@@ -170,7 +175,9 @@ internal sealed class EqWizardPlot
     /// Budget range extended to contain the drawn curve (overlapping bands can exceed one band's limit); 0/0 = no curve.
     /// Phase owns the whole axis at a fixed ±180°.
     /// </summary>
-    public void RefreshEqAxis(EqWizardSession session, double curveMinDb = 0, double curveMaxDb = 0)
+    /// <param name="sumLossDrawn">The Sum loss shares the axis: the title says so, and says it alone when the bank's curve is off.</param>
+    public void RefreshEqAxis(
+        EqWizardSession session, double curveMinDb = 0, double curveMaxDb = 0, bool sumLossDrawn = false)
     {
         ArgumentNullException.ThrowIfNull(session);
         if (Model.Axes.FirstOrDefault(axis => axis.Key == EqGainAxisKey) is not LinearAxis eqAxis)
@@ -186,7 +193,10 @@ internal sealed class EqWizardPlot
                 (double)session.GainMaxDb,
                 curveMinDb,
                 curveMaxDb);
-        eqAxis.Title = phase ? "Phase (°)" : "EQ (dB)";
+        eqAxis.Title = phase ? "Phase (°)"
+            : !sumLossDrawn ? "EQ (dB)"
+            : session.ShowEqCurve ? "EQ / Sum loss (dB)"
+            : "Sum loss (dB)";
         eqAxis.MajorStep = phase ? 90 : 6;
         // Nominal is always the hard limit, but the range is re-armed only when the nominal moved, so redraws keep the user's zoom.
         eqAxis.AbsoluteMinimum = lower;
@@ -211,12 +221,14 @@ internal sealed class EqWizardPlot
     /// <param name="eq">The bank as drawn (<see cref="EqWizardRender.DisplayedEq"/>).</param>
     /// <param name="selectedBand">Index into the session's bank, or null.</param>
     /// <param name="phase">The measured phase curves; null without them or outside phase mode.</param>
+    /// <param name="sumLoss">The side's Sum loss with the bank in the chain, on the EQ axis; null when not drawn.</param>
     public void Draw(
         EqWizardSession session,
         EqualizationCurve eq,
         EqWizardRenderSet render,
         int? selectedBand,
-        EqWizardPhaseCurves? phase)
+        EqWizardPhaseCurves? phase,
+        IReadOnlyList<DataPoint>? sumLoss = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(eq);
@@ -266,11 +278,28 @@ internal sealed class EqWizardPlot
             }
         }
 
-        AddEqCurve(session, eq, render.Target);
+        eqReach = AddEqCurve(session, eq, render.Target);
         AddSelectedBandCurve(session, selectedBand, render.Target);
         handles.Show(showHandles ? session.Bank.Bands : Array.Empty<PeqBand>(), selectedBand);
         UpdateSelectedBandMarker(session, showHandles ? null : selectedBand);
-        // In magnitude the right axis holds only the EQ curve; in phase every measured curve is on it.
+        ShowSumLoss(session, sumLoss);
+    }
+
+    /// <summary>Replaces the Sum loss curve alone over what <see cref="Draw"/> built; null, or phase mode, leaves none.</summary>
+    public void ShowSumLoss(EqWizardSession session, IReadOnlyList<DataPoint>? sumLoss)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        RemoveSeries(SumLossSeriesTag);
+        (double Min, double Max)? lossReach = session.PhaseMode ? null : AddSumLossCurve(session, sumLoss);
+        if (eqReach != null || lossReach != null)
+        {
+            RefreshEqAxis(
+                session,
+                Math.Min(eqReach?.Min ?? 0, lossReach?.Min ?? 0),
+                Math.Max(eqReach?.Max ?? 0, lossReach?.Max ?? 0),
+                sumLossDrawn: lossReach != null);
+        }
+
         if (Model.Axes.FirstOrDefault(axis => axis.Key == EqGainAxisKey) is { } eqAxis)
         {
             eqAxis.IsAxisVisible = Model.Series.Any(series =>
@@ -304,9 +333,15 @@ internal sealed class EqWizardPlot
 
     private void RemoveWizardSeries()
     {
+        RemoveSeries(WizardSeriesTag);
+        RemoveSeries(SumLossSeriesTag);
+    }
+
+    private void RemoveSeries(string tag)
+    {
         for (int index = Model.Series.Count - 1; index >= 0; index--)
         {
-            if (Equals(Model.Series[index].Tag, WizardSeriesTag))
+            if (Equals(Model.Series[index].Tag, tag))
             {
                 Model.Series.RemoveAt(index);
             }
@@ -316,7 +351,8 @@ internal sealed class EqWizardPlot
     private void AddSeries(
         EqWizardCurve curve,
         string? yAxisKey = null,
-        string trackerFormat = WizardTrackerFormat)
+        string trackerFormat = WizardTrackerFormat,
+        string tag = WizardSeriesTag)
     {
         var series = new LineSeries
         {
@@ -324,7 +360,7 @@ internal sealed class EqWizardPlot
             StrokeThickness = curve.StrokeThickness,
             LineStyle = curve.LineStyle,
             Title = curve.Title,
-            Tag = WizardSeriesTag,
+            Tag = tag,
             TrackerFormatString = trackerFormat
         };
         if (!string.IsNullOrEmpty(yAxisKey))
@@ -395,11 +431,12 @@ internal sealed class EqWizardPlot
     }
 
     // The bank's response (no preamp) on the right axis: gain in dB, or wrapped phase in degrees in phase view.
-    private void AddEqCurve(EqWizardSession session, EqualizationCurve eq, EqWizardCurve? baseline)
+    // Returns the drawn curve's reach on the axis (0/0 when none is drawn), null when the axis is not re-armed at all.
+    private (double Min, double Max)? AddEqCurve(EqWizardSession session, EqualizationCurve eq, EqWizardCurve? baseline)
     {
         if (baseline is not { Points.Count: >= 2 })
         {
-            return;
+            return null;
         }
 
         if (session.PhaseMode)
@@ -418,21 +455,38 @@ internal sealed class EqWizardPlot
             }
 
             // Re-armed even when not drawn: measured phase curves share this axis.
-            RefreshEqAxis(session);
-            return;
+            return (0, 0);
         }
 
         if (!session.ShowEqCurve)
         {
-            RefreshEqAxis(session);
-            return;
+            return (0, 0);
         }
 
         IReadOnlyList<DataPoint> points = EqWizardRender.EqGainPoints(session, eq, baseline);
         AddSeries(
             new EqWizardCurve("EQ", UiPalette.CurveEqBank.ToOxy(), 1.5, LineStyle.Solid, points),
             EqGainAxisKey);
+        return Reach(points);
+    }
 
+    // The side's Sum loss (≤ 0 dB) on the EQ axis, dashed in the Virtual DSP panel's loss colour; null when not drawn.
+    private (double Min, double Max)? AddSumLossCurve(EqWizardSession session, IReadOnlyList<DataPoint>? sumLoss)
+    {
+        if (sumLoss is not { Count: >= 2 } || session.Source?.SumLossContext is not { } context)
+        {
+            return null;
+        }
+
+        AddSeries(
+            new EqWizardCurve(context.Title, SumLossColor, 1.8, LineStyle.Dash, sumLoss),
+            EqGainAxisKey,
+            tag: SumLossSeriesTag);
+        return Reach(sumLoss);
+    }
+
+    private static (double Min, double Max) Reach(IReadOnlyList<DataPoint> points)
+    {
         double curveMin = 0;
         double curveMax = 0;
         foreach (DataPoint point in points)
@@ -446,7 +500,7 @@ internal sealed class EqWizardPlot
             curveMax = Math.Max(curveMax, point.Y);
         }
 
-        RefreshEqAxis(session, curveMin, curveMax);
+        return (curveMin, curveMax);
     }
 
     // Selected band's contribution on the target (target + that band), or its own phase on the right axis in phase view.

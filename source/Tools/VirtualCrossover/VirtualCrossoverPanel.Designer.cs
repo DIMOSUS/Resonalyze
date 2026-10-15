@@ -35,7 +35,7 @@ namespace Resonalyze
         /// </summary>
         private void InitializeComponent()
         {
-            mainPlotView = new OxyPlot.WindowsForms.PlotView();
+            mainPlotView = new AcceleratedPlotView();
             dspPlotView = new OxyPlot.WindowsForms.PlotView();
             channelListPanel = new FlowLayoutPanel();
             buttonAddChannel = new ReleaseClickButton();
@@ -890,7 +890,7 @@ namespace Resonalyze
         }
 
         #endregion
-        private OxyPlot.WindowsForms.PlotView mainPlotView;
+        private AcceleratedPlotView mainPlotView;
         private OxyPlot.WindowsForms.PlotView dspPlotView;
         private FlowLayoutPanel channelListPanel;
         private ReleaseClickButton buttonAddChannel;

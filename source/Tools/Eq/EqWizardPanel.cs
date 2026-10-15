@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using OxyPlot;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -91,6 +92,14 @@ public partial class EqWizardPanel : UserControl
             if (!presenting)
             {
                 session.SetShowEqCurve(checkBoxEqCurve.Checked);
+                Redraw(orphanFit: false);
+            }
+        };
+        checkBoxSumLoss.CheckedChanged += (_, _) =>
+        {
+            if (!presenting)
+            {
+                session.SetShowSumLoss(checkBoxSumLoss.Checked);
                 Redraw(orphanFit: false);
             }
         };
@@ -227,6 +236,8 @@ public partial class EqWizardPanel : UserControl
         checkBoxBypass.Checked = session.Bypass;
         checkBoxEqPhase.Checked = session.PhaseMode;
         checkBoxEqCurve.Checked = session.ShowEqCurve;
+        checkBoxSumLoss.Checked = session.ShowSumLoss;
+        checkBoxSumLoss.Enabled = session.SumLossAvailable;
     });
 
     private void PresentWindow()
@@ -296,12 +307,29 @@ public partial class EqWizardPanel : UserControl
         Redraw();
     }
 
+    /// <summary>How many times the plot was rebuilt; the tests read it to see input events coalesce into one redraw.</summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal int RedrawCount { get; private set; }
+
+    /// <summary>The plot follows Settings' hardware-accelerated graphs, like the analyzer's.</summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool GpuAllowed
+    {
+        get => plotWizard.GpuAllowed;
+        set => plotWizard.GpuAllowed = value;
+    }
+
     private void InitializePlotWizard()
     {
         plot.ShowWindow(session);
         plotWizard.Model = plot.Model;
         plot.RefreshEqAxis(session);
         PlotInteraction.Enable(plotWizard);
+        plotWizard.FrameRendered += (_, _) => AppProfiler.FrameMark("eq-wizard-plot");
         WireBandHandles();
         WireWindowEdges();
 
@@ -408,6 +436,13 @@ public partial class EqWizardPanel : UserControl
             "in dB here and in degrees in Phase. Turning it off leaves the plot to " +
             "the measurement and the target; the filters keep working either way. " +
             "The right-hand axis goes with it when nothing else is left on it.");
+        SetTip(checkBoxSumLoss,
+            "Draw the Virtual DSP side's Sum loss — the amber dashed curve on the " +
+            "right-hand axis — with this bank in the channel's chain, so an edit " +
+            "shows what it does to the summation at the junctions.\r\n" +
+            "Only for a channel handed over with its chain; the other channels stay " +
+            "as the panel drew them, and the window is the one its Sum loss selector " +
+            "showed (Full, or FDW-8 through the Phase gate).");
         SetTip(labelBoosts, comboBoxBoosts,
             "What Auto Tune may boost. Refill cuts: a boost only puts back what " +
             "its own cuts dug, so the EQ never rises above 0 dB. Off: cuts only. " +
@@ -474,6 +509,9 @@ public partial class EqWizardPanel : UserControl
     /// selection. Orphaned, the fit runs on to its end and lands nothing.</param>
     private void Redraw(bool orphanFit = true)
     {
+        // Synchronous throughout: the renders it starts run on workers and land through RedrawAfterAsync.
+        using var redrawZone = AppProfiler.Zone("EqWizard.Redraw");
+        RedrawCount++;
         // Every rate change funnels through a redraw, so the strips' GD readouts learn the rate here.
         foreach (PeqSlotControl slot in peqSlots)
         {
@@ -495,14 +533,23 @@ public partial class EqWizardPanel : UserControl
             _ = RedrawAfterAsync(preview);
         }
 
-        EqWizardRenderSet render = EqWizardRender.RenderSet(session, eq);
+        EqWizardRenderSet render;
+        using (AppProfiler.Zone("EqWizard.RenderSet"))
+        {
+            render = EqWizardRender.RenderSet(session, eq);
+        }
+
         buttonOverlaySettings.Enabled = true;
         NumericTargetOffset.Enabled = true;
         NumericGain.Enabled = !session.Bypass && render.SourcePlusEq != null;
-        shownChain = EqWizardHeadroom.Input(session, eq);
-        shownStats = EqWizardRender.Stats(
-            session, render, eq, shownChain == null ? null : EqWizardHeadroom.Read(headroom, shownChain));
-        ResultsChanged?.Invoke(shownStats);
+        using (AppProfiler.Zone("EqWizard.Stats"))
+        {
+            shownChain = EqWizardHeadroom.Input(session, eq);
+            shownStats = EqWizardRender.Stats(
+                session, render, eq, shownChain == null ? null : EqWizardHeadroom.Read(headroom, shownChain));
+            ResultsChanged?.Invoke(shownStats);
+        }
+
         if (headroom.Waiting)
         {
             _ = headroom.FillAsync(() =>
@@ -532,8 +579,13 @@ public partial class EqWizardPanel : UserControl
             }
         }
 
-        plot.Draw(session, eq, render, SelectedBandIndex, phase);
-        plotLabels.Refresh();
+        IReadOnlyList<DataPoint>? sumLoss = session.SumLossDrawn ? session.Previews.SumLoss : null;
+        using (AppProfiler.Zone("EqWizard.PlotDraw"))
+        {
+            plot.Draw(session, eq, render, SelectedBandIndex, phase, sumLoss);
+            plotLabels.Refresh();
+        }
+
         plot.Model.InvalidatePlot(true);
     }
 
@@ -551,7 +603,7 @@ public partial class EqWizardPanel : UserControl
     protected override void OnVisibleChanged(EventArgs e)
     {
         base.OnVisibleChanged(e);
-        if (Visible && IsHandleCreated && session.Source is { IsGated: true })
+        if (Visible && IsHandleCreated && (session.Source is { IsGated: true } || session.SumLossDrawn))
         {
             Redraw(orphanFit: false);
         }

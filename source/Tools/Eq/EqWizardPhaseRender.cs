@@ -69,6 +69,7 @@ internal static class EqWizardPhaseRender
         double thickness)
     {
         ArgumentNullException.ThrowIfNull(request);
+        using var _ = AppProfiler.Zone("EqWizard.PhaseRender");
 
         // Substituted in one pass, like the magnitude preview and the Virtual DSP panel, so views cannot drift.
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(

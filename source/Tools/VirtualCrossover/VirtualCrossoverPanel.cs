@@ -98,7 +98,8 @@ public partial class VirtualCrossoverPanel : UserControl
             mainPlotView, AcousticViewBuilder.NoSourcesHint, CurrentAcousticView());
         dspChainPlot = new VirtualCrossoverDspChainPlot(dspPlotView, CurrentDspPlotMode());
         dspChainPlot.CorrelationCurvesChanged += OnCorrelationCurvesChanged;
-        mainPlotView.Paint += (_, _) => AppProfiler.FrameMark("vdsp-main");
+        // FrameRendered, not Paint: the GPU path raises no Paint event.
+        mainPlotView.FrameRendered += (_, _) => AppProfiler.FrameMark("vdsp-main");
         dspPlotView.Paint += (_, _) => AppProfiler.FrameMark("vdsp-dsp");
         InitializeGroupViewComboBox();
         InitializeSmoothingComboBox();

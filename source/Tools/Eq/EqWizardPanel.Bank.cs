@@ -15,6 +15,37 @@ public partial class EqWizardPanel
         Interval = BankEditIdleMilliseconds
     };
 
+    // One redraw per drained message queue, not per input event: a 1000 Hz mouse outran 6 ms redraws and starved
+    // WM_PAINT. WM_TIMER is synthesized after WM_PAINT, so a 1 ms timer fires once the frame is on screen.
+    private readonly System.Windows.Forms.Timer redrawTimer = new() { Interval = 1 };
+    private bool redrawPending;
+
+    /// <summary>A redraw for an input the user may repeat before this one draws; <see cref="Redraw"/> itself for the rest.</summary>
+    private void RequestRedraw()
+    {
+        // Orphan the fit at once: a result landing before the deferred redraw would overwrite the edit.
+        autoTuneOrchestrator.Invalidate();
+        if (redrawPending)
+        {
+            return;
+        }
+
+        redrawPending = true;
+        redrawTimer.Start();
+    }
+
+    private void DrawPendingRedraw()
+    {
+        redrawTimer.Stop();
+        if (!redrawPending)
+        {
+            return;
+        }
+
+        redrawPending = false;
+        Redraw(orphanFit: false);
+    }
+
     private TableLayoutPanel peqSlotTable = null!;
     private PeqAddSlotControl addSlotTile = null!;
     // Rebuilt per open, so the last one is not owned by the designer container (see Dispose).
@@ -72,6 +103,7 @@ public partial class EqWizardPanel
 
         panelPEQ.Controls.Add(peqSlotTable);
         bankEditTimer.Tick += (_, _) => CommitBankChange();
+        redrawTimer.Tick += (_, _) => DrawPendingRedraw();
         LayoutSlots();
     }
 
@@ -485,9 +517,13 @@ public partial class EqWizardPanel
             return;
         }
 
-        Present(() => WriteBand(peqSlots[index], edited));
+        using (AppProfiler.Zone("EqWizard.WriteStrip"))
+        {
+            Present(() => WriteBand(peqSlots[index], edited));
+        }
+
         ArmBankEditTimer();
-        Redraw();
+        RequestRedraw();
     }
 
     private void StripValueChanged(PeqSlotControl slot)
@@ -498,9 +534,10 @@ public partial class EqWizardPanel
             return;
         }
 
+        using var _ = AppProfiler.Zone("EqWizard.StripEdit");
         session.Bank.Edit(index, ReadBand(slot));
         ArmBankEditTimer();
-        Redraw();
+        RequestRedraw();
     }
 
     private void PreampValueChanged()
@@ -512,7 +549,7 @@ public partial class EqWizardPanel
 
         session.Bank.EditPreamp((double)NumericGain.Value);
         ArmBankEditTimer();
-        Redraw();
+        RequestRedraw();
     }
 
     private void ArmBankEditTimer()

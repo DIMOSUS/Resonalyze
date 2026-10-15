@@ -806,19 +806,28 @@ public sealed class EqWizardPanelWiringTests
 
         public void Settle()
         {
-            for (int attempt = 0; attempt < 2_000 && Session.Previews.Rendering; attempt++)
+            // Rounds: an edit's redraw waits for the queue to drain (RequestRedraw's timer) and may only then start a
+            // render, as may the redraw a landed render asks for; each is let run and waited out in turn.
+            for (int round = 0; round < 10; round++)
             {
-                StaTest.Pump();
-                Thread.Sleep(5);
+                for (int attempt = 0; attempt < 2_000 && Session.Previews.Rendering; attempt++)
+                {
+                    StaTest.Pump();
+                    Thread.Sleep(5);
+                }
+
+                for (int pass = 0; pass < 5; pass++)
+                {
+                    StaTest.Pump();
+                }
+
+                if (!Session.Previews.Rendering)
+                {
+                    return;
+                }
             }
 
-            // The redraw a landed render asks for is posted after it; let it run.
-            for (int pass = 0; pass < 5; pass++)
-            {
-                StaTest.Pump();
-            }
-
-            Assert.False(Session.Previews.Rendering, "A preview did not land in time.");
+            Assert.Fail("A preview did not land in time.");
         }
 
         // The Auto Tune button is off while its fit runs.

@@ -265,37 +265,21 @@ internal sealed class VirtualCrossoverMetrics
     {
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(spectra);
-        if (channels.Count < 2 || spectra.Count != channels.Count)
-        {
-            return null;
-        }
+        return SumLossCurves.Direct(
+            channels.Select(SumLossMember).ToList(), spectra, smoothingInverseOctaves);
+    }
 
-        int sampleRate = channels[0].SampleRate;
-        if (sampleRate <= 0 || channels.Any(channel => channel.SampleRate != sampleRate))
-        {
-            return null;
-        }
-
-        var operands = new List<IReadOnlyList<SignalPoint>>(channels.Count);
-        var bands = new List<(double LowestHz, double HighestHz)>(channels.Count);
-        var calibrations = new List<CalibrationFile?>(channels.Count);
-        for (int i = 0; i < channels.Count; i++)
-        {
-            MeasuredBand band = channels[i].MeasuredBand;
-            CalibrationFile? calibration = channelCalibration(channels[i]);
-            operands.Add(DataHelper.GetGatedMagnitude(
-                spectra[i], sampleRate, band.LowEdgeHz, band.HighEdgeHz,
-                calibration, smoothingInverseOctaves: 0).Points);
-            bands.Add((band.LowEdgeHz, band.HighEdgeHz));
-            calibrations.Add(calibration);
-        }
-
-        (_, AnalysisCurve sum) = DataHelper.GetGatedMeasuredMagnitudeSumPair(
-            spectra, sampleRate, bands, calibrations, smoothingInverseOctaves: 0);
-        return VirtualCrossoverAnalysis.SumLossCurve(
-            ProcessedChannels.MeasuredBySomeChannel(sum.Points, channels),
-            operands,
-            smoothingInverseOctaves);
+    /// <summary>A channel as the loss sums it, with the calibration this reader applies to it.</summary>
+    public SumLossMember SumLossMember(ProcessedChannel channel)
+    {
+        ArgumentNullException.ThrowIfNull(channel);
+        return new SumLossMember(
+            channel.ImpulseResponse,
+            channel.PeakIndex,
+            channel.ValidRange,
+            channel.SampleRate,
+            channel.MeasuredBand,
+            channelCalibration(channel));
     }
 
     /// <summary>Each compared group against the front stage (arrival and level), from this frame's processed responses.</summary>

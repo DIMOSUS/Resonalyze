@@ -277,7 +277,8 @@ comparable and the column header says which one is shown.
 - **Full** — the steady-state magnitude window (~680 ms, clamped to 32 768 samples at high
   rates) at one shared anchor. What the ear hears in the cabin; the Auto delay battery and the
   tuning sheet use it. **Off** hides the curve; the column keeps the Full read.
-- **Direct** (default) — `BuildDirectLossCurve`: each channel through the junction phase block's
+- **Direct** (default) — `BuildDirectLossCurve` (over `SumLossCurves.Direct`, which the EQ Wizard's
+  Sum loss shares): each channel through the junction phase block's
   8-cycle frequency-dependent window at its own front (`JunctionPhaseSpectra.Build`), spectra
   rotated into one absolute frame and added. Superposition holds, so the loss stays ≤ 0 dB.
   Same arithmetic as `BuildCurves` otherwise. Channels at different rates yield no curve.

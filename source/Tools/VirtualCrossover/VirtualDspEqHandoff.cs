@@ -69,7 +69,8 @@ internal static class VirtualDspEqHandoff
         long projectGeneration,
         LiveCaptureDocument? spatialAverage,
         double spatialAverageOffsetDb,
-        bool pointMeasured = false)
+        bool pointMeasured = false,
+        EqWizardSumLossContext? sumLossContext = null)
     {
         ArgumentNullException.ThrowIfNull(channel);
         ArgumentNullException.ThrowIfNull(gateTemplate);
@@ -194,6 +195,7 @@ internal static class VirtualDspEqHandoff
             TargetCrossoverFir = withChain && settings.HasFirCrossover ? settings.Fir : null,
             // Neighbours only for a chain handoff: a raw curve against processed neighbours describes no real system.
             PhaseContext = withChain ? phaseContext : null,
+            SumLossContext = withChain ? sumLossContext : null,
             // Hybrid: the average replaces the fitted magnitude; the impulse response still serves phase.
             SpatialAverage = spatialAverage,
             SpatialAverageOffsetDb = spatialAverageOffsetDb,

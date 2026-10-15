@@ -182,6 +182,17 @@ internal sealed class EqWizardSession
 
     public bool ShowEqCurve { get; private set; } = true;
 
+    /// <summary>Draws the side's Sum loss with the bank in the chain, on the EQ axis; drawn only where <see cref="SumLossAvailable"/>.
+    /// Per session, never saved: a diagnostic curve starts off with every launch.</summary>
+    public bool ShowSumLoss { get; private set; }
+
+    /// <summary>A chain handoff whose side sums this channel with others, a hybrid one included: as on the panel, the loss reads the IRs.</summary>
+    public bool SumLossAvailable =>
+        Source is { PreviewImpulseResponse: not null, GateSettings: not null, SumLossContext: not null };
+
+    /// <summary>The Sum loss is on the plot: ticked, available, and not in the phase view, which has no magnitude axis.</summary>
+    public bool SumLossDrawn => ShowSumLoss && !PhaseMode && SumLossAvailable;
+
     /// <summary>Phase is a mode, not an extra curve: magnitudes leave the plot, their statistics stay current.</summary>
     public bool PhaseMode { get; private set; }
 
@@ -487,6 +498,8 @@ internal sealed class EqWizardSession
         ShowEqCurve = show;
         Announce();
     }
+
+    public void SetShowSumLoss(bool show) => ShowSumLoss = show;
 
     public void SetBypass(bool bypass) => Bypass = bypass;
 

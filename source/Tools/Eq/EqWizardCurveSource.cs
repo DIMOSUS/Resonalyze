@@ -82,6 +82,9 @@ internal sealed record EqWizardCurveSource
     /// </summary>
     public EqWizardPhaseContext? PhaseContext { get; init; }
 
+    /// <summary>The other channels of the side's sum, for the Sum loss curve; null without a chain handoff's sum.</summary>
+    public EqWizardSumLossContext? SumLossContext { get; init; }
+
     /// <summary>Uncalibrated oversampled spectrum, re-smoothable like its mode; null when only <see cref="Points"/> exist.</summary>
     public IReadOnlyList<SignalPoint>? RawSpectrum { get; init; }
 

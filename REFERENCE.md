@@ -93,7 +93,8 @@ Three things the theme deliberately does **not** touch:
 - **The figures in this documentation**, which were taken in the dark theme.
 
 **Hardware-accelerated graphs** — on by default. The main graph (every analysis
-mode and Live Spectrum) is drawn on the graphics card, so panning and zooming stay
+mode and Live Spectrum), the EQ Wizard's graph and Virtual DSP's upper graph are
+drawn on the graphics card, so panning, zooming and dragging a band's handle stay
 smooth with many curves on a full-screen window; the smaller graphs in dialogs and
 tools are drawn as before. Where there is no hardware OpenGL driver (Remote Desktop,
 a virtual machine without 3D acceleration) or the driver fails, the graph falls back
@@ -1801,6 +1802,19 @@ either way, and **Source + EQ** still carries them. The right-hand axis goes
 with the curve when nothing else is left on it: in the magnitude view it carries
 that curve alone, while in **Phase** every measured trace is on it and it stays.
 The choice is remembered between sessions.
+
+**Sum loss** draws, on the same right-hand axis, the Virtual DSP side's Sum loss
+with this bank in the channel's chain — the amber dashed curve the panel draws,
+read the same way: the other channels as the panel last processed them, this one
+re-filtered with every edit, through the window the panel's **Sum loss** selector
+showed (**Full**, or **FDW-8** through the **Phase gate…** window; **Disable**
+hands Full). A bank changes phase as well as level, so a cut or an all-pass moves
+the summation at the junctions, and this is where that is seen while editing. It
+is live only for a channel handed over **with its chain** whose side sums it with
+others (the box is greyed otherwise), draws only in the magnitude view, and
+shares the axis with the EQ curve — the axis grows to hold it and its title says
+what is on it. The box starts unticked every time the app opens: it is a diagnostic
+curve, not a view setting.
 
 Every **frequency** field here — a card's own, and the **From** / **To** of the
 fit range — steps logarithmically: one wheel notch, spin-button click or arrow

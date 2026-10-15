@@ -6,6 +6,13 @@ namespace Resonalyze;
 
 public partial class Form1
 {
+    private void ApplyPlotAcceleration(bool allowed)
+    {
+        plotView1.GpuAllowed = allowed;
+        eqWizardPanel.GpuAllowed = allowed;
+        virtualCrossoverPanel.GpuAllowed = allowed;
+    }
+
     private void ConfigureToolTips()
     {
         toolTip1.SetToolTip(

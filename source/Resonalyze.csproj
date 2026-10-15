@@ -19,6 +19,12 @@
     <SparklePublicKey Condition="'$(SparklePublicKey)' == ''"></SparklePublicKey>
   </PropertyGroup>
 
+  <!-- A self-contained publish embeds the runtime, and the 10.0.3xx SDKs global.json allows bundle one whose
+       System.Security.Cryptography.Pkcs carries GHSA-846f-f764-76mx; 10.0.13 is the first patched runtime. -->
+  <PropertyGroup Condition="'$(SelfContained)' == 'true'">
+    <RuntimeFrameworkVersion>10.0.13</RuntimeFrameworkVersion>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(Configuration)' == 'Tracy'">
     <DebugSymbols>true</DebugSymbols>
     <DebugType>portable</DebugType>

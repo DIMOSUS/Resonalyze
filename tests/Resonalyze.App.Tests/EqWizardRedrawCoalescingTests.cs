@@ -24,6 +24,13 @@ public sealed class EqWizardRedrawCoalescingTests
         Assert.Equal(before, live.Panel.RedrawCount);
         Assert.Equal(-10.0, live.Session.Bank.Bands[0].GainDb);
 
+        // SetTimer rounds the 1 ms up to the timer's resolution, so the tick is waited for, not pumped for.
+        for (int attempt = 0; attempt < 200 && live.Panel.RedrawCount == before; attempt++)
+        {
+            StaTest.Pump();
+            Thread.Sleep(5);
+        }
+
         live.Settle();
 
         Assert.Equal(before + 1, live.Panel.RedrawCount);

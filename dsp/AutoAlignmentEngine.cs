@@ -3433,14 +3433,10 @@ public static class AutoAlignmentEngine
             }
 
             // Above the localization edge a TightLock gets ±T/4: with direct arrivals unmeasurable, modes shape the sum too. A lone donor keeps ±T/2.
-            // A pair above the bridge follows the bridge through its junction, so its scene pin keeps the lobe, not the tick.
-            // See docs/tech/auto-alignment.md#scene-lock.
             double? sceneLock = cross is not { } resolved
                 ? null
                 : heldOnOwnSum || (lockable && !resolved.Coarse)
-                    ? index > bridgeIndex
-                        ? Math.Max(SceneLockToleranceMs, AboveBridgeSceneLockPeriods * 1_000.0 / pair.CrossoverHz)
-                        : SceneLockToleranceMs
+                    ? SceneTickLockMs(aboveBridge: index > bridgeIndex, pair.CrossoverHz)
                     : (resolved.TightLock ? 250.0 : 500.0) / Math.Max(
                         pair.CrossoverHz,
                         secondaryPair?.CrossoverHz ?? pair.CrossoverHz);
@@ -3666,6 +3662,13 @@ public static class AutoAlignmentEngine
     // A quarter period of the junction under a pair above the bridge: inside its lobe, so the scene keeps the lobe while
     // the junction with the bridge picks the delay. See docs/tech/auto-alignment.md#scene-lock.
     private const double AboveBridgeSceneLockPeriods = 0.25;
+
+    /// <summary>How far a scene-pinned pair may leave its cross-side target: 0.05 ms, or a quarter of the period of the
+    /// junction under a pair above the bridge, which follows the bridge through it. See docs/tech/auto-alignment.md#scene-lock.</summary>
+    internal static double SceneTickLockMs(bool aboveBridge, double junctionHz) =>
+        aboveBridge
+            ? Math.Max(SceneLockToleranceMs, AboveBridgeSceneLockPeriods * 1_000.0 / junctionHz)
+            : SceneLockToleranceMs;
 
     // Generous: rejects a lone donor dominated by its own DSP asymmetry, accepts shared offsets (v3: mids +1.37, tweeters +1.41).
     private const double CrossSideDonorAgreementMs = 0.6;

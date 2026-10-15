@@ -261,11 +261,12 @@ public sealed class AutoAlignmentEngineTests
         var woofer = new TestChannel("W", DelayedImpulse(wooferMs));
         var tweeter = new TestChannel("T", DelayedImpulse(tweeterMs));
         var log = new StringBuilder();
+        var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
 
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
-            Run([woofer, tweeter], [1_000], log);
+            Run([woofer, tweeter], [1_000], log, decisions: decisions);
 
-        Assert.Contains("Reference: T", log.ToString());
+        Assert.Equal(AlignmentDecisionKind.Reference, decisions[tweeter].Kind);
         double wooferDelayMs = alignment.GetValueOrDefault(woofer).DelayMs;
         double tweeterDelayMs = alignment.GetValueOrDefault(tweeter).DelayMs;
         double expectedMs = tweeterMs - wooferMs;
@@ -283,11 +284,12 @@ public sealed class AutoAlignmentEngineTests
         var woofer = new TestChannel("W", DelayedImpulse(1.0));
         var tweeter = new TestChannel("T", DelayedImpulse(0.0));
         var log = new StringBuilder();
+        var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
 
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
-            Run([woofer, tweeter], [3_000], log);
+            Run([woofer, tweeter], [3_000], log, decisions: decisions);
 
-        Assert.Contains("Reference: W", log.ToString());
+        Assert.Equal(AlignmentDecisionKind.Reference, decisions[woofer].Kind);
         Assert.InRange(alignment[tweeter].DelayMs, 0.95, 1.05);
         Assert.InRange(alignment.GetValueOrDefault(woofer).DelayMs, -0.001, 0.001);
     }
@@ -301,6 +303,17 @@ public sealed class AutoAlignmentEngineTests
     public void ReferenceBandCoverage_CountsOctavesOf1To2kHz(double lowHz, double highHz, double expected)
     {
         Assert.Equal(expected, AutoAlignmentEngine.ReferenceBandCoverageOctaves(lowHz, highHz), 3);
+    }
+
+    // The owner's rule: a pair above the bridge keeps its lobe (a quarter period), never less than the tick pin below it.
+    [Theory]
+    [InlineData(false, 2_500, 0.05)]
+    [InlineData(true, 2_500, 0.10)]
+    [InlineData(true, 1_700, 0.147)]
+    [InlineData(true, 8_000, 0.05)]
+    public void SceneTickLock_AboveTheBridgeKeepsTheLobe(bool aboveBridge, double junctionHz, double expectedMs)
+    {
+        Assert.Equal(expectedMs, AutoAlignmentEngine.SceneTickLockMs(aboveBridge, junctionHz), 3);
     }
 
     [Fact]
@@ -331,11 +344,12 @@ public sealed class AutoAlignmentEngineTests
         var mid = new TestChannel("M", DelayedImpulse(0.0));
         var tweeter = new TestChannel("T", DelayedImpulse(2.0));
         var log = new StringBuilder();
+        var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
 
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
-            Run([sub, mid, tweeter], [200, 2_000], log);
+            Run([sub, mid, tweeter], [200, 2_000], log, decisions: decisions);
 
-        Assert.Contains("Reference: M", log.ToString());
+        Assert.Equal(AlignmentDecisionKind.Reference, decisions[mid].Kind);
         Assert.InRange(alignment.GetValueOrDefault(tweeter).DelayMs, -0.001, 0.001);
         Assert.InRange(alignment[mid].DelayMs, 1.9, 2.1);
         Assert.InRange(alignment[sub].DelayMs, 1.9, 2.1);

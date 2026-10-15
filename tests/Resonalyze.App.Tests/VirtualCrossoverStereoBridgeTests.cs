@@ -49,6 +49,19 @@ public sealed class VirtualCrossoverStereoBridgeTests
             Channel("Tweeter", 3_000, null)));
     }
 
+    [Fact]
+    public void SidesCrossedApart_BridgeOnThePairPlayingMoreOfTheBandOverBoth()
+    {
+        // Left crossed at 3 kHz, right at 800 Hz: the woofers score the left's whole octave less the right's third of an
+        // octave below 1 kHz, the tweeters the right's octave less the left's 0.58 above 2 kHz; the right side alone picks the tweeter.
+        VirtualCrossoverChannel woofer = Channel("Woofer", null, 3_000);
+        VirtualCrossoverChannel tweeter = Channel("Tweeter", 3_000, null);
+        woofer.Pair.Right.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 800, 24);
+        tweeter.Pair.Right.HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 800, 24);
+
+        Assert.Equal("Woofer", Bridge(woofer, tweeter));
+    }
+
     [Theory]
     [InlineData(3_000, "Woofer")]
     [InlineData(1_200, "Tweeter")]

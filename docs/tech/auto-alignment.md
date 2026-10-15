@@ -73,7 +73,9 @@ octaves of 1-2 kHz inside it, so neighbours split that octave between them and a
 toward the higher channel. A three-way front anchors on the midrange, a two-way crossed above 2 kHz on
 the woofer, below 1.41 kHz on the tweeter. A stereo run bridges the sides on the same pair: the panel
 picks it from the crossover settings (`PickStereoBridge`, scoring each band the same way, the nearer
-one winning where a gap leaves 1-2 kHz to nobody) and hands it to the reference side's walk.
+one winning where a gap leaves 1-2 kHz to nobody) and hands it to the reference side's walk. A pair
+scores the sum over both sides, so sides crossed apart (side lock off) bridge on the same pair in
+LHD and RHD; the single-side run, the staged groups and the battery use the same `PickReference`.
 
 The owner's concept: 1-2 kHz is where the image is localized, so the drivers that play it are the
 ones every other driver tunes to, and the error a chain accumulates grows outward from them, up to
@@ -1568,7 +1570,10 @@ A Coarse target pins only the lobe, as for low pairs below.
   period (`AboveBridgeSceneLockPeriods`), 0.1 ms at a 2.5 kHz split: the scene keeps the lobe and the
   junction with the bridge places the delay inside it. Each pair is timed in its own band, the
   bridge in the midrange's, the tweeters' scene link in theirs; at 0.05 ms the two reads' small
-  disagreement went whole to the far side's mid/tweeter junction.
+  disagreement went whole to the far side's mid/tweeter junction. The far-side polish already let a
+  tweeter trim an eighth of that period past the 0.05 ms pin, so the reach barely grows (0.05 ms +
+  T/8 against T/4, equal at 2.5 kHz): what changed is which pass places it, the junction search
+  rather than the polish and its half-band veto. On the archive that moved four sessions only.
 - **Localization band.** The target is measured only in the sub-band above
   `SceneLockLocalizationLowHz` (300 Hz), because low soft envelopes carry no localization. At least
   a third of an octave above that edge is required (80-310 Hz is not lockable).

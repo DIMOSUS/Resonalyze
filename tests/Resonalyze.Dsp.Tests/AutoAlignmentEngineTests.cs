@@ -218,7 +218,7 @@ public sealed class AutoAlignmentEngineTests
 
         Run([woofer, tweeter], [1_000], log, decisions: decisions);
 
-        // The top of the chain is the anchor, whoever arrives later.
+        // Above a 1 kHz split the tweeter plays all of 1-2 kHz, so it is the anchor, whoever arrives later.
         Assert.Equal(AlignmentDecisionKind.Reference, decisions[tweeter].Kind);
         Assert.Null(decisions[tweeter].Confidence);
         Assert.Contains("reference", decisions[tweeter].Detail);
@@ -254,10 +254,10 @@ public sealed class AutoAlignmentEngineTests
     [Trait("Category", "Slow")]
     [InlineData(0.0, 1.0)]
     [InlineData(1.0, 0.0)]
-    public void Compute_AnchorsOnTheTopChannel_WhicheverArrivesLater(
+    public void Compute_AnchorsOnTheChannelPlaying1To2kHz_WhicheverArrivesLater(
         double wooferMs, double tweeterMs)
     {
-        // The walk descends from the top of the chain; the later arrival only decides who is delayed.
+        // The walk starts from the channel covering 1-2 kHz; the later arrival only decides who is delayed.
         var woofer = new TestChannel("W", DelayedImpulse(wooferMs));
         var tweeter = new TestChannel("T", DelayedImpulse(tweeterMs));
         var log = new StringBuilder();
@@ -274,6 +274,33 @@ public sealed class AutoAlignmentEngineTests
         Assert.InRange(Math.Min(wooferDelayMs, tweeterDelayMs), -0.001, 0.001);
         Assert.False(alignment.GetValueOrDefault(woofer).InvertPolarity);
         Assert.False(alignment.GetValueOrDefault(tweeter).InvertPolarity);
+    }
+
+    [Fact]
+    public void Compute_AnchorsOnTheWooferThatPlays1To2kHz_AndClimbsToTheTweeter()
+    {
+        // A 3 kHz split leaves 1-2 kHz to the woofer: it is the reference and the early tweeter is the one delayed.
+        var woofer = new TestChannel("W", DelayedImpulse(1.0));
+        var tweeter = new TestChannel("T", DelayedImpulse(0.0));
+        var log = new StringBuilder();
+
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
+            Run([woofer, tweeter], [3_000], log);
+
+        Assert.Contains("Reference: W", log.ToString());
+        Assert.InRange(alignment[tweeter].DelayMs, 0.95, 1.05);
+        Assert.InRange(alignment.GetValueOrDefault(woofer).DelayMs, -0.001, 0.001);
+    }
+
+    [Theory]
+    [InlineData(300, 3_000, 1.0)]
+    [InlineData(20, 1_500, 0.585)]
+    [InlineData(1_500, 20_000, 0.415)]
+    [InlineData(20, 800, -0.322)]
+    [InlineData(3_000, 20_000, -0.585)]
+    public void ReferenceBandCoverage_CountsOctavesOf1To2kHz(double lowHz, double highHz, double expected)
+    {
+        Assert.Equal(expected, AutoAlignmentEngine.ReferenceBandCoverageOctaves(lowHz, highHz), 3);
     }
 
     [Fact]
@@ -298,7 +325,8 @@ public sealed class AutoAlignmentEngineTests
     [Fact]
     public void Compute_ChainsDelaysThroughASettledNeighbor_ThreeWay()
     {
-        // The mid aligns to the late tweeter and the sub to the settled mid, so the sub inherits the mid's 2 ms.
+        // The mid plays all of 1-2 kHz and anchors: the late tweeter climbs to it by shifting the settled mid, and the
+        // sub then descends to the shifted mid, so it inherits the mid's 2 ms.
         var sub = new TestChannel("S", DelayedImpulse(0.0));
         var mid = new TestChannel("M", DelayedImpulse(0.0));
         var tweeter = new TestChannel("T", DelayedImpulse(2.0));
@@ -307,7 +335,7 @@ public sealed class AutoAlignmentEngineTests
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
             Run([sub, mid, tweeter], [200, 2_000], log);
 
-        Assert.Contains("Reference: T", log.ToString());
+        Assert.Contains("Reference: M", log.ToString());
         Assert.InRange(alignment.GetValueOrDefault(tweeter).DelayMs, -0.001, 0.001);
         Assert.InRange(alignment[mid].DelayMs, 1.9, 2.1);
         Assert.InRange(alignment[sub].DelayMs, 1.9, 2.1);

@@ -423,7 +423,8 @@ internal sealed class StagedGroupPlacement
             junctions,
             reprocessor.Reprocess,
             inner,
-            log);
+            log,
+            reference: members.PickReference());
         return inner;
     }
 

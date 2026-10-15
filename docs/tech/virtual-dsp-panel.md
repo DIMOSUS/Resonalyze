@@ -804,8 +804,8 @@ previous delays and polarities are ignored.
 - `VirtualCrossoverAutoDelay.Prepare` returns a launch or a refusal. Interactively refusals are shown and the broad-window
   question (no crossovers configured, so the search falls back to a broad midband window) is asked; headless
   (AI import) that question is a refusal quoted in the summary.
-- Stereo runs whenever some non-mono pair has both sides resolved (the highest such front-chain pair is the
-  L/R bridge; tied at a rear pair the scene would anchor to the fill). The bridge band is the intersection of
+- Stereo runs whenever some non-mono pair has both sides resolved (the front-chain pair playing the most of
+  1–2 kHz is the L/R bridge, the higher on a tie; tied at a rear pair the scene would anchor to the fill). The bridge band is the intersection of
   both sides' bands; no overlap refuses.
 - Bypassed participants are refused: the identity chain ignores overrides, yet the channel would join the walk
   and receive a delay applied later when bypass is switched off.

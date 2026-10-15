@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>Stereo cascade: reference side, then the top-pair bridge with the scene offset (positive = far side leads), then the far-side descent.</summary>
+/// <summary>Stereo cascade: reference side, then the bridge with the scene offset (positive = far side leads), then the far-side walk.</summary>
 public sealed class StereoAlignmentTests
 {
     private const int SampleRate = 48_000;
@@ -65,7 +65,7 @@ public sealed class StereoAlignmentTests
     /// later lobe (correlation chases it, the scene follows the first); <paramref name="rightWoofLateCopyMs"/> puts most of the
     /// right woofer's energy that far behind its front, <paramref name="leftWoofLateCopyMs"/> the left one's, each copy
     /// <paramref name="woofLateCopyAmplitude"/> times the front;
-    /// <paramref name="reprocessCount"/>[0] receives the reprocess count.</summary>
+    /// <paramref name="reprocessCount"/>[0] receives the reprocess count; <paramref name="bridgeOnMid"/> bridges on the mids instead of the tweeters.</summary>
     private static (TestChannel Sub,
         TestChannel[] Left, TestChannel[] Right,
         Dictionary<IAlignmentChannel, AlignmentOverride> Alignment,
@@ -84,19 +84,20 @@ public sealed class StereoAlignmentTests
             bool mirrorPlan = false,
             double rightWoofLateCopyMs = 0,
             double leftWoofLateCopyMs = 0,
-            double woofLateCopyAmplitude = 4.0)
+            double woofLateCopyAmplitude = 4.0,
+            bool bridgeOnMid = false)
     {
         string key = string.Join(";", new object[]
         {
             sceneOffsetMs, rightLateMs, leftTopAmplitude, rightTopAmplitude,
             linkBands == null ? "-" : string.Join(",", linkBands.Select(band => band?.ToString() ?? "null")),
             rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan, rightWoofLateCopyMs,
-            leftWoofLateCopyMs, woofLateCopyAmplitude
+            leftWoofLateCopyMs, woofLateCopyAmplitude, bridgeOnMid
         });
         var run = StereoRuns.GetOrAdd(key, _ => new(() => RunStereoOnce(
             sceneOffsetMs, rightLateMs, leftTopAmplitude, rightTopAmplitude, linkBands,
             rightMidEchoMs, leftLateMs, rightMidAmplitude, globalLateMs, mirrorPlan, rightWoofLateCopyMs,
-            leftWoofLateCopyMs, woofLateCopyAmplitude))).Value;
+            leftWoofLateCopyMs, woofLateCopyAmplitude, bridgeOnMid))).Value;
         if (reprocessCount != null)
         {
             reprocessCount[0] = run.ReprocessCount;
@@ -124,7 +125,8 @@ public sealed class StereoAlignmentTests
             bool mirrorPlan,
             double rightWoofLateCopyMs,
             double leftWoofLateCopyMs,
-            double woofLateCopyAmplitude)
+            double woofLateCopyAmplitude,
+            bool bridgeOnMid)
     {
         int reprocessCount = 0;
         var sub = new TestChannel(
@@ -218,10 +220,10 @@ public sealed class StereoAlignmentTests
                 mirrorPlan ? leftSnapshots : rightSnapshots,
                 mirrorPlan ? leftPairs : rightPairs,
                 new HashSet<IAlignmentChannel> { sub },
-                mirrorPlan ? rightTwr : leftTwr,
-                mirrorPlan ? leftTwr : rightTwr,
-                BridgeBandLowHz: 2_500,
-                BridgeBandHighHz: 12_000,
+                bridgeOnMid ? (mirrorPlan ? rightMid : leftMid) : (mirrorPlan ? rightTwr : leftTwr),
+                bridgeOnMid ? (mirrorPlan ? leftMid : rightMid) : (mirrorPlan ? leftTwr : rightTwr),
+                BridgeBandLowHz: bridgeOnMid ? 400 : 2_500,
+                BridgeBandHighHz: bridgeOnMid ? 2_500 : 12_000,
                 SceneOffsetMs: sceneOffsetMs,
                 pairLinks),
             Reprocess,
@@ -256,6 +258,44 @@ public sealed class StereoAlignmentTests
             double leftTop = FinalArrivalMs(left[2], 0.0, alignment);
             double rightTop = FinalArrivalMs(right[2], 1.5, alignment);
             Assert.InRange(leftTop - rightTop, 0.20, 0.30);
+        }
+
+        [Fact]
+        public void ComputeStereo_BridgeOnTheMids_AnchorsTheLeftWalkThereAndWalksTheFarSideBothWays()
+        {
+            // The left walk starts on the bridge, and the far side climbs to its tweeter and descends to its woofer from it.
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, StringBuilder log) =
+                RunStereo(sceneOffsetMs: 0.25, bridgeOnMid: true);
+
+            Assert.Contains("Reference: L mid", log.ToString());
+            Assert.Contains("Bridge L mid -> R mid", log.ToString());
+            Assert.InRange(
+                FinalArrivalMs(left[1], 0.4, alignment) - FinalArrivalMs(right[1], 1.9, alignment),
+                0.20, 0.30);
+            double[] naturals = [1.0, 0.4, 0.0];
+            for (int i = 0; i < 2; i++)
+            {
+                Assert.InRange(
+                    Math.Abs(
+                        FinalArrivalMs(left[i], naturals[i], alignment) -
+                        FinalArrivalMs(left[i + 1], naturals[i + 1], alignment)),
+                    0, 0.1);
+                Assert.InRange(
+                    Math.Abs(
+                        FinalArrivalMs(right[i], naturals[i] + 1.5, alignment) -
+                        FinalArrivalMs(right[i + 1], naturals[i + 1] + 1.5, alignment)),
+                    0, 0.2);
+            }
+        }
+
+        [Fact]
+        public void ComputeStereo_LeftWalkAnchorsOnTheBridge_WhereAnotherDriverPlaysMoreOf1To2kHz()
+        {
+            // The mids play 400-2500 Hz, so the engine's own pick would be the mid; the plan bridges on the tweeters.
+            (_, _, _, _, StringBuilder log) = RunStereo(sceneOffsetMs: 0.25);
+
+            Assert.Contains("Reference: L twr", log.ToString());
         }
 
         [Fact]
@@ -610,6 +650,20 @@ public sealed class StereoAlignmentTests
                 line => line.StartsWith("Channel R mid:"))!;
             Assert.NotNull(midLine);
             Assert.Contains($"SCENE-LOCKED ±{0.05:0.00}", midLine);
+        }
+
+        [Fact]
+        public void ComputeStereo_APairAboveTheBridgeIsPinnedToItsLobe()
+        {
+            // Over a mid bridge the tweeters meet it at their 2.5 kHz junction inside a quarter period of the scene,
+            // where a pair below the bridge keeps the tight pin (PureLowBandPairIsHeldOnItsOwnSum).
+            (_, _, _, _, StringBuilder log) = RunStereo(
+                sceneOffsetMs: 0.25, linkBands: UserLinkBands, bridgeOnMid: true);
+
+            string[] lines = log.ToString().Split('\n');
+            string twrLine = Array.Find(lines, line => line.StartsWith("Channel R twr:"))!;
+            Assert.NotNull(twrLine);
+            Assert.Contains($"SCENE-LOCKED ±{0.10:0.00}", twrLine);
         }
 
         [Fact]

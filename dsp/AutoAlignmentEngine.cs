@@ -3663,8 +3663,9 @@ public static class AutoAlignmentEngine
     // the junction with the bridge picks the delay. See docs/tech/auto-alignment.md#scene-lock.
     private const double AboveBridgeSceneLockPeriods = 0.25;
 
-    /// <summary>How far a scene-pinned pair may leave its cross-side target: 0.05 ms, or a quarter of the period of the
-    /// junction under a pair above the bridge, which follows the bridge through it. See docs/tech/auto-alignment.md#scene-lock.</summary>
+    /// <summary>How far a scene-pinned pair may leave its cross-side target: 0.05 ms, or for a pair above the bridge, which
+    /// follows the bridge through its junction, a quarter of that junction's period but never less than 0.05 ms (the
+    /// floor wins above 5 kHz). See docs/tech/auto-alignment.md#scene-lock.</summary>
     internal static double SceneTickLockMs(bool aboveBridge, double junctionHz) =>
         aboveBridge
             ? Math.Max(SceneLockToleranceMs, AboveBridgeSceneLockPeriods * 1_000.0 / junctionHz)

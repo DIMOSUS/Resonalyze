@@ -1567,7 +1567,9 @@ cross-side target within `SceneLockToleranceMs` (0.05 ms): the image outranks th
 A Coarse target pins only the lobe, as for low pairs below.
 
 - **Above the bridge** (the tweeters over a midrange bridge) the pin is a quarter of the junction's
-  period (`AboveBridgeSceneLockPeriods`), 0.1 ms at a 2.5 kHz split: the scene keeps the lobe and the
+  period (`AboveBridgeSceneLockPeriods`), 0.1 ms at a 2.5 kHz split, never under the 0.05 ms pin the
+  pairs below keep (`SceneTickLockMs`; the floor wins above 5 kHz and, like the pin it always was,
+  exceeds half a period above 10 kHz, where no tweeter junction sits): the scene keeps the lobe and the
   junction with the bridge places the delay inside it. Each pair is timed in its own band, the
   bridge in the midrange's, the tweeters' scene link in theirs; at 0.05 ms the two reads' small
   disagreement went whole to the far side's mid/tweeter junction. The far-side polish already let a

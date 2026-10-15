@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Text;
 using Resonalyze.Dsp;
 
@@ -210,6 +210,7 @@ internal static class VirtualCrossoverAutoDelay
     // A mono block appears once (as its left instance), so a centre is found exactly once.
     /// <summary>Front-chain pair resolved on both sides that plays the most of 1-2 kHz, counted over both sides so LHD and RHD
     /// bridge on the same pair whatever the side lock (the higher on a tie), or null where the run cannot be a stereo one.
+    /// A pair whose sides share a band outranks one that does not, which is picked only to be refused by name.
     /// The bridge must be a front-chain pair, or the scene anchors to the rear fill. See docs/tech/auto-alignment.md#walk-order.</summary>
     internal static VirtualCrossoverSideAlignmentChannel? PickStereoBridge(
         List<VirtualCrossoverSideAlignmentChannel> leftSide,
@@ -219,7 +220,8 @@ internal static class VirtualCrossoverAutoDelay
             .Select(right => (Right: right, Left: leftSide.FirstOrDefault(left =>
                 left.Runtime == right.Runtime && !left.RightSide)))
             .Where(pair => pair.Left != null)
-            .OrderBy(pair => ReferenceBandCoverage(pair.Left!.Settings) + ReferenceBandCoverage(pair.Right.Settings))
+            .OrderBy(pair => StereoBridgeBand(pair.Left!, pair.Right) != null)
+            .ThenBy(pair => ReferenceBandCoverage(pair.Left!.Settings) + ReferenceBandCoverage(pair.Right.Settings))
             .ThenBy(pair => VirtualCrossoverJunctions.BandCenterHz(pair.Left!.Settings) *
                 VirtualCrossoverJunctions.BandCenterHz(pair.Right.Settings))
             .Select(pair => pair.Right)

@@ -62,6 +62,17 @@ public sealed class VirtualCrossoverStereoBridgeTests
         Assert.Equal("Woofer", Bridge(woofer, tweeter));
     }
 
+    [Fact]
+    public void APairWhoseSidesShareNoBand_GivesWayToOneThatDoes()
+    {
+        // The mids score more of 1-2 kHz (left 300-1200 Hz, right 1500-2500 Hz) but share nothing to time a bridge in.
+        VirtualCrossoverChannel mid = Channel("Mid", 300, 1_200);
+        mid.Pair.Right.HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_500, 24);
+        mid.Pair.Right.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_500, 24);
+
+        Assert.Equal("Tweeter", Bridge(mid, Channel("Tweeter", 2_500, null)));
+    }
+
     [Theory]
     [InlineData(3_000, "Woofer")]
     [InlineData(1_200, "Tweeter")]

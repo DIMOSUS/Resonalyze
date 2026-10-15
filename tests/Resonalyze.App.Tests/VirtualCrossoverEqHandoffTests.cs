@@ -110,8 +110,15 @@ public sealed class VirtualCrossoverEqHandoffTests : IDisposable
         high.Settings.CrossoverKind = CrossoverKind.HighPass;
         high.Settings.HighPassEdge = high.Settings.HighPassEdge with { FrequencyHz = 300 };
         ProcessedChannel processedHigh = Processed(high);
+        // A rear channel arriving earlier: the Front + Sub view leaves it out of the plot's shared anchor.
+        VirtualCrossoverChannel rear = session.Channels[2];
+        rear.Pair.Zone = VirtualCrossoverZone.Rear;
+        var rearResponse = new System.Numerics.Complex[16_384];
+        rearResponse[240] = System.Numerics.Complex.One;
+        var processedRear = new ProcessedChannel(
+            rear, rearResponse, 240, 48_000, OxyPlot.OxyColors.White, default, MeasuredBand.Everything);
         session.LastRender = new VirtualCrossoverProcessedRender(
-            coordinator.CurrentRevision, [Processed(low), processedHigh]);
+            coordinator.CurrentRevision, [Processed(low), processedHigh, processedRear]);
         var view = new VirtualCrossoverViewState(
             AcousticView.Magnitude,
             VirtualCrossoverGroupView.FrontAndSub,
@@ -133,6 +140,13 @@ public sealed class VirtualCrossoverEqHandoffTests : IDisposable
         Assert.Same(processedHigh.ImpulseResponse, other.ImpulseResponse);
         Assert.Null(raw.Source.SumLossContext);
         Assert.Null(headless.Source.SumLossContext);
+        Assert.Equal(
+            ProcessedChannels.SharedStartAnchorIndex([Processed(low), processedHigh]),
+            chain.Source.Measurement!.PeakIndex);
+        Assert.Equal(
+            ProcessedChannels.SharedStartAnchorIndex(session.LastRender.Channels),
+            headless.Source.Measurement!.PeakIndex);
+        Assert.NotEqual(chain.Source.Measurement.PeakIndex, headless.Source.Measurement.PeakIndex);
 
         // A stale render names channels the plot no longer shows.
         coordinator.Invalidate();

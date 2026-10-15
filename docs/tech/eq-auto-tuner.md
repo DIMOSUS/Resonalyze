@@ -672,7 +672,9 @@ curve starts off with every launch.
   during a drag the Direct render landed every ~120 ms, and a redraw per landing on top of the edit's own and the
   preview's made the panel stutter. The job is keyed by bank and by whether the loss is drawn, so ticking the box
   re-renders the current bank with it; a hybrid handoff renders the loss alone (its magnitude is the average); the
-  loss is dropped with the source, the calibration and the phase gate. The curve is dashed in the panel's loss
+  loss is dropped with the source, the calibration and the phase gate, a render in flight included. The edited
+  member's peak is found on the filtered response, as the panel's redraw finds it, so the curve is the one the panel
+  will show once the bank returns. The curve is dashed in the panel's loss
   colour, below 0 dB on the EQ axis, whose nominal range extends to hold it and whose title names it.
 
 ## Redraw pacing

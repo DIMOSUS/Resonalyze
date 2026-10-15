@@ -24,6 +24,7 @@ internal sealed class EqWizardPreviews
     private PeqBankState? gatedPreviewBank;
     private bool gatedPreviewWithSumLoss;
     private bool gatedPreviewInFlight;
+    private bool gatedPreviewRendersSumLoss;
 
     // The edited channel re-renders per bank; neighbours and the bare curve change only with the gate.
     private GatedPhaseCurve? phaseCurve;
@@ -85,6 +86,7 @@ internal sealed class EqWizardPreviews
         EqWizardGatedPreviewRequest request =
             EqWizardSourceCurve.GatedPreviewRequest(session, source, eq, withSumLoss);
         gatedPreviewInFlight = true;
+        gatedPreviewRendersSumLoss = withSumLoss;
         return RenderGatedPreviewAsync(request, bank, EqWizardSourceCurve.KeepsGaps(source));
     }
 
@@ -151,8 +153,9 @@ internal sealed class EqWizardPreviews
         phaseCurveBank = null;
         barePhaseCurve = null;
         neighbourPhaseCurves = null;
-        // A direct-window Sum loss reads the phase gate, so a landed one is re-rendered with its preview.
-        if (gatedPreviewWithSumLoss)
+        // A direct-window Sum loss reads the phase gate, so a landed one is re-rendered with its preview and one in
+        // flight is dropped: it would land with the old gate and pass as this bank's.
+        if (gatedPreviewWithSumLoss || gatedPreviewRendersSumLoss)
         {
             gatedOrchestrator.Invalidate();
             gatedPreviewBank = null;
@@ -197,6 +200,7 @@ internal sealed class EqWizardPreviews
         finally
         {
             gatedPreviewInFlight = false;
+            gatedPreviewRendersSumLoss = false;
         }
     }
 

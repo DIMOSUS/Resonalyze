@@ -32,8 +32,14 @@ internal sealed class VirtualCrossoverEqHandoff(
     {
         MagnitudeGateSnapshot snapshot = session.MagnitudeGate;
         // Only a render describing the CURRENT settings may place the window; stale -> the builder reads the channel's front.
-        int? renderAnchor = CurrentRender is { Channels.Count: >= 2 } render
-            ? ProcessedChannels.SharedStartAnchorIndex(render.Channels)
+        // The plot gates the view's SHOWN channels at one anchor (a group view leaves channels out), so the wizard's is theirs.
+        VirtualCrossoverProcessedRender? render = CurrentRender;
+        VirtualCrossoverFrame? frame = render != null && view != null
+            ? VirtualCrossoverFrame.Of(render.Channels, view.GroupView)
+            : null;
+        IReadOnlyList<ProcessedChannel>? anchored = frame?.Shown ?? render?.Channels;
+        int? renderAnchor = anchored is { Count: >= 2 }
+            ? ProcessedChannels.SharedStartAnchorIndex(anchored)
             : null;
         try
         {
@@ -60,7 +66,7 @@ internal sealed class VirtualCrossoverEqHandoff(
                 hybridRequested &&
                     session.SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray &&
                     spatialAverage.Capture == null,
-                view == null ? null : SumLossContext(channel, view.GroupView, view.LossWindow));
+                frame == null ? null : SumLossContext(channel, frame, view!.LossWindow));
         }
         catch (InvalidOperationException)
         {
@@ -73,14 +79,16 @@ internal sealed class VirtualCrossoverEqHandoff(
     public EqWizardSumLossContext? SumLossContext(
         VirtualCrossoverChannel channel,
         VirtualCrossoverGroupView groupView,
+        SumLossWindow lossWindow) =>
+        CurrentRender is { } render
+            ? SumLossContext(channel, VirtualCrossoverFrame.Of(render.Channels, groupView), lossWindow)
+            : null;
+
+    private EqWizardSumLossContext? SumLossContext(
+        VirtualCrossoverChannel channel,
+        VirtualCrossoverFrame frame,
         SumLossWindow lossWindow)
     {
-        if (CurrentRender is not { } render)
-        {
-            return null;
-        }
-
-        var frame = VirtualCrossoverFrame.Of(render.Channels, groupView);
         if (!frame.QuotesJunctions ||
             !frame.Summed.Any(item => ReferenceEquals(item.Channel, channel)))
         {

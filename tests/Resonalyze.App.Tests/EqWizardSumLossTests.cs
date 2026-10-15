@@ -171,6 +171,36 @@ public sealed class EqWizardSumLossTests
     }
 
     [Fact]
+    public async Task AGateEditWhileTheFirstLossRenders_DropsThatRender()
+    {
+        var session = new EqWizardSession();
+        session.Load(Source(SumLossWindow.Direct));
+        session.SetShowSumLoss(true);
+        using var started = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var previews = new EqWizardPreviews(
+            session,
+            new EqWizardPreviewOrchestrator(request =>
+            {
+                started.Set();
+                release.Wait();
+                return EqWizardGatedPreview.RenderAll(request);
+            }),
+            new EqWizardPhaseOrchestrator());
+        var bank = new EqualizationCurve([new PeqBand(CrossoverHz, 0.7, 0, PeqBandType.AllPassSecondOrder)]);
+
+        Task job = Assert.IsType<Task>(previews.RequestGatedPreview(bank), exactMatch: false);
+        Assert.True(started.Wait(TimeSpan.FromSeconds(10)));
+        previews.InvalidatePhase();
+        release.Set();
+        await job;
+
+        // Rendered with the old gate: not kept, and the bank is rendered again.
+        Assert.Null(previews.SumLoss);
+        Assert.NotNull(previews.RequestGatedPreview(bank));
+    }
+
+    [Fact]
     public async Task AHybridHandoffRendersTheLossWithoutAGatedMagnitude()
     {
         var session = new EqWizardSession();

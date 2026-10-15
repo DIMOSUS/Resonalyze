@@ -2002,7 +2002,8 @@ public static class AutoAlignmentEngine
                         SubPrecedenceMarginDb,
                         SubPrecedenceSlackMs,
                         reachMs: 2.0 * halfPeriodMs);
-                    if (nearer != chosen)
+                    bool stood = nearer != chosen;
+                    if (stood)
                     {
                         subPrecedenceBehindDb =
                             AcousticScore(chosen) - AcousticScore(nearer);
@@ -2025,9 +2026,13 @@ public static class AutoAlignmentEngine
                             $"(fronts meet at {precedenceAnchorMs:0.000} ms).");
                     }
 
-                    // The vote below may not hand the sub farther behind the fronts than it stands.
-                    double allowanceMs = Math.Max(SubPrecedenceSlackMs, TrailMs(chosen));
-                    subPrecedenceAdmits = item => TrailMs(item) <= allowanceMs;
+                    // Where the rule stood the pick (a lead, or the lobe it chose as nearest), the vote below may not hand
+                    // the sub farther behind the fronts; a pick it left alone leaves the vote free.
+                    if (stood || TrailMs(chosen) <= SubPrecedenceSlackMs)
+                    {
+                        double allowanceMs = Math.Max(SubPrecedenceSlackMs, TrailMs(chosen));
+                        subPrecedenceAdmits = item => TrailMs(item) <= allowanceMs;
+                    }
                     standApplies = true;
                     standAnchorMs = precedenceAnchorMs;
                     standLeadSign = leadSign;

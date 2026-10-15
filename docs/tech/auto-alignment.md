@@ -896,7 +896,10 @@ the fronts the rule takes the −5.66 ms lobe the tune sits on, against the seed
 Where the pick stands by this rule, the [low-junction polarity](#low-junction-polarity) vote that
 follows chooses only among picks the rule lets stand: its pool spans a period around the pick, which
 still holds the trailing one, and a tie handed it straight back while the decision text said the
-sub-leading lobe stood. A trailing pick the rule found no lead for leaves the vote free.
+sub-leading lobe stood. The same holds where the rule took the lobe nearest the fronts: the vote
+may not hand the sub farther behind them than that lobe stands. A pick the rule left alone, trailing
+with nothing nearer in the margin, leaves the vote free; the stand the co-move inherits is read on
+the final pick either way.
 
 **The stand outlives the descent.** The reference-side walk records the mono channel's stand
 (`SubPrecedenceStand`: the searched channel, its neighbour, the fronts' anchor relative to the

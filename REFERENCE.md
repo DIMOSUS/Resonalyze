@@ -4233,8 +4233,8 @@ its front the extremum sits on that late energy itself, and so does the sum,
 which is what the sub following both sides would otherwise be pulled onto, a
 half period behind the fronts for a few tenths of a dB. The following move
 takes the sub no farther behind the fronts than the search left it: a move
-that would must win by more than that same 1 dB, and the log names the move
-it held (`sub precedence holds the mono co-move`). Half a
+that would has to win by more than that same 1 dB, and the log names the
+move it held (`sub precedence holds the mono co-move`). Half a
 period of freedom around a wrong arrival figure had put one cabin's far
 midbass 2.3 ms ahead of its twin, the two sides a third of a turn apart
 through 125-180 Hz. The price can be the far side's own handover: where the

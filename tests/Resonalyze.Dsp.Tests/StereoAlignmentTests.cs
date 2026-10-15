@@ -1303,7 +1303,7 @@ public sealed class StereoAlignmentTests
                     ? new Dictionary<IAlignmentChannel, AutoAlignmentEngine.SubPrecedenceStand>(
                         ReferenceEqualityComparer.Instance)
                     {
-                        [sub] = new(sub, leftWoof, AnchorRelativeMs: frontsMeetMs, LeadSign: -1)
+                        [sub] = new(sub, leftWoof, AnchorRelativeMs: frontsMeetMs, LeadSign: -1, TrailAllowanceMs: 0.5)
                     }
                     : null);
             return (alignment[sub].DelayMs - alignment[leftWoof].DelayMs, log.ToString());

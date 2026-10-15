@@ -73,6 +73,36 @@ public sealed class AlignmentSelectionTests
     }
 
     [Fact]
+    public void PreferSubLeading_NoLeadWithinTheMargin_TakesTheLobeNearestTheFronts()
+    {
+        // Sub searched, fronts meet at -6.3 ms: the pick trails them by 9.9 ms, the only other lobe in margin by 2.0, none leads.
+        var trailing = new AlignmentCandidate(3.6, true, -0.6, LossDb: -0.6);
+        var nearer = new AlignmentCandidate(-4.2, false, -1.4, LossDb: -1.4);
+        var beyondMargin = new AlignmentCandidate(-6.0, false, -2.0, LossDb: -2.0);
+
+        AlignmentCandidate chosen = AlignmentSelection.PreferSubLeading(
+            [trailing, nearer, beyondMargin], trailing, Score,
+            anchorMs: -6.3, leadSign: -1.0,
+            marginDb: 1.0, slackMs: 0.5, reachMs: 20.0);
+
+        Assert.Equal(nearer, chosen);
+    }
+
+    [Fact]
+    public void PreferSubLeading_ALobeNearerByLessThanTheSlack_IsNotWorthTheMove()
+    {
+        var trailing = new AlignmentCandidate(3.6, true, -0.6, LossDb: -0.6);
+        var barelyNearer = new AlignmentCandidate(3.2, false, -1.4, LossDb: -1.4);
+
+        AlignmentCandidate chosen = AlignmentSelection.PreferSubLeading(
+            [trailing, barelyNearer], trailing, Score,
+            anchorMs: -6.3, leadSign: -1.0,
+            marginDb: 1.0, slackMs: 0.5, reachMs: 20.0);
+
+        Assert.Equal(trailing, chosen);
+    }
+
+    [Fact]
     public void PreferSubLeading_LeadSignFlipsWhenTheSubItselfIsSearched()
     {
         // Sub searched (leadSign -1): the sub leads where its own delay is smaller than the anchor.

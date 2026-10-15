@@ -870,7 +870,12 @@ a slightly leading sub reads as "bass up front" and a trailing one as sluggish a
 
 `PreferSubLeading` replaces a pick that leaves the sub trailing the fronts by more than
 `SubPrecedenceSlackMs` (0.5 ms) with the anchor-nearest candidate that does not, within
-`SubPrecedenceMarginDb` (1 dB).
+`SubPrecedenceMarginDb` (1 dB); where no candidate in the margin leads, with the one trailing
+least, if it trails less than the pick by more than the slack. The sum need not have an optimum
+at the fronts at all: on the reference car (sub LP 50 Hz, midbass 63-200) the fronts meet at
+−6.26 ms and the nearest optimum stands at −4.24, 2 ms behind them, with the pick an inverted lobe
+9.9 ms behind them at 0.15 dB more. The owner's ear put the sub 8-9 ms earlier and uninverted,
+which is that lobe; a rule that only accepts a lead leaves the inverted lobe standing.
 The margin sits above the near-tie scale and just under the ~1.4 dB comb-noise ceiling within which
 a mode can flatter either side. It was calibrated on the v3 cabin, where the leading lobe scored
 0.66-0.73 dB under the trailing pick yet localized the bass to the front stage. The pool spans the
@@ -891,16 +896,20 @@ the fronts the rule takes the −5.66 ms lobe the tune sits on, against the seed
 Where the pick stands by this rule, the [low-junction polarity](#low-junction-polarity) vote that
 follows chooses only among picks the rule lets stand: its pool spans a period around the pick, which
 still holds the trailing one, and a tie handed it straight back while the decision text said the
-sub-leading lobe stood. A trailing pick the rule found no lead for leaves the vote free.
+sub-leading lobe stood. The same holds where the rule took the lobe nearest the fronts: the vote
+may not hand the sub farther behind them than that lobe stands. A pick the rule left alone, trailing
+with nothing nearer in the margin, leaves the vote free; the stand the co-move inherits is read on
+the final pick either way.
 
 **The stand outlives the descent.** The reference-side walk records the mono channel's stand
 (`SubPrecedenceStand`: the searched channel, its neighbour, the fronts' anchor relative to the
-neighbour, the lead sign) once every witness has had its say on the pick and the pick still leads:
-a direct-coherence or phase verdict that moved it behind the fronts leaves no stand. The
-[mono co-move](#post-descent-passes) judges its moves against it: a move that would leave the sub
-trailing the fronts must beat the best move that keeps the lead by `SubPrecedenceMarginDb`, the
-descent's own margin, and the in-lobe polish a refused hop falls back to is held to the lead too,
-so a refusal never lands the sub further behind than it stands. Without it the co-move undid the rule in four
+neighbour, the lead sign, and how far behind the fronts the pick stands, the slack at least) once
+every witness has had its say on the pick. The [mono co-move](#post-descent-passes) judges its
+moves against it: a move that would take the sub farther behind the fronts than that must beat the
+best move that does not by `SubPrecedenceMarginDb`, the descent's own margin, and the in-lobe
+polish a refused hop falls back to is held to the same line, so a refusal never lands the sub
+further behind than it stands. On the reference car the co-move's best was the inverted lobe
+6.9 ms behind, 0.88 dB up; held. Without it the co-move undid the rule in four
 archived cabins and in a Corolla run: its full-band sum prefers the sub on the midbass's late energy,
 and a half-period hop with a flip (+6.2…+7.5 ms) took it there for 0.15-1.7 dB, leaving the sub's
 front 4-5 ms behind the woofer's where the hand tunes hold it 1.7-2.8 ms ahead (v4 +4.38 → −1.84,
@@ -1642,8 +1651,8 @@ preferred the flip partner a third of a period away.
   - The reference is the better of in-lobe polish and the incumbent. On a mode-dominated junction
     the polish itself can slide onto a modal trade (an 80 Hz reproduction polished to −2.45 ms,
     where the clean lower half reads −6.6 dB).
-- **Sub precedence.** Where the descent stood the mono channel leading the fronts, a move that
-  would leave it trailing must beat the best move that keeps the lead by `SubPrecedenceMarginDb`;
+- **Sub precedence.** A move that would take the mono channel farther behind the fronts than the
+  descent left it must beat the best move that does not by `SubPrecedenceMarginDb`;
   see [Sub precedence](#sub-precedence) for the archive it was read on.
 - **Relative move.** Results below zero rebase the rest of the field.
 

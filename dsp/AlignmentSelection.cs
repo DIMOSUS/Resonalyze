@@ -160,7 +160,9 @@ public static class AlignmentSelection
             : inMargin.OrderByDescending(item => item.ScoreDb).First();
     }
 
-    /// <summary>A pick trailing by more than <paramref name="slackMs"/> yields to the anchor-nearest candidate that does not, within <paramref name="marginDb"/> and a lead of <paramref name="reachMs"/>.</summary>
+    /// <summary>A pick trailing by more than <paramref name="slackMs"/> yields to the anchor-nearest candidate that does not, within
+    /// <paramref name="marginDb"/> and a lead of <paramref name="reachMs"/>; where none leads, to the candidate trailing least,
+    /// if it trails less than the pick by more than the slack.</summary>
     public static AlignmentCandidate PreferSubLeading(
         IEnumerable<AlignmentCandidate> pool,
         AlignmentCandidate chosen,
@@ -174,20 +176,24 @@ public static class AlignmentSelection
         ArgumentNullException.ThrowIfNull(pool);
         ArgumentNullException.ThrowIfNull(chosen);
         ArgumentNullException.ThrowIfNull(acousticScore);
-        if (leadSign * (chosen.DelayMs - anchorMs) >= -slackMs)
+        double TrailMs(AlignmentCandidate item) => -leadSign * (item.DelayMs - anchorMs);
+        double chosenTrailMs = TrailMs(chosen);
+        if (chosenTrailMs <= slackMs)
         {
             return chosen;
         }
 
         double chosenScore = acousticScore(chosen);
-        return pool
-            .Where(item =>
-            {
-                double leadMs = leadSign * (item.DelayMs - anchorMs);
-                return leadMs >= -slackMs && leadMs <= reachMs &&
-                    acousticScore(item) >= chosenScore - marginDb;
-            })
+        List<AlignmentCandidate> inMargin = pool
+            .Where(item => acousticScore(item) >= chosenScore - marginDb)
+            .ToList();
+        AlignmentCandidate? leading = inMargin
+            .Where(item => TrailMs(item) <= slackMs && -TrailMs(item) <= reachMs)
             .OrderBy(item => Math.Abs(item.DelayMs - anchorMs))
+            .FirstOrDefault();
+        return leading ?? inMargin
+            .Where(item => TrailMs(item) > slackMs && TrailMs(item) <= chosenTrailMs - slackMs)
+            .OrderBy(TrailMs)
             .DefaultIfEmpty(chosen)
             .First();
     }

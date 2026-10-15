@@ -641,16 +641,17 @@ public static class AutoAlignmentEngine
         double CapMs);
 
     /// <summary>Where sub precedence stood a mono channel's reference-side junction: the searched channel's delay less its
-    /// neighbour's, against the anchor in the same frame, so the summing passes below can keep the sub leading when the
-    /// field has shifted since. See docs/tech/auto-alignment.md#sub-precedence.</summary>
+    /// neighbour's, against the fronts' anchor in the same frame, and how far behind the fronts the pick was left, so the
+    /// summing passes below never take the sub farther behind them. See docs/tech/auto-alignment.md#sub-precedence.</summary>
     internal sealed record SubPrecedenceStand(
         IAlignmentChannel Searched,
         IAlignmentChannel Neighbor,
         double AnchorRelativeMs,
-        double LeadSign)
+        double LeadSign,
+        double TrailAllowanceMs)
     {
         public bool Leads(double searchedLessNeighborMs) =>
-            LeadSign * (searchedLessNeighborMs - AnchorRelativeMs) >= -SubPrecedenceSlackMs;
+            LeadSign * (searchedLessNeighborMs - AnchorRelativeMs) >= -TrailAllowanceMs;
     }
 
     private static void Compute(
@@ -1962,11 +1963,11 @@ public static class AutoAlignmentEngine
             }
 
             double? subPrecedenceBehindDb = null;
-            // Set where sub precedence rules and the pick stands by it: a later vote may only choose among picks it would
-            // let stand. A trailing pick it found no lead for leaves the vote free.
+            // Set where sub precedence rules: a later vote may only choose among picks standing no farther behind the
+            // fronts than the one it left.
             Func<AlignmentCandidate, bool>? subPrecedenceAdmits = null;
-            // The lead as read against the fronts, kept for the stand the final pick may leave to the co-move.
-            Func<AlignmentCandidate, bool>? standLeads = null;
+            // The fronts' anchor, kept for the stand the final pick leaves to the co-move.
+            bool standApplies = false;
             double standAnchorMs = 0;
             double standLeadSign = 0;
             // Sub precedence (see SubPrecedenceMarginDb): pool spans fine and wide sets on the prior-free score; bounded to one period past the anchor.
@@ -1985,9 +1986,14 @@ public static class AutoAlignmentEngine
                         ? alignment.GetValueOrDefault(neighborChannel).DelayMs +
                             (channel == pair.Lower.Channel ? front : -front)
                         : anchorMs;
-                    Func<AlignmentCandidate, bool> leadsTheStack = item =>
-                        leadSign * (item.DelayMs - precedenceAnchorMs) >= -SubPrecedenceSlackMs;
-                    AlignmentCandidate leading = AlignmentSelection.PreferSubLeading(
+                    // Positive where the sub trails the fronts, by this much.
+                    double TrailMs(AlignmentCandidate item) =>
+                        -leadSign * (item.DelayMs - precedenceAnchorMs);
+                    string Standing(AlignmentCandidate item) =>
+                        TrailMs(item) <= SubPrecedenceSlackMs
+                            ? "leads the stack"
+                            : FormattableString.Invariant($"trails the fronts by {TrailMs(item):0.00} ms");
+                    AlignmentCandidate nearer = AlignmentSelection.PreferSubLeading(
                         candidates.Concat(wide),
                         chosen,
                         AcousticScore,
@@ -1996,34 +2002,38 @@ public static class AutoAlignmentEngine
                         SubPrecedenceMarginDb,
                         SubPrecedenceSlackMs,
                         reachMs: 2.0 * halfPeriodMs);
-                    if (leading != chosen)
+                    bool stood = nearer != chosen;
+                    if (stood)
                     {
                         subPrecedenceBehindDb =
-                            AcousticScore(chosen) - AcousticScore(leading);
+                            AcousticScore(chosen) - AcousticScore(nearer);
                         log.AppendLine(
-                            $"  sub precedence: preferred {leading.DelayMs:0.000} ms" +
-                            $"{(leading.InvertPolarity ? " inv" : "")} (the sub " +
-                            $"leads the stack) over {chosen.DelayMs:0.000} ms" +
-                            $"{(chosen.InvertPolarity ? " inv" : "")} — behind by " +
+                            $"  sub precedence: preferred {nearer.DelayMs:0.000} ms" +
+                            $"{(nearer.InvertPolarity ? " inv" : "")} (the sub " +
+                            $"{Standing(nearer)}) over {chosen.DelayMs:0.000} ms" +
+                            $"{(chosen.InvertPolarity ? " inv" : "")} ({Standing(chosen)}) — behind by " +
                             $"{subPrecedenceBehindDb:0.00} dB, " +
                             $"within the {SubPrecedenceMarginDb:0.00} dB precedence margin " +
                             $"(fronts meet at {precedenceAnchorMs:0.000} ms).");
-                        chosen = leading;
+                        chosen = nearer;
                     }
                     else
                     {
                         log.AppendLine(
                             $"  sub precedence: {chosen.DelayMs:0.000} ms" +
-                            $"{(chosen.InvertPolarity ? " inv" : "")} " +
-                            $"{(leadsTheStack(chosen) ? "leads" : "trails, no lead within the margin")} " +
+                            $"{(chosen.InvertPolarity ? " inv" : "")} {Standing(chosen)}" +
+                            $"{(TrailMs(chosen) > SubPrecedenceSlackMs ? ", no lobe nearer the fronts within the margin" : "")} " +
                             $"(fronts meet at {precedenceAnchorMs:0.000} ms).");
                     }
 
-                    if (leadsTheStack(chosen))
+                    // Where the rule stood the pick (a lead, or the lobe it chose as nearest), the vote below may not hand
+                    // the sub farther behind the fronts; a pick it left alone leaves the vote free.
+                    if (stood || TrailMs(chosen) <= SubPrecedenceSlackMs)
                     {
-                        subPrecedenceAdmits = leadsTheStack;
+                        double allowanceMs = Math.Max(SubPrecedenceSlackMs, TrailMs(chosen));
+                        subPrecedenceAdmits = item => TrailMs(item) <= allowanceMs;
                     }
-                    standLeads = leadsTheStack;
+                    standApplies = true;
                     standAnchorMs = precedenceAnchorMs;
                     standLeadSign = leadSign;
                 }
@@ -2412,15 +2422,18 @@ public static class AutoAlignmentEngine
                 }
             }
 
-            // The stand outlives the descent, read on the pick every witness has had its say on: the mono co-move keeps
-            // the lead it stood with. See docs/tech/auto-alignment.md#sub-precedence.
-            if (subPrecedence != null && standLeads != null && standLeads(chosen))
+            // The stand outlives the descent, read on the pick every witness has had its say on: the mono co-move takes
+            // the sub no farther behind the fronts than this. See docs/tech/auto-alignment.md#sub-precedence.
+            if (subPrecedence != null && standApplies)
             {
                 subPrecedence[monoChannels!.Contains(channel) ? channel : neighborChannel] =
                     new SubPrecedenceStand(
                         channel, neighborChannel,
                         standAnchorMs - alignment.GetValueOrDefault(neighborChannel).DelayMs,
-                        standLeadSign);
+                        standLeadSign,
+                        Math.Max(
+                            SubPrecedenceSlackMs,
+                            -standLeadSign * (chosen.DelayMs - standAnchorMs)));
             }
 
             double newDelay = chosen.DelayMs;
@@ -4801,9 +4814,9 @@ public static class AutoAlignmentEngine
             {
                 log.AppendLine(
                     $"  sub precedence holds the mono co-move for {mono.Name}: " +
-                    $"{bestDelta:+0.00;-0.00} ms{(bestFlip ? " flipped" : "")} would leave the sub " +
-                    $"trailing its reference-side junction; {bestLeadDelta:+0.00;-0.00} ms" +
-                    $"{(bestLeadFlip ? " flipped" : "")} keeps the lead, behind by " +
+                    $"{bestDelta:+0.00;-0.00} ms{(bestFlip ? " flipped" : "")} would take the sub " +
+                    $"farther behind the fronts than the descent left it; {bestLeadDelta:+0.00;-0.00} ms" +
+                    $"{(bestLeadFlip ? " flipped" : "")} does not, behind by " +
                     $"{bestScore - bestLeadScore:0.00} dB, within the {SubPrecedenceMarginDb:0.00} dB precedence margin.");
                 bestScore = bestLeadScore;
                 bestDelta = bestLeadDelta;
